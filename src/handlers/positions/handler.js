@@ -257,6 +257,7 @@ const positions = async (error, messages) => {
       rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'positionsHandler' })
     }
   } catch (err) {
+    console.log("SOMETHING BROKEN HERE LEWIS!!")
     Logger.isErrorEnabled && Logger.error(`${Utility.breadcrumb(location)}::${err.message}--0`)
     histTimerEnd({ success: false, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
     const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err)
