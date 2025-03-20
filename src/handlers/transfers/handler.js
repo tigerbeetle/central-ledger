@@ -874,6 +874,8 @@ const registerPrepareHandler = async () => {
     const consumeConfig = Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, TRANSFER.toUpperCase(), PREPARE.toUpperCase())
     consumeConfig.rdkafkaConf['client.id'] = topicName
 
+    // TODO: how do we get batches off of kafka here? Need to read more about Kafka
+
     await Consumer.createHandler(topicName, consumeConfig, prepare)
     return true
   } catch (err) {

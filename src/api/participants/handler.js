@@ -93,7 +93,9 @@ const create = async function (request, h) {
     }
     const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
     const allSettlementModels = await SettlementService.getAll()
+    console.log('found allSettlementModels models', allSettlementModels)
     let settlementModels = allSettlementModels.filter(model => model.currencyId === request.payload.currency)
+    
     if (settlementModels.length === 0) {
       settlementModels = allSettlementModels.filter(model => model.currencyId === null) // Default settlement model
       if (settlementModels.length === 0) {

@@ -489,6 +489,9 @@ const prepare = async (error, messages) => {
       payload, isFx, params, functionality, action
     })
 
+    // LD: I think this is the duplicate check here?
+    // will need to bypass, but also pick up the error from TB regarding duplication
+    
     const duplication = await checkDuplication({ payload, isFx, ID, location })
     if (duplication.hasDuplicateId) {
       const success = await processDuplication({
