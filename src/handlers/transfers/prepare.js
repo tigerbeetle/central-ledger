@@ -217,6 +217,8 @@ const calculateProxyObligation = async ({ payload, isFx, params, functionality, 
   return proxyObligation
 }
 
+
+// LD: I don't see this hitting the db anywhere...
 const checkDuplication = async ({ payload, isFx, ID, location }) => {
   const funcName = 'prepare_duplicateCheckComparator'
   const histTimerDuplicateCheckEnd = Metrics.getHistogram(
@@ -229,8 +231,17 @@ const checkDuplication = async ({ payload, isFx, ID, location }) => {
   const { hasDuplicateId, hasDuplicateHash } = await Comparators.duplicateCheckComparator(
     ID,
     payload,
+    // here we are passing in the 2 functions which will hit the database:
     remittance.getDuplicate,
     remittance.saveDuplicateHash
+    // () => {
+    //   console.log("DISABLED getDuplicate")
+    //   return {
+    //     hash: null
+    //   }
+    // },
+    // () => {console.log("DISABLED saveDuplicateHash")},
+
   )
 
   logger.info(Util.breadcrumb(location, { path: funcName }), { hasDuplicateId, hasDuplicateHash, isFx, ID })
