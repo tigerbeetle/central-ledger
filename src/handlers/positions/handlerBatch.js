@@ -71,6 +71,8 @@ const positions = async (error, messages) => {
     ['success']
   ).startTimer()
 
+  console.log('LD positions handler here!')
+
   if (error) {
     histTimerEnd({ success: false })
     rethrow.rethrowAndCountFspiopError(error, { operation: 'positionsHandlerBatch' })

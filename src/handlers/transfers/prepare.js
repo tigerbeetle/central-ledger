@@ -423,6 +423,8 @@ const sendPositionPrepareMessage = async ({
   } else if (action === Action.FX_PREPARE) {
     topicNameOverride = Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.FX_PREPARE
   }
+
+  console.log("LD: sendPositionPrepareMessage - topicNameOverride ", topicNameOverride)
   await Kafka.proceed(Config.KAFKA_CONFIG, params, {
     consumerCommit,
     eventDetail,
