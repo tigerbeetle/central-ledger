@@ -2,7 +2,7 @@
   "PORT": 3001,
   "HOSTNAME": "http://central-ledger",
   "DATABASE": {
-    "DIALECT": "mysql",
+    "DIALECT": "mysql2",
     "HOST": "192.168.100.2",
     "PORT": 3306,
     "USER": "central_ledger",

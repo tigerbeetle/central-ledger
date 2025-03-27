@@ -118,6 +118,7 @@
     "lodash": "4.17.21",
     "moment": "2.30.1",
     "mongo-uri-builder": "^4.0.0",
+    "mysql2": "^3.14.0",
     "parse-strings-in-object": "2.0.0",
     "rc": "1.2.8",
     "require-glob": "^4.1.0"
