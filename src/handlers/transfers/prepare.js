@@ -60,6 +60,7 @@ const proceedForwardErrorMessage = async ({ fspiopError, isFx, params }) => {
     functionality: Type.NOTIFICATION,
     action: isFx ? Action.FX_FORWARDED : Action.FORWARDED
   }
+  console.log('LD proceedForwardErrorMessage', eventDetail)
   await Kafka.proceed(Config.KAFKA_CONFIG, params, {
     fspiopError,
     eventDetail,
@@ -97,33 +98,34 @@ const forwardPrepare = async ({ isFx, params, ID }) => {
       //            and the action is `fx-forwarded`, the ml-api-adapter will notify both.
       await proceedForwardErrorMessage({ fspiopError, isFx, params })
     }
-  } else {
-    const transfer = await TransferService.getById(ID)
-    if (!transfer) {
-      const fspiopError = ErrorHandler.Factory.createFSPIOPError(
-        FSPIOPErrorCodes.ID_NOT_FOUND,
-        'Forwarded transfer could not be found.'
-      ).toApiErrorObject(Config.ERROR_HANDLING)
-      // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
-      //            notify the payerFsp and proxy of the error.
-      //            As long as the `to` and `from` message values are the payer and payee,
-      //            and the action is `forwarded`, the ml-api-adapter will notify both.
-      await proceedForwardErrorMessage({ fspiopError, isFx, params })
-      return true
-    }
+    return
+  } 
+  
+  const transfer = await TransferService.getById(ID)
+  if (!transfer) {
+    const fspiopError = ErrorHandler.Factory.createFSPIOPError(
+      FSPIOPErrorCodes.ID_NOT_FOUND,
+      'Forwarded transfer could not be found.'
+    ).toApiErrorObject(Config.ERROR_HANDLING)
+    // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
+    //            notify the payerFsp and proxy of the error.
+    //            As long as the `to` and `from` message values are the payer and payee,
+    //            and the action is `forwarded`, the ml-api-adapter will notify both.
+    await proceedForwardErrorMessage({ fspiopError, isFx, params })
+    return true
+  }
 
-    if (transfer.transferState === TransferInternalState.RESERVED) {
-      await TransferService.forwardedPrepare(ID)
-    } else {
-      const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
-        `Invalid State: ${transfer.transferState} - expected: ${TransferInternalState.RESERVED}`
-      ).toApiErrorObject(Config.ERROR_HANDLING)
-      // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
-      //            notify the payerFsp and proxy of the error.
-      //            As long as the `to` and `from` message values are the payer and payee,
-      //            and the action is `forwarded`, the ml-api-adapter will notify both.
-      await proceedForwardErrorMessage({ fspiopError, isFx, params })
-    }
+  if (transfer.transferState === TransferInternalState.RESERVED) {
+    await TransferService.forwardedPrepare(ID)
+  } else {
+    const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
+      `Invalid State: ${transfer.transferState} - expected: ${TransferInternalState.RESERVED}`
+    ).toApiErrorObject(Config.ERROR_HANDLING)
+    // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
+    //            notify the payerFsp and proxy of the error.
+    //            As long as the `to` and `from` message values are the payer and payee,
+    //            and the action is `forwarded`, the ml-api-adapter will notify both.
+    await proceedForwardErrorMessage({ fspiopError, isFx, params })
   }
 
   return true
@@ -424,7 +426,7 @@ const sendPositionPrepareMessage = async ({
     topicNameOverride = Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.FX_PREPARE
   }
 
-  console.log("LD produceMessage. topicConfig", consumerCommit, eventDetail, messageKey, topicNameOverride)
+  console.log("LD sendPositionPrepareMessage. topicConfig", consumerCommit, eventDetail, messageKey, topicNameOverride)
 
   await Kafka.proceed(Config.KAFKA_CONFIG, params, {
     consumerCommit,

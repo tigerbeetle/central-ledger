@@ -155,14 +155,11 @@ const positions = async (error, messages) => {
       eventDetail.functionality = Enum.Events.Event.Type.BULK_PROCESSING
     }
 
-    
-
     switch (action) {
       case Enum.Events.Event.Action.PREPARE:
       case Enum.Events.Event.Action.BULK_PREPARE: {
-
         Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'prepare' }))
-        console.log("LD  - handling prepare here")
+        console.log("LD  - handling position-prepare here")
 
         // TODO: ship this straight to TigerBeetle - if it fails, then check:
         // 1. transferId already exists (therefore duplicate check triggered)
@@ -180,6 +177,10 @@ const positions = async (error, messages) => {
           const { transferState, fspiopError } = prepareMessage
           if (transferState.transferStateId === Enum.Transfers.TransferState.RESERVED) {
             Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payer--${actionLetter}1`))
+
+          
+            // I think this produces the notification?
+            console.log('LD calling Kakfa.proceed with eventDetail:', eventDetail)
             await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
             histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
             return true
@@ -198,29 +199,41 @@ const positions = async (error, messages) => {
       case Enum.Events.Event.Action.RESERVE:
       case Enum.Events.Event.Action.BULK_COMMIT: {
         Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'commit' }))
+        
+        console.log("LD  - handling commit here")
+
+        // TODO: ship the commit straight to tigerbeetle
+
+        // TigerBeetle here
         const transferInfo = await TransferService.getTransferInfoToChangePosition(transferId, Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP, Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE)
         const participantCurrency = await participantFacade.getByIDAndCurrency(transferInfo.participantId, transferInfo.currencyId, Enum.Accounts.LedgerAccountType.POSITION)
+
         if (transferInfo.transferStateId !== Enum.Transfers.TransferInternalState.RECEIVED_FULFIL) {
           Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `validationFailed::notReceivedFulfilState1--${actionLetter}3`))
           const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(`Invalid State: ${transferInfo.transferStateId} - expected: ${Enum.Transfers.TransferInternalState.RECEIVED_FULFIL}`)
           await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING), eventDetail, fromSwitch, hubName: Config.HUB_NAME })
           rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'positionsHandler' })
-        } else {
-          Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payee--${actionLetter}4`))
-          const isReversal = false
-          const transferStateChange = {
-            transferId: transferInfo.transferId,
-            transferStateId: Enum.Transfers.TransferState.COMMITTED
-          }
-          await PositionService.changeParticipantPosition(participantCurrency.participantCurrencyId, isReversal, transferInfo.amount, transferStateChange)
-          if (action === Enum.Events.Event.Action.RESERVE) {
-            const transfer = await TransferService.getById(transferInfo.transferId)
-            message.value.content.payload = TransferObjectTransform.toFulfil(transfer)
-          }
-          await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
-          histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
-          return true
         }
+
+        Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payee--${actionLetter}4`))
+        const isReversal = false
+        const transferStateChange = {
+          transferId: transferInfo.transferId,
+          transferStateId: Enum.Transfers.TransferState.COMMITTED
+        }
+
+        console.log("LD  - insert tb magic")
+
+        // TigerBeetle here
+        await PositionService.changeParticipantPosition(participantCurrency.participantCurrencyId, isReversal, transferInfo.amount, transferStateChange)
+        if (action === Enum.Events.Event.Action.RESERVE) {
+          const transfer = await TransferService.getById(transferInfo.transferId)
+          message.value.content.payload = TransferObjectTransform.toFulfil(transfer)
+        }
+        console.log('LD: send message to kafka', params.kafkaTopic)
+        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
+        histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
+        return true
         break;
       }
       case Enum.Events.Event.Action.REJECT:

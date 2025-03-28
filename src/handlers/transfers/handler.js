@@ -132,6 +132,7 @@ const fulfil = async (error, messages) => {
 }
 
 const processFulfilMessage = async (message, functionality, span) => {
+  console.log("LD: fulfil here")
   const location = { module: 'FulfilHandler', method: '', path: '' }
   const histTimerEnd = Metrics.getHistogram(
     'transfer_fulfil',
