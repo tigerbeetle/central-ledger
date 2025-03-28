@@ -1,5 +1,6 @@
 const util = require('util')
 const PositionFacade = require('../../models/position/facade')
+const { assert } = require('console')
 
 
 const changeParticipantPosition = (participantCurrencyId, isReversal, amount, transferStateChange) => {
@@ -67,11 +68,12 @@ const changeParticipantPosition = (participantCurrencyId, isReversal, amount, tr
  */
 const calculatePreparePositionsBatch = async (transferList) => {
   console.log("LD shim calculatePreparePositionsBatch")
-  // TODO: impement this with TigerBeetle
+  assert(Array.isArray(transferList), 'expected transferList to be an array')
+  assert(transferList.length === 1, 'calculatePreparePositionsBatch currently only handles 1 tx at a time')
+
+  // TODO: implement this with TigerBeetle
 
   const result = await PositionFacade.prepareChangeParticipantPositionTransaction(transferList)
-
-
 
   console.log('calculatePreparePositionsBatch result is', JSON.stringify(result))
   

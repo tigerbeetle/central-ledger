@@ -220,7 +220,6 @@ const calculateProxyObligation = async ({ payload, isFx, params, functionality, 
 }
 
 
-// LD: I don't see this hitting the db anywhere...
 const checkDuplication = async ({ payload, isFx, ID, location }) => {
   const funcName = 'prepare_duplicateCheckComparator'
   const histTimerDuplicateCheckEnd = Metrics.getHistogram(
