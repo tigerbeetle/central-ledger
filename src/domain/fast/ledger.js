@@ -51,3 +51,5 @@ const metadataStore = new MetadataStore(sqliteClient)
 // const metadataStore = new CachedMetadataStore(accountsDb)
 
 const ledger = new Ledger(tbClient, metadataStore)
+
+module.exports = ledger

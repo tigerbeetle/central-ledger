@@ -1,4 +1,4 @@
-export default class MetadataStore {
+class MetadataStore {
 
   constructor(client) {
     console.log('init metadata store')
@@ -30,3 +30,5 @@ export default class MetadataStore {
   }
   
 }
+
+module.exports = MetadataStore

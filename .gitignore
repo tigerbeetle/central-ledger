@@ -66,3 +66,5 @@ devspace*
 !.npmignore
 
 .rush
+
+*.db

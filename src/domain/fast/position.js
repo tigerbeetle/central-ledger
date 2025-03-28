@@ -2,6 +2,7 @@ const util = require('util')
 const PositionFacade = require('../../models/position/facade')
 const { assert } = require('console')
 
+const ledger = require('./ledger')
 
 const changeParticipantPosition = (participantCurrencyId, isReversal, amount, transferStateChange) => {
   console.log("LD shim changeParticipantPosition")
@@ -72,6 +73,8 @@ const calculatePreparePositionsBatch = async (transferList) => {
   assert(transferList.length === 1, 'calculatePreparePositionsBatch currently only handles 1 tx at a time')
 
   // TODO: implement this with TigerBeetle
+
+  const transfers = ledger.buildPendingTransferBatch(transferList)
 
   const result = await PositionFacade.prepareChangeParticipantPositionTransaction(transferList)
 
