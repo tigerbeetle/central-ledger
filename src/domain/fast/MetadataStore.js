@@ -1,3 +1,9 @@
+
+/**
+ * @class MetadataStore
+ * @description A store to keep track of Participant account ids and other metadata associated with
+ *   clearing transfers
+ */
 class MetadataStore {
 
   constructor(client) {
@@ -6,8 +12,8 @@ class MetadataStore {
 
     this._client.exec(`
       CREATE TABLE IF NOT EXISTS accounts (
-        dfspId INTEGER NOT NULL,
-        transferType INTEGER NOT NULL,
+        fspId TEXT NOT NULL,
+        currency TEXT NOT NULL,
         accountType INTEGER NOT NULL,
         tigerBeetleId TEXT NOT NULL,
         PRIMARY KEY (dfspId, transferType, accountType)
@@ -15,15 +21,15 @@ class MetadataStore {
     `);  
   }
 
-  getAccountId(accountType, dfspId, transferType) {
+  getAccountId(accountType, fspId, currency) {
     const whereStatement = this._client.prepare(`
       SELECT tigerBeetleId FROM accounts 
-      WHERE accountType = ? AND dfspId = ? AND transferType = ?
+      WHERE accountType = ? AND fspId = ? AND currency = ?
     `);
-    const row = whereStatement.get(accountType, dfspId, transferType)
+    const row = whereStatement.get(accountType, fspId, currency)
 
     if (!row || !row.tigerBeetleId) {
-      throw new Error(`account not found for accountType: ${accountType}, dfspId: ${dfspId}, transferType: ${transferType}`)
+      throw new Error(`account not found for accountType: ${accountType}, fspId: ${fspId}, currency: ${currency}`)
     }
 
     return BigInt(row.tigerBeetleId)
