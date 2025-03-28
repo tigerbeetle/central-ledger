@@ -42,7 +42,9 @@ const Logger = require('@mojaloop/central-services-logger')
 const EventSdk = require('@mojaloop/event-sdk')
 const TransferService = require('../../domain/transfer')
 const TransferObjectTransform = require('../../domain/transfer/transform')
-const PositionService = require('../../domain/position')
+
+const PositionService = require('../../domain/fast/position')
+
 const participantFacade = require('../../models/participant/facade')
 const SettlementModelCached = require('../../models/settlement/settlementModelCached')
 const Utility = require('@mojaloop/central-services-shared').Util
@@ -160,6 +162,7 @@ const positions = async (error, messages) => {
       case Enum.Events.Event.Action.BULK_PREPARE: {
         Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'prepare' }))
         console.log("LD  - handling position-prepare here")
+        console.log("LD  prepareBatch is", prepareBatch)
 
         // TODO: ship this straight to TigerBeetle - if it fails, then check:
         // 1. transferId already exists (therefore duplicate check triggered)
