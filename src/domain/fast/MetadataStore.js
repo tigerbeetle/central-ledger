@@ -16,7 +16,7 @@ class MetadataStore {
         currency TEXT NOT NULL,
         accountType INTEGER NOT NULL,
         tigerBeetleId TEXT NOT NULL,
-        PRIMARY KEY (dfspId, transferType, accountType)
+        PRIMARY KEY (fspId, currency, accountType)
       )
     `);  
   }
@@ -42,6 +42,8 @@ class MetadataStore {
       accountType: accountDescriptors.accountType,
       tigerBeetleId: accountDescriptors.tigerBeetleId.toString(),
     }))
+
+    console.log('dehydrated accounts', dehydratedAccounts[0])
 
     const insertStatement = this._client.prepare(`
       INSERT INTO accounts (fspId, currency, accountType, tigerBeetleId)

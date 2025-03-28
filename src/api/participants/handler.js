@@ -36,6 +36,7 @@ const Logger = require('@mojaloop/central-services-logger')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Enums = require('../../lib/enumCached')
 const SettlementService = require('../../domain/settlement')
+const FastAdmin = require('../../domain/fast/admin')
 const { rethrow } = Util
 
 const LocalEnum = {
@@ -237,7 +238,8 @@ const getEndpoint = async function (request) {
 
 const addLimitAndInitialPosition = async function (request, h) {
   try {
-    await ParticipantService.addLimitAndInitialPosition(request.params.name, request.payload)
+    // await ParticipantService.addLimitAndInitialPosition(request.params.name, request.payload)
+    await FastAdmin.addLimitAndInitialPosition(request.params.name, request.payload)
     return h.response().code(201)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddLimitAndInitialPosition' })

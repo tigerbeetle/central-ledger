@@ -1,4 +1,4 @@
-const { createClient } = require('tigerbeetle-node')
+const { createClient, id, AccountFlags, CreateAccountError } = require('tigerbeetle-node')
 const Database = require('better-sqlite3')
 const MetadataStore = require('./MetadataStore')
 const assert = require('assert')
@@ -6,13 +6,13 @@ const { MLNumber } = require('@mojaloop/ml-number/src/mlnumber')
 const Helper = require('./helper')
 
 const AccountType = Object.freeze({
-  Collateral: Symbol(1),
-  Reserve: Symbol(2),
-  Clearing: Symbol(3),
-  Settlement_Multilateral: Symbol(4),
+  Collateral: 1,
+  Reserve: 2,
+  Clearing: 3,
+  Settlement_Multilateral: 4,
 
   // now going to worry about this for now
-  // Settlement_Bilateral: Symbol(5),
+  // Settlement_Bilateral: 5,
 })
 
 
@@ -125,7 +125,7 @@ class Ledger {
     assert.strictEqual(errors.length, 0)
 
     // now save to sqlite
-    this._metadataStore.saveDfspAccountMetadata(accountMetadata)
+    await this._metadataStore.saveDfspAccountMetadata(accountMetadata)
   }
 
   /**
