@@ -412,7 +412,6 @@ const sendPositionPrepareMessage = async ({
 
   params.message.value.content.context = {
     ...params.message.value.content.context,
-    cyrilResult
   }
   // We route fx-prepare, bulk-prepare and prepare messages differently based on the topic configured for it.
   // Note: The batch handler does not currently support bulk-prepare messages, only prepare messages are supported.
@@ -539,6 +538,8 @@ const prepare = async (error, messages) => {
     //   determiningTransferCheckResult,
     //   proxyObligation
     // })
+    // TODO: add back some validation, but don't hit the database
+    const validationPassed = true
 
     if (!validationPassed) {
       logger.warn(Util.breadcrumb(location, { path: 'validationFailed' }))
@@ -563,7 +564,7 @@ const prepare = async (error, messages) => {
 
     logger.info(Util.breadcrumb(location, `positionTopic1--${actionLetter}7`))
     const success = await sendPositionPrepareMessage({
-      isFx, action, params, determiningTransferCheckResult, proxyObligation
+      isFx, action, params
     })
 
     histTimerEnd({ success, fspId })
