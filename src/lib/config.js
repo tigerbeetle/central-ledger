@@ -1,6 +1,6 @@
 // const RC = require('parse-strings-in-object')(require('rc')('CLEDG', require('../../config/default.json')))
 const PATH_TO_CONFIG_FILE = process.env.PATH_TO_CONFIG_FILE || '../../config/default.local.json'
-const RC = require('rc')('MLAPI', require(PATH_TO_CONFIG_FILE))
+const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
 
 console.log("RC.PORT is", RC.PORT)
 
