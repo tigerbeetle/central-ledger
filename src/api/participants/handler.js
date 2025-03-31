@@ -37,6 +37,8 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Enums = require('../../lib/enumCached')
 const SettlementService = require('../../domain/settlement')
 const FastAdmin = require('../../domain/fast/admin')
+const assert = require('assert')
+
 const { rethrow } = Util
 
 const LocalEnum = {
@@ -323,7 +325,9 @@ const getPositions = async function (request) {
 const getAccounts = async function (request) {
   try {
     // TODO(LD): shim with TigerBeetle - need more design work in thew adaptation layer first
-    return await ParticipantService.getAccounts(request.params.name, request.query)
+    // return await ParticipantService.getAccounts(request.params.name, request.query)
+    assert(request.params.name, 'Expected name param to exist')
+    return await FastAdmin.getAccounts(request.params.name)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetAccounts' })
   }

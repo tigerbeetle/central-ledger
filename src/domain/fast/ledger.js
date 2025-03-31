@@ -4,20 +4,15 @@ const MetadataStore = require('./MetadataStore')
 const assert = require('assert')
 const { MLNumber } = require('@mojaloop/ml-number/src/mlnumber')
 const Helper = require('./helper')
-
-const AccountType = Object.freeze({
-  Collateral: 1,
-  Reserve: 2,
-  Clearing: 3,
-  Settlement_Multilateral: 4,
-
-  // now going to worry about this for now
-  // Settlement_Bilateral: 5,
-})
+const Hydrator = require('./hydrator')
+const AccountType = require('./AccountType')
 
 
+/**
+ * @class Abstraction over TigerBeetle Ledger + Metadata Store that implements
+ *   Mojaloop related business-logic
+ */
 class Ledger {
-
   constructor(tbClient, metadataStore) {
     this._tbClient = tbClient
     this._metadataStore = metadataStore
@@ -217,6 +212,22 @@ class Ledger {
     assert.strictEqual(errors.length, 0)
   }
 
+
+  async getAccountsForFspId(fspId) {
+    const accountMeta = await this._metadataStore.getAccountsForFspId(fspId)
+    assert(accountMeta.length > 0, `No accounts found for fspId: ${fspId}`)
+    console.log('accountMeta is', accountMeta)
+
+    const accounts = await this._tbClient.lookupAccounts(
+      accountMeta.map(metadata => metadata.tigerBeetleId)
+    )
+
+    return accountMeta.map((metadata, idx) => {
+      const tigerBeetleAccount = accounts[idx]
+      return Hydrator.hydrateLedgerAccount(metadata, tigerBeetleAccount)
+    })
+  }
+
 }
 
 // TODO: globals are a real pain to deal with in testing, but let's just do this for now
@@ -226,10 +237,7 @@ const tbClient = createClient({
   replica_addresses: process.env.TB_ADDRESS && process.env.TB_ADDRESS.split(',') || ['3000'],
 });
 const sqliteClient = new Database('metdata.db');
-
 const metadataStore = new MetadataStore(sqliteClient)
-// const accountsDb = new Database('accounts.db');
-// const metadataStore = new CachedMetadataStore(accountsDb)
 
 const ledger = new Ledger(tbClient, metadataStore)
 

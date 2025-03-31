@@ -69,8 +69,19 @@ const recordFundsInOut = async (payload, params, enums) => {
   }
 }
 
+const getAccounts = async (name) => {
+  const fspId = name
+  const accounts = await ledger.getAccountsForFspId(fspId)
+
+  // TODO(LD): transform to look like old api - for now I'm not too worried
+  // just need a way to see what the accounts look like
+
+  return accounts
+}
+
 
 module.exports = {
   addLimitAndInitialPosition,
+  getAccounts,
   recordFundsInOut
 }

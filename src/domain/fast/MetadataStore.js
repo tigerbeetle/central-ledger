@@ -35,7 +35,7 @@ class MetadataStore {
     return BigInt(row.tigerBeetleId)
   }
 
-  async saveDfspAccountMetadata(accountDescriptors)  {
+  async saveDfspAccountMetadata(accountDescriptors) {
     const dehydratedAccounts = accountDescriptors.map(accountDescriptors => ({
       fspId: accountDescriptors.fspId,
       currency: accountDescriptors.currency,
@@ -55,6 +55,24 @@ class MetadataStore {
     });
   
     insertMany(dehydratedAccounts);
+  }
+
+  async getAccountsForFspId(fspId) {
+    const whereStatement = this._client.prepare(`
+      SELECT * FROM accounts 
+      WHERE fspId = ?
+    `);
+    
+    const accounts = whereStatement.all(fspId)
+    return accounts.map(acc => {
+      return {
+        fspId: acc.fspId,
+        currency: acc.currency,
+        accountType: acc.accountType,
+        tigerBeetleId: BigInt(acc.tigerBeetleId),
+      }
+    })
+
   }
   
 }
