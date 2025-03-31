@@ -131,8 +131,108 @@ const fulfil = async (error, messages) => {
   }
 }
 
+const processFulfilMessageFast = async (message, functionality, span) => { 
+  const location = { module: 'FulfilHandlerFast', method: '', path: '' }
+  const histTimerEnd = Metrics.getHistogram(
+    'transfer_fulfil',
+    'Consume a fulfil transfer message from the kafka topic and process it accordingly',
+    ['success', 'fspId']
+  ).startTimer()
+
+
+  const payload = decodePayload(message.value.content.payload)
+  const headers = message.value.content.headers
+  const type = message.value.metadata.event.type
+  const action = message.value.metadata.event.action
+  const transferId = message.value.content.uriParams.id
+  const kafkaTopic = message.topic
+  Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, { method: `fulfil:${action}` }))
+
+  const actionLetter = (() => {
+    switch (action) {
+      case TransferEventAction.COMMIT: return Enum.Events.ActionLetter.commit
+      case TransferEventAction.RESERVE: return Enum.Events.ActionLetter.reserve
+      case TransferEventAction.REJECT: return Enum.Events.ActionLetter.reject
+      case TransferEventAction.ABORT: return Enum.Events.ActionLetter.abort
+      case TransferEventAction.BULK_COMMIT: return Enum.Events.ActionLetter.bulkCommit
+      case TransferEventAction.BULK_ABORT: return Enum.Events.ActionLetter.bulkAbort
+      default: return Enum.Events.ActionLetter.unknown
+    }
+  })()
+
+  // TODO: there should be some library for this sort of thing
+  const resolveTopicNameOverride = (action)  => {
+    switch (action) {
+      case TransferEventAction.COMMIT:
+        return Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.COMMIT 
+      case TransferEventAction.RESERVE:
+        return Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.RESERVE
+      case TransferEventAction.BULK_COMMIT:
+        return Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.BULK_COMMIT;
+      default: 
+        return undefined
+    }
+  }
+
+  // Validate the fulfil message
+  if (action === TransferEventAction.REJECT) {
+    const errorMessage = 'action REJECT is not allowed into fulfil handler'
+    Logger.isErrorEnabled && Logger.error(errorMessage)
+    !!span && span.error(errorMessage)
+    histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId })
+    return true
+  }
+
+  // no need for duplicate check
+  // if the post_pending_transfer fails because pending_id not found, then we know that the pending
+  // is in the wrong state already
+  // if the transfer has expired, let's rely on TigerBeetle to have expired it
+
+  // Validations Succeeded - process the fulfil
+  Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, { path: 'validationPassed' }))
+  switch (action) {
+    case TransferEventAction.COMMIT:
+    case TransferEventAction.RESERVE: {
+      let topicNameOverride = resolveTopicNameOverride(action)
+      
+      Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, `positionTopic2--${actionLetter}12`))
+      await TransferService.handlePayeeResponse(transferId, payload, action)
+      const eventDetail = { functionality: TransferEventType.POSITION, action }
+      // Key position fulfil message with payee account id
+      const payeeAccount = await Participant.getAccountByNameAndCurrency(transfer.payeeFsp, transfer.currency, Enum.Accounts.LedgerAccountType.POSITION)
+      // not actually sure what happense here
+      await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, messageKey: payeeAccount.participantCurrencyId.toString(), topicNameOverride, hubName: Config.HUB_NAME })
+      histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId })
+      
+      return true
+    }
+    case TransferEventAction.ABORT: {
+      // abort pending transfer
+      Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, `positionTopic4--${actionLetter}14`))
+      let fspiopError
+      try { // handle only valid errorCodes provided by the payee
+        fspiopError = ErrorHandler.Factory.createFSPIOPErrorFromErrorInformation(payload.errorInformation)
+      } catch (err) {
+        Logger.isErrorEnabled && Logger.error(`${Util.breadcrumb(location)}::${err.message}`)
+        fspiopError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'API specification undefined errorCode')
+        await TransferService.handlePayeeResponse(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
+        const eventDetail = { functionality: TransferEventType.POSITION, action }
+        // Key position abort with payer account id
+        const payerAccount = await Participant.getAccountByNameAndCurrency(transfer.payerFsp, transfer.currency, Enum.Accounts.LedgerAccountType.POSITION)
+        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING), eventDetail, messageKey: payerAccount.participantCurrencyId.toString(), hubName: Config.HUB_NAME })
+        rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'processFulfilMessage' })
+      }
+      await TransferService.handlePayeeResponse(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
+
+      // TODO: removed a bunch of fx related stuff here, hopefully that won't break everything
+    }
+    default: {
+      throw new Error(`Not implemented: Unhandled TransferEventAction: ${TransferEventAction}`)
+    }
+  }
+}
+
 const processFulfilMessage = async (message, functionality, span) => {
-  console.log("LD: fulfil here")
   const location = { module: 'FulfilHandler', method: '', path: '' }
   const histTimerEnd = Metrics.getHistogram(
     'transfer_fulfil',
@@ -176,7 +276,9 @@ const processFulfilMessage = async (message, functionality, span) => {
 
   Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, { path: 'getById' }))
 
+  // LD transfer might not exist, we don't have time to read it from the database
   const transfer = await TransferService.getById(transferId)
+  console.log('LD fulfil handler, transfer is', transfer)
   const transferStateEnum = transfer?.transferStateEnumeration
 
   // List of valid actions for which source & destination headers are checked
