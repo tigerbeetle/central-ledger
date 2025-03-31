@@ -84,7 +84,7 @@ class Ledger {
     const transferId = transferList[0].transferId
     const pendingId = Helper.fromMojaloopId(transferId)
 
-    console.log('buildPostedTransferBatch - pendingId', id)
+    console.log('buildPostedTransferBatch - pendingId', pendingId)
 
     return [
       {

@@ -161,7 +161,7 @@ const positions = async (error, messages) => {
       case Enum.Events.Event.Action.PREPARE:
       case Enum.Events.Event.Action.BULK_PREPARE: {
         Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'prepare' }))
-        // console.log("LD  - handling position-prepare here")
+        console.log("LD  - handling position-prepare here")
 
         // TODO: ship this straight to TigerBeetle - if it fails, then check:
         // 1. transferId already exists (therefore duplicate check triggered)
