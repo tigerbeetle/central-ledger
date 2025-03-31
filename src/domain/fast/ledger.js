@@ -1,4 +1,4 @@
-const { createClient, id, AccountFlags, CreateAccountError } = require('tigerbeetle-node')
+const { createClient, id, AccountFlags, CreateAccountError, CreateTransferError } = require('tigerbeetle-node')
 const Database = require('better-sqlite3')
 const MetadataStore = require('./MetadataStore')
 const assert = require('assert')
@@ -25,6 +25,9 @@ class Ledger {
 
   /**
    * Prepare side - take a list of Mojaloop Pending Transfers and convert them to TigerBeetle Transfers
+   * 
+   * TODO: ideally we could abstract over the transferlist here and not pass the transferList directly through
+   * or possibly introduce a mapping layer 
    */
   async buildPendingTransferBatch(transferList) {
     assert(transferList.length === 1, 'buildPendingTransferBatch currently only handles 1 tx at a time')
@@ -40,8 +43,7 @@ class Ledger {
 
     // TODO: verify that this is accurate, and shouldn't be replaced with BigInt
     // MLNumber is based on BigNumber, which is a 3rd party dependency
-    const amountMLNumber = new MLNumber(amountStr)
-    const amount = BigInt(amountMLNumber.toFixed())
+    const amount = (new MLNumber(amountStr)).toBigInt()
 
     const clearingAccountIdPayer = await this._metadataStore.getAccountId(
       AccountType.Clearing, payerFsp, currency
@@ -141,7 +143,8 @@ class Ledger {
   async recordCollateralDeposit(fspId, amount, currency) {
     assert(amount > 0, 'Expected amount to be greater than 0')
 
-    // not hot path, we can saftely store this id somewhere
+    // TODO(LD): need to make sure this operation is idempotent - Admin API exposes
+    // a transferId for us we can use here
     const transferId = id();
 
     const debitAccountId = await this._metadataStore.getAccountId(AccountType.Collateral, fspId, currency)
@@ -159,7 +162,7 @@ class Ledger {
       user_data_32: 0,
       timeout: 0,
       ledger: 1,
-      code: 0,
+      code: 1,
       flags: 0,
       timestamp: 0n,
     }]
@@ -202,7 +205,7 @@ class Ledger {
       user_data_32: 0,
       timeout: 0,
       ledger: 1,
-      code: 0,
+      code: 1,
       flags: 0,
       timestamp: 0n,
     }]

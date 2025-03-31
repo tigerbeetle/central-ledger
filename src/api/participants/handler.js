@@ -238,6 +238,7 @@ const getEndpoint = async function (request) {
 
 const addLimitAndInitialPosition = async function (request, h) {
   try {
+    // LD - replaced with TigerBeetle here
     // await ParticipantService.addLimitAndInitialPosition(request.params.name, request.payload)
     await FastAdmin.addLimitAndInitialPosition(request.params.name, request.payload)
     return h.response().code(201)
@@ -312,6 +313,7 @@ const adjustLimits = async function (request, h) {
 
 const getPositions = async function (request) {
   try {
+    // TODO(LD): shim with TigerBeetle
     return await ParticipantService.getPositions(request.params.name, request.query)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetPositions' })
@@ -320,6 +322,7 @@ const getPositions = async function (request) {
 
 const getAccounts = async function (request) {
   try {
+    // TODO(LD): shim with TigerBeetle - need more design work in thew adaptation layer first
     return await ParticipantService.getAccounts(request.params.name, request.query)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetAccounts' })
@@ -345,8 +348,12 @@ const updateAccount = async function (request, h) {
 
 const recordFunds = async function (request, h) {
   try {
+    // TODO(LD): not sure what we need these enums for
     const enums = await Enums.getEnums('all')
-    await ParticipantService.recordFundsInOut(request.payload, request.params, enums)
+
+    // await ParticipantService.recordFundsInOut(request.payload, request.params, enums)
+    // LD: Replaced with TigerBeetle here
+    await FastAdmin.recordFundsInOut(request.payload, request.params, enums)
     return h.response().code(202)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })

@@ -1258,6 +1258,8 @@ const updatePrepareReservedForwarded = async function (transferId) {
 }
 
 const reconciliationTransferPrepare = async function (payload, transactionTimestamp, enums, trx = null) {
+  console.log('LD reconciliationTransferPrepare',  payload.amount.amount)
+
   try {
     const knex = await Db.getKnex()
 
