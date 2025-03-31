@@ -75,13 +75,13 @@ const calculatePreparePositionsBatch = async (transferList) => {
 
   // TODO: implement this with TigerBeetle
 
-  const transfers = ledger.buildPendingTransferBatch(transferList)
+  const transfers = await ledger.buildPendingTransferBatch(transferList)
+  await ledger.enqueueTransfer(transfers)
 
-  const result = await PositionFacade.prepareChangeParticipantPositionTransaction(transferList)
-
-  console.log('calculatePreparePositionsBatch result is', JSON.stringify(result))
+  // const result = await PositionFacade.prepareChangeParticipantPositionTransaction(transferList)
+  // console.log('calculatePreparePositionsBatch result is', JSON.stringify(result))
   
-  return result
+  // return result
 }
 
 module.exports = {

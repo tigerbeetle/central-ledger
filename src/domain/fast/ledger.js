@@ -1,4 +1,4 @@
-const { createClient, id, AccountFlags, CreateAccountError, CreateTransferError } = require('tigerbeetle-node')
+const { createClient, id, AccountFlags, CreateAccountError, CreateTransferError, TransferFlags } = require('tigerbeetle-node')
 const Database = require('better-sqlite3')
 const MetadataStore = require('./MetadataStore')
 const assert = require('assert')
@@ -6,6 +6,11 @@ const { MLNumber } = require('@mojaloop/ml-number/src/mlnumber')
 const Helper = require('./helper')
 const Hydrator = require('./hydrator')
 const AccountType = require('./AccountType')
+const TransferBatcher = require('./transfer-batcher')
+
+// TODO: expose these to config options
+const BATCH_SIZE = 250
+const BATCH_INTERVAL_MS = 2
 
 
 /**
@@ -16,6 +21,7 @@ class Ledger {
   constructor(tbClient, metadataStore) {
     this._tbClient = tbClient
     this._metadataStore = metadataStore
+    this._transferBatcher = new TransferBatcher(this._tbClient, BATCH_SIZE, BATCH_INTERVAL_MS)
   }
 
   /**
@@ -48,7 +54,7 @@ class Ledger {
     )
 
     const transfer = {
-      id: transferId,
+      id: Helper.fromMojaloopId(transferId),
       debit_account_id: clearingAccountIdPayer,
       credit_account_id: clearingAccountIdPayee,
       amount,
@@ -62,7 +68,7 @@ class Ledger {
       flags: TransferFlags.pending,
       timestamp: 0n,
     }
-    return transfer
+    return [transfer]
   }
 
 
@@ -73,12 +79,10 @@ class Ledger {
 
   }
 
-
-
-  enqueueTransferBatch(transferBatch) {
+  async enqueueTransfer(transfer) {
     // send to the batch processor for processing
+    await this._transferBatcher.enqueueTransfer(transfer)
   }
-
 
   async onboardDfsp(fspId, currency) {
     console.log('Ledger.onboardDfsp with fspId:', fspId, 'currency:', currency)
@@ -216,7 +220,6 @@ class Ledger {
   async getAccountsForFspId(fspId) {
     const accountMeta = await this._metadataStore.getAccountsForFspId(fspId)
     assert(accountMeta.length > 0, `No accounts found for fspId: ${fspId}`)
-    console.log('accountMeta is', accountMeta)
 
     const accounts = await this._tbClient.lookupAccounts(
       accountMeta.map(metadata => metadata.tigerBeetleId)

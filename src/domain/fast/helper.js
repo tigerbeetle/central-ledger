@@ -16,6 +16,15 @@ const accountWithIdAndFlags = (id, flags) => {
   }
 }
 
+function fromMojaloopId(mojaloopId) {
+  // TODO: assert that this actually is a uuid
+
+  const hex = mojaloopId.replace(/-/g, '');
+  return BigInt(`0x${hex}`);
+}
+
+
 module.exports = {
-  accountWithIdAndFlags
+  accountWithIdAndFlags,
+  fromMojaloopId
 }
