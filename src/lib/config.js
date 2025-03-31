@@ -1,5 +1,6 @@
 // const RC = require('parse-strings-in-object')(require('rc')('CLEDG', require('../../config/default.json')))
-const RC = require('parse-strings-in-object')(require('rc')('CLEDG', require('../../config/default.local.json')))
+const PATH_TO_CONFIG_FILE = process.env.PATH_TO_CONFIG_FILE || '../../config/default.local.json'
+const RC = require('rc')('MLAPI', require(PATH_TO_CONFIG_FILE))
 
 module.exports = {
   HOSTNAME: RC.HOSTNAME.replace(/\/$/, ''),

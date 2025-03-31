@@ -1,6 +1,6 @@
 const { createClient, id, AccountFlags, CreateAccountError, CreateTransferError, TransferFlags, amount_max } = require('tigerbeetle-node')
 const Database = require('better-sqlite3')
-const MetadataStore = require('./MetadataStore')
+const CachedMetadataStore = require('./CachedMetadataStore')
 const assert = require('assert')
 const { MLNumber } = require('@mojaloop/ml-number/src/mlnumber')
 const Helper = require('./helper')
@@ -9,9 +9,8 @@ const AccountType = require('./AccountType')
 const TransferBatcher = require('./transfer-batcher')
 
 // TODO: expose these to config options
-const BATCH_SIZE = 1
-const BATCH_INTERVAL_MS = 2
-
+const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '250');
+const BATCH_INTERVAL_MS = parseInt(process.env.BATCH_INTERVAL_MS || '2');
 
 /**
  * @class Abstraction over TigerBeetle Ledger + Metadata Store that implements
@@ -282,7 +281,7 @@ const tbClient = createClient({
   replica_addresses: process.env.TB_ADDRESS && process.env.TB_ADDRESS.split(',') || ['3000'],
 });
 const sqliteClient = new Database('metdata.db');
-const metadataStore = new MetadataStore(sqliteClient)
+const metadataStore = new CachedMetadataStore(sqliteClient)
 
 const ledger = new Ledger(tbClient, metadataStore)
 
