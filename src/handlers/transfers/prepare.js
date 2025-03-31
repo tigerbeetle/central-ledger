@@ -527,17 +527,18 @@ const prepare = async (error, messages) => {
       proxyObligation
     )
 
-    await savePreparedRequest({
-      validationPassed,
-      reasons,
-      payload,
-      isFx,
-      functionality,
-      params,
-      location,
-      determiningTransferCheckResult,
-      proxyObligation
-    })
+    // skip saving the transfer here
+    // await savePreparedRequest({
+    //   validationPassed,
+    //   reasons,
+    //   payload,
+    //   isFx,
+    //   functionality,
+    //   params,
+    //   location,
+    //   determiningTransferCheckResult,
+    //   proxyObligation
+    // })
 
     if (!validationPassed) {
       logger.warn(Util.breadcrumb(location, { path: 'validationFailed' }))
