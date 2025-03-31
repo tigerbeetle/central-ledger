@@ -30,9 +30,7 @@
 
 exports.up = function (knex) {
   return knex.schema.table('transfer', (t) => {
-    // disabled since we did this manually already
-
-    // t.dropForeign(['transfer_transferid_foreign'])
+    t.dropForeign(['transfer_transferid_foreign'])
   })
 }
 
