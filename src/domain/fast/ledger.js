@@ -50,8 +50,11 @@ class Ledger {
       AccountType.Clearing, payeeFsp, currency
     )
 
+    const id = Helper.fromMojaloopId(transferId)
+    console.log('buildPendingTransferBatch - creating pending transfer', id)
+
     const transfer = {
-      id: Helper.fromMojaloopId(transferId),
+      id,
       debit_account_id: clearingAccountIdPayer,
       credit_account_id: clearingAccountIdPayee,
       amount,
@@ -80,6 +83,8 @@ class Ledger {
     // const amountStr = transferList[0].value.content.payload.amount.amount
     const transferId = transferList[0].transferId
     const pendingId = Helper.fromMojaloopId(transferId)
+
+    console.log('buildPostedTransferBatch - pendingId', id)
 
     return [
       {
