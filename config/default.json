@@ -102,7 +102,7 @@
         "BULK_PREPARE": null,
         "COMMIT": null,
         "BULK_COMMIT": null,
-        "RESERVE": "topic-transfer-position-batch",
+        "RESERVE": null,
         "FX_RESERVE": "topic-transfer-position-batch",
         "TIMEOUT_RESERVED": null,
         "FX_TIMEOUT_RESERVED": "topic-transfer-position-batch",
