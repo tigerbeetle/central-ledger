@@ -3,10 +3,9 @@ const ledger = require('./ledger')
 const assert = require('assert')
 
 const changeParticipantPosition = (participantCurrencyId, isReversal, amount, transferStateChange) => {
-  console.log("LD shim changeParticipantPosition")
- 
+  // console.log("LD shim changeParticipantPosition") 
   const result = PositionFacade.changeParticipantPositionTransaction(participantCurrencyId, isReversal, amount, transferStateChange)
-  
+
   return result
 }
 
@@ -63,19 +62,12 @@ const changeParticipantPosition = (participantCurrencyId, isReversal, amount, tr
 }
  */
 const calculatePreparePositionsBatch = async (transferList) => {
-  console.log("LD shim calculatePreparePositionsBatch")
+  // console.log("LD shim calculatePreparePositionsBatch")
   assert(Array.isArray(transferList), 'expected transferList to be an array')
   assert(transferList.length === 1, 'calculatePreparePositionsBatch currently only handles 1 tx at a time')
 
-  // TODO: implement this with TigerBeetle
-
   const transfers = await ledger.buildPendingTransferBatch(transferList)
   await Promise.all(transfers.map(transfer => ledger.enqueueTransfer(transfer)))
-
-  // const result = await PositionFacade.prepareChangeParticipantPositionTransaction(transferList)
-  // console.log('calculatePreparePositionsBatch result is', JSON.stringify(result))
-  
-  // return result
 }
 
 module.exports = {
