@@ -9,7 +9,7 @@ const AccountType = require('./AccountType')
 const TransferBatcher = require('./transfer-batcher')
 
 // TODO: expose these to config options
-const BATCH_SIZE = 250
+const BATCH_SIZE = 1
 const BATCH_INTERVAL_MS = 2
 
 
@@ -64,7 +64,7 @@ class Ledger {
       user_data_32: 0,
       timeout: 0,
       ledger: 1,
-      code: 0,
+      code: 1,
       flags: TransferFlags.pending,
       timestamp: 0n,
     }
@@ -81,7 +81,7 @@ class Ledger {
 
   async enqueueTransfer(transfer) {
     // send to the batch processor for processing
-    await this._transferBatcher.enqueueTransfer(transfer)
+    return this._transferBatcher.enqueueTransfer(transfer)
   }
 
   async onboardDfsp(fspId, currency) {

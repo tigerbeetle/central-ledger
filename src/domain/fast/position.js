@@ -76,7 +76,7 @@ const calculatePreparePositionsBatch = async (transferList) => {
   // TODO: implement this with TigerBeetle
 
   const transfers = await ledger.buildPendingTransferBatch(transferList)
-  await ledger.enqueueTransfer(transfers)
+  await Promise.all(transfers.map(transfer => ledger.enqueueTransfer(transfer)))
 
   // const result = await PositionFacade.prepareChangeParticipantPositionTransaction(transferList)
   // console.log('calculatePreparePositionsBatch result is', JSON.stringify(result))

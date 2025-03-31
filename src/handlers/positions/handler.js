@@ -169,33 +169,37 @@ const positions = async (error, messages) => {
         // 2. debits_exceeds_credits, (therefore positions out)
 
         // I think this is calling the database here!
-        const { preparedMessagesList, limitAlarms } = await PositionService.calculatePreparePositionsBatch(decodeMessages(prepareBatch))
-        for (const limit of limitAlarms) {
-          // Publish alarm message to KafkaTopic for the Hub to consume as it is the Hub
-          // rather than the switch to manage this (the topic is an participantEndpoint)
-          Logger.isInfoEnabled && Logger.info(`Limit alarm should be sent with ${limit}`)
-        }
-        if (Array.isArray(preparedMessagesList) && preparedMessagesList.length > 0) {
-          const prepareMessage = preparedMessagesList[0]
-          const { transferState, fspiopError } = prepareMessage
-          if (transferState.transferStateId === Enum.Transfers.TransferState.RESERVED) {
-            Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payer--${actionLetter}1`))
+        await PositionService.calculatePreparePositionsBatch(decodeMessages(prepareBatch))
+        // If the above failed, then it would have thrown an error
+        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
+
+
+        // for (const limit of limitAlarms) {
+        //   // Publish alarm message to KafkaTopic for the Hub to consume as it is the Hub
+        //   // rather than the switch to manage this (the topic is an participantEndpoint)
+        //   Logger.isInfoEnabled && Logger.info(`Limit alarm should be sent with ${limit}`)
+        // }
+        // if (Array.isArray(preparedMessagesList) && preparedMessagesList.length > 0) {
+        //   const prepareMessage = preparedMessagesList[0]
+        //   const { transferState, fspiopError } = prepareMessage
+        //   if (transferState.transferStateId === Enum.Transfers.TransferState.RESERVED) {
+        //     Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payer--${actionLetter}1`))
 
           
-            // I think this produces the notification?
-            console.log('LD calling Kakfa.proceed with eventDetail:', eventDetail)
-            await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
-            histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
-            return true
-          } else {
-            Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payerNotifyInsufficientLiquidity--${actionLetter}2`))
-            const responseFspiopError = fspiopError || ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR)
-            const fspiopApiError = responseFspiopError.toApiErrorObject(Config.ERROR_HANDLING)
-            await TransferService.logTransferError(transferId, fspiopApiError.errorInformation.errorCode, fspiopApiError.errorInformation.errorDescription)
-            await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, fspiopError: fspiopApiError, eventDetail, fromSwitch, hubName: Config.HUB_NAME })
-            rethrow.rethrowAndCountFspiopError(responseFspiopError, { operation: 'positionsHandler' })
-          }
-        }
+        //     // I think this produces the notification?
+        //     console.log('LD calling Kakfa.proceed with eventDetail:', eventDetail)
+        //     await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
+        //     histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
+        //     return true
+        //   } else {
+        //     Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payerNotifyInsufficientLiquidity--${actionLetter}2`))
+        //     const responseFspiopError = fspiopError || ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR)
+        //     const fspiopApiError = responseFspiopError.toApiErrorObject(Config.ERROR_HANDLING)
+        //     await TransferService.logTransferError(transferId, fspiopApiError.errorInformation.errorCode, fspiopApiError.errorInformation.errorDescription)
+        //     await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, fspiopError: fspiopApiError, eventDetail, fromSwitch, hubName: Config.HUB_NAME })
+        //     rethrow.rethrowAndCountFspiopError(responseFspiopError, { operation: 'positionsHandler' })
+        //   }
+        // }
         break;
       }
       case Enum.Events.Event.Action.COMMIT:
@@ -307,7 +311,7 @@ const positions = async (error, messages) => {
       }
     }
   } catch (err) {
-    console.log("LD SOMETHING BROKEN HERE LEWIS!!")
+    console.log("LD SOMETHING BROKEN HERE LEWIS!!", err)
     Logger.isErrorEnabled && Logger.error(`${Utility.breadcrumb(location)}::${err.message}--0`)
     histTimerEnd({ success: false, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
     const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err)
@@ -342,6 +346,7 @@ const registerPositionHandler = async () => {
     await Consumer.createHandler(positionHandler.topicName, positionHandler.config, positionHandler.command)
     return true
   } catch (err) {
+    console.log('LD registerPositionHandler error')
     rethrow.rethrowAndCountFspiopError(err, { operation: 'registerPositionHandler' })
   }
 }
