@@ -1,7 +1,4 @@
-const util = require('util')
 const PositionFacade = require('../../models/position/facade')
-
-
 const ledger = require('./ledger')
 const assert = require('assert')
 
@@ -10,14 +7,11 @@ const changeParticipantPosition = (participantCurrencyId, isReversal, amount, tr
  
   const result = PositionFacade.changeParticipantPositionTransaction(participantCurrencyId, isReversal, amount, transferStateChange)
   
- 
   return result
 }
 
 
 /**
- 
-
   transferList = [
   {
     value: {

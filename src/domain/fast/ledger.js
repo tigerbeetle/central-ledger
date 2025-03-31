@@ -1,4 +1,4 @@
-const { createClient, id, AccountFlags, CreateAccountError, CreateTransferError, TransferFlags } = require('tigerbeetle-node')
+const { createClient, id, AccountFlags, CreateAccountError, CreateTransferError, TransferFlags, amount_max } = require('tigerbeetle-node')
 const Database = require('better-sqlite3')
 const MetadataStore = require('./MetadataStore')
 const assert = require('assert')
@@ -32,10 +32,6 @@ class Ledger {
    */
   async buildPendingTransferBatch(transferList) {
     assert(transferList.length === 1, 'buildPendingTransferBatch currently only handles 1 tx at a time')
-
-    // get all of the clearing account ids we need
-    console.log('transferList is', JSON.stringify(transferList[0]))
-
     const payerFsp = transferList[0].value.content.payload.payerFsp
     const payeeFsp = transferList[0].value.content.payload.payeeFsp
     const currency = transferList[0].value.content.payload.amount.currency
@@ -75,8 +71,54 @@ class Ledger {
   /**
    * Commit side - take a list of Mojaloop Fulfilled Transfers and convert them to TigerBeetle Transfers
    */
-  buildPostedTransferBatch(transferList) {
+  async buildPostedTransferBatch(transferList) {
+    assert(transferList.length === 1, 'buildPendingTransferBatch currently only handles 1 tx at a time')
+    // const payerFsp = transferList[0].value.content.payload.payerFsp
+    // const payeeFsp = transferList[0].value.content.payload.payeeFsp
+    // const currency = transferList[0].value.content.payload.amount.currency
+    // const amountStr = transferList[0].value.content.payload.amount.amount
+    const transferId = transferList[0].transferId
+    const pendingId = Helper.fromMojaloopId(transferId)
 
+    return [
+      {
+        id: id(),
+        debit_account_id: 0n,
+        credit_account_id: 0n,
+        amount: amount_max,
+        pending_id: pendingId,
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        timeout: 0,
+        ledger: 0,
+        code: 0,
+        // TODO: add back linked flag, but kinda annoying since the way we are batching
+        // doesn't ensure that both these transfers end up in the same batch
+        flags: TransferFlags.post_pending_transfer,
+        timestamp: 0n,
+      },
+
+      // TODO(LD): design issue here - at Fulfil time, we don't easily have access to the _amount_
+      // or other details of the transfer, only whether or not it was fulfilled or rejected.
+      // That means that we can't easily create new Settlement Transfers on the fulfil leg
+
+      // {
+      //   id: settlementMultilateralTransferId,
+      //   debit_account_id: settlementMultilateralAccountIdPayer,
+      //   credit_account_id: settlementMultilateralAccountIdPayee,
+      //   amount: BigInt(amount),
+      //   pending_id: 0n,
+      //   user_data_128: 0n,
+      //   user_data_64: 0n,
+      //   user_data_32: 0,
+      //   timeout: 0,
+      //   ledger: 1,
+      //   code: 2,
+      //   flags: 0,
+      //   timestamp: 0n,
+      // }
+    ]
   }
 
   async enqueueTransfer(transfer) {

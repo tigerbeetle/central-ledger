@@ -49,6 +49,7 @@ const { logger } = require('../../shared/logger')
 const { ERROR_MESSAGES } = require('../../shared/constants')
 const Config = require('../../lib/config')
 const TransferService = require('../../domain/transfer')
+const FastTransferService = require('../../domain/fast/transfer')
 const FxService = require('../../domain/fx')
 const FxTransferModel = require('../../models/fxTransfer')
 const TransferObjectTransform = require('../../domain/transfer/transform')
@@ -115,7 +116,7 @@ const fulfil = async (error, messages) => {
     if (fxActions.includes(action)) {
       return await processFxFulfilMessage(message, functionality, span)
     } else {
-      return await processFulfilMessage(message, functionality, span)
+      return await processFulfilMessageFast(message, functionality, span)
     }
   } catch (err) {
     logger.error(`error in FulfilHandler: ${err?.message}`, { err })
@@ -147,6 +148,8 @@ const processFulfilMessageFast = async (message, functionality, span) => {
   const transferId = message.value.content.uriParams.id
   const kafkaTopic = message.topic
   Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, { method: `fulfil:${action}` }))
+  const params = { message, kafkaTopic, decodedPayload: payload, span, consumer: Consumer, producer: Producer }
+
 
   const actionLetter = (() => {
     switch (action) {
@@ -183,6 +186,9 @@ const processFulfilMessageFast = async (message, functionality, span) => {
     return true
   }
 
+  // TODO: need to validate that the fulfilment is valid, and transfer hasn't changed
+
+
   // no need for duplicate check
   // if the post_pending_transfer fails because pending_id not found, then we know that the pending
   // is in the wrong state already
@@ -196,12 +202,15 @@ const processFulfilMessageFast = async (message, functionality, span) => {
       let topicNameOverride = resolveTopicNameOverride(action)
       
       Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, `positionTopic2--${actionLetter}12`))
-      await TransferService.handlePayeeResponse(transferId, payload, action)
+
+      await FastTransferService.handlePayeeResponse(transferId, payload, action)
+
       const eventDetail = { functionality: TransferEventType.POSITION, action }
       // Key position fulfil message with payee account id
-      const payeeAccount = await Participant.getAccountByNameAndCurrency(transfer.payeeFsp, transfer.currency, Enum.Accounts.LedgerAccountType.POSITION)
-      // not actually sure what happense here
-      await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, messageKey: payeeAccount.participantCurrencyId.toString(), topicNameOverride, hubName: Config.HUB_NAME })
+      // const payeeAccount = await Participant.getAccountByNameAndCurrency(transfer.payeeFsp, transfer.currency, Enum.Accounts.LedgerAccountType.POSITION)
+
+      // not actually sure what happens here
+      await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, topicNameOverride, hubName: Config.HUB_NAME })
       histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId })
       
       return true
@@ -215,14 +224,14 @@ const processFulfilMessageFast = async (message, functionality, span) => {
       } catch (err) {
         Logger.isErrorEnabled && Logger.error(`${Util.breadcrumb(location)}::${err.message}`)
         fspiopError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'API specification undefined errorCode')
-        await TransferService.handlePayeeResponse(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
+        await FastTransferService.handlePayeeResponse(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
         const eventDetail = { functionality: TransferEventType.POSITION, action }
         // Key position abort with payer account id
         const payerAccount = await Participant.getAccountByNameAndCurrency(transfer.payerFsp, transfer.currency, Enum.Accounts.LedgerAccountType.POSITION)
         await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING), eventDetail, messageKey: payerAccount.participantCurrencyId.toString(), hubName: Config.HUB_NAME })
         rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'processFulfilMessage' })
       }
-      await TransferService.handlePayeeResponse(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
+      await TransferService.FastTransferService(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
 
       // TODO: removed a bunch of fx related stuff here, hopefully that won't break everything
     }
