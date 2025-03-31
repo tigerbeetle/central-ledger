@@ -39,9 +39,7 @@ class Ledger {
 
     // TODO: verify that this is accurate, and shouldn't be replaced with BigInt
     // MLNumber is based on BigNumber, which is a 3rd party dependency
-    // const amount = (new MLNumber(amountStr)).toBigInt()
     const amount = BigInt((new MLNumber(amountStr)).toNumber())
-
 
     const clearingAccountIdPayer = await this._metadataStore.getAccountId(
       AccountType.Clearing, payerFsp, currency
@@ -51,8 +49,6 @@ class Ledger {
     )
 
     const id = Helper.fromMojaloopId(transferId)
-    console.log('buildPendingTransferBatch - creating pending transfer', id)
-
     const transfer = {
       id,
       debit_account_id: clearingAccountIdPayer,
@@ -77,14 +73,8 @@ class Ledger {
    */
   async buildPostedTransferBatch(transferList) {
     assert(transferList.length === 1, 'buildPendingTransferBatch currently only handles 1 tx at a time')
-    // const payerFsp = transferList[0].value.content.payload.payerFsp
-    // const payeeFsp = transferList[0].value.content.payload.payeeFsp
-    // const currency = transferList[0].value.content.payload.amount.currency
-    // const amountStr = transferList[0].value.content.payload.amount.amount
     const transferId = transferList[0].transferId
     const pendingId = Helper.fromMojaloopId(transferId)
-
-    console.log('buildPostedTransferBatch - pendingId', pendingId)
 
     return [
       {
