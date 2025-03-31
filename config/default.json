@@ -97,10 +97,10 @@
   "KAFKA": {
     "EVENT_TYPE_ACTION_TOPIC_MAP" : {
       "POSITION":{
-        "PREPARE": "topic-transfer-position-batch",
+        "PREPARE": null,
         "FX_PREPARE": "topic-transfer-position-batch",
         "BULK_PREPARE": null,
-        "COMMIT": "topic-transfer-position-batch",
+        "COMMIT": null,
         "BULK_COMMIT": null,
         "RESERVE": "topic-transfer-position-batch",
         "FX_RESERVE": "topic-transfer-position-batch",
