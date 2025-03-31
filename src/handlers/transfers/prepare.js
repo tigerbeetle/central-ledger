@@ -403,12 +403,12 @@ const sendPositionPrepareMessage = async ({
     action
   }
 
-  const { messageKey, cyrilResult } = await definePositionParticipant({
-    payload: proxyObligation.payloadClone,
-    isFx,
-    determiningTransferCheckResult,
-    proxyObligation
-  })
+  // const { messageKey, cyrilResult } = await definePositionParticipant({
+  //   payload: proxyObligation.payloadClone,
+  //   isFx,
+  //   determiningTransferCheckResult,
+  //   proxyObligation
+  // })
 
   params.message.value.content.context = {
     ...params.message.value.content.context,
@@ -430,7 +430,7 @@ const sendPositionPrepareMessage = async ({
   await Kafka.proceed(Config.KAFKA_CONFIG, params, {
     consumerCommit,
     eventDetail,
-    messageKey,
+    // messageKey,
     topicNameOverride,
     hubName: Config.HUB_NAME
   })
@@ -494,38 +494,38 @@ const prepare = async (error, messages) => {
       producer: Producer
     }
 
-    if (proxyEnabled && isForwarded) {
-      const isOk = await forwardPrepare({ isFx, params, ID })
-      logger.info('forwardPrepare message is processed', { isOk, isFx, ID })
-      return isOk
-    }
+    // if (proxyEnabled && isForwarded) {
+    //   const isOk = await forwardPrepare({ isFx, params, ID })
+    //   logger.info('forwardPrepare message is processed', { isOk, isFx, ID })
+    //   return isOk
+    // }
 
-    const proxyObligation = await calculateProxyObligation({
-      payload, isFx, params, functionality, action
-    })
+    // const proxyObligation = await calculateProxyObligation({
+    //   payload, isFx, params, functionality, action
+    // })
 
     // LD: I think this is the duplicate check here?
     // will need to bypass, but also pick up the error from TB regarding duplication
     
-    const duplication = await checkDuplication({ payload, isFx, ID, location })
-    if (duplication.hasDuplicateId) {
-      const success = await processDuplication({
-        duplication, isFx, ID, functionality, action, actionLetter, params, location
-      })
-      histTimerEnd({ success, fspId })
-      return success
-    }
+    // const duplication = await checkDuplication({ payload, isFx, ID, location })
+    // if (duplication.hasDuplicateId) {
+    //   const success = await processDuplication({
+    //     duplication, isFx, ID, functionality, action, actionLetter, params, location
+    //   })
+    //   histTimerEnd({ success, fspId })
+    //   return success
+    // }
 
-    const determiningTransferCheckResult = await createRemittanceEntity(isFx)
-      .checkIfDeterminingTransferExists(proxyObligation.payloadClone, proxyObligation)
+    // const determiningTransferCheckResult = await createRemittanceEntity(isFx)
+    //   .checkIfDeterminingTransferExists(proxyObligation.payloadClone, proxyObligation)
 
-    const { validationPassed, reasons } = await Validator.validatePrepare(
-      payload,
-      headers,
-      isFx,
-      determiningTransferCheckResult,
-      proxyObligation
-    )
+    // const { validationPassed, reasons } = await Validator.validatePrepare(
+    //   payload,
+    //   headers,
+    //   isFx,
+    //   determiningTransferCheckResult,
+    //   proxyObligation
+    // )
 
     // skip saving the transfer here
     // await savePreparedRequest({
