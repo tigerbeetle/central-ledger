@@ -39,7 +39,9 @@ class Ledger {
 
     // TODO: verify that this is accurate, and shouldn't be replaced with BigInt
     // MLNumber is based on BigNumber, which is a 3rd party dependency
-    const amount = (new MLNumber(amountStr)).toBigInt()
+    // const amount = (new MLNumber(amountStr)).toBigInt()
+    const amount = BigInt((new MLNumber(amountStr)).toNumber())
+
 
     const clearingAccountIdPayer = await this._metadataStore.getAccountId(
       AccountType.Clearing, payerFsp, currency

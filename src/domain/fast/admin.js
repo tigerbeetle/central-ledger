@@ -44,7 +44,9 @@ const recordFundsInOut = async (payload, params, enums) => {
     assert(id)
     assert(transferId)
     const amountStr = payload.amount.amount
-    const amount = (new MLNumber(amountStr)).toBigInt()
+    
+    // TODO: add BigInt function to MLNumber
+    const amount = BigInt((new MLNumber(amountStr)).toNumber())
     assert(amount)
 
     const currency = payload.amount.currency
