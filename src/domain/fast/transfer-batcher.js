@@ -56,6 +56,8 @@ class TransferBatcher {
       // If batch is full, process immediately
       if (this._transferQueue.length >= this._batchSize) {
         console.log('transfer Queue ready to ship!')
+
+        // TODO: determine if we should be awaiting this promise here!
         this.flushQueue();
       }
     });
@@ -75,14 +77,13 @@ class TransferBatcher {
       return acc
     }, {})
 
-    // parallel resolve promises
-    await Promise.all(batch.map(async (item, idx) => {
+    batch.map((item, idx) => {
       if (errorIndices[idx]) {
         item.reject(CreateTransferError[errorIndices[idx]]);
       } else {
         item.resolve();
       }
-    }));
+    })
   }
 }
 

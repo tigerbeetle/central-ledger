@@ -141,6 +141,25 @@ const fastPositions = async (error, messages) => {
     throw new Error(`Kafka Error: ${error}`)
   }
 
+  const byAction = messages.reduce((acc, message) => {
+    const action = message.value.metadata.event.action
+    if (!acc[action]) {
+      acc[action] = [message]
+      return acc
+    }
+
+    const bucketed = acc[action]
+    bucketed.push(message)
+    acc[action] = bucketed
+
+    return acc
+  }, {})
+
+  console.log('LD: fastPositions() bucketed messages byAction:')
+  Object.keys(byAction).forEach(key => {
+    console.log(`  - ${key}: ${byAction[key].length} messages`)
+  })
+
   // Not sure if there's an easy way to pull them off and put them back on the batch together
   await Promise.all(messages.map(message => _handleFastPositionMessage(message)))
 }

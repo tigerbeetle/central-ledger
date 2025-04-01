@@ -59,7 +59,7 @@ class CachedMetadataStore extends MetadataStore {
       return value;
     }
 
-    console.log('CachedMetadataStore.getAccountId - cache miss!')
+    // console.log('CachedMetadataStore.getAccountId - cache miss!')
 
     // Not in cache - look up from parent class
     const accountId = await super.getAccountId(accountType, fspId, currency);

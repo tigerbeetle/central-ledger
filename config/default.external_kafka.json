@@ -180,7 +180,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-fulfil",
@@ -226,11 +226,11 @@
               "mode": 2,
               "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 10,
+              "recursiveTimeout": 100,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-prepare",
@@ -278,7 +278,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-fulfil",
@@ -302,7 +302,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-position",
