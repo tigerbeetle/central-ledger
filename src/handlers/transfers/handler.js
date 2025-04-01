@@ -70,6 +70,16 @@ const { rethrow } = Util
 const consumerCommit = true
 const fromSwitch = true
 
+const fastFulfil = async (error, messages) => {
+  console.log(`LD: handling position with: ${messages.length} messages`)
+  if (error) {
+    throw new Error(`Kafka Error: ${error}`)
+  }
+
+  // Not sure if there's an easy way to pull them off and put them back on the batch together
+  await Promise.all(messages.map(message => _handleFastFulfilMessage(message)))
+}
+
 const fulfil = async (error, messages) => {
   if (error) {
     rethrow.rethrowAndCountFspiopError(error, { operation: 'fulfil' })
@@ -132,7 +142,7 @@ const fulfil = async (error, messages) => {
   }
 }
 
-const processFulfilMessageFast = async (message, functionality, span) => { 
+const _handleFastFulfilMessage = async (message, functionality, span) => { 
   const location = { module: 'FulfilHandlerFast', method: '', path: '' }
   const histTimerEnd = Metrics.getHistogram(
     'transfer_fulfil',
@@ -1006,7 +1016,8 @@ const registerPrepareHandler = async () => {
 const registerFulfilHandler = async () => {
   try {
     const fulfillHandler = {
-      command: fulfil,
+      // command: fulfil,
+      command: fastFulfil,
       topicName: Kafka.transformGeneralTopicName(Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, TransferEventType.TRANSFER, TransferEventType.FULFIL),
       config: Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, TransferEventType.TRANSFER.toUpperCase(), TransferEventType.FULFIL.toUpperCase())
     }
