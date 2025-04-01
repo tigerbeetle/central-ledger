@@ -11,6 +11,7 @@ const TransferBatcher = require('./transfer-batcher')
 // TODO: expose these to config options
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '250');
 const BATCH_INTERVAL_MS = parseInt(process.env.BATCH_INTERVAL_MS || '2');
+const SKIP_TIGERBEETLE = (process.env.SKIP_TIGERBEETLE || 'false').toLowerCase() === 'true'
 
 /**
  * @class Abstraction over TigerBeetle Ledger + Metadata Store that implements
@@ -21,6 +22,9 @@ class Ledger {
     this._tbClient = tbClient
     this._metadataStore = metadataStore
     this._transferBatcher = new TransferBatcher(this._tbClient, BATCH_SIZE, BATCH_INTERVAL_MS)
+
+
+    console.log("LD: Warn - `SKIP_TIGERBEETLE` is true - skipping tigerbeetle calls")
   }
 
   /**
@@ -131,9 +135,11 @@ class Ledger {
   }
 
   async enqueueTransfer(transfer) {
-    // lol skip tigerbeetle altogether, see what happens to performance
-    // return Promise.resolve()
-    
+    if (SKIP_TIGERBEETLE) {
+      // skip tigerbeetle altogether, see what happens to performance
+      return Promise.resolve()
+    }
+
     // send to the batch processor for processing
     return this._transferBatcher.enqueueTransfer(transfer)
   }
