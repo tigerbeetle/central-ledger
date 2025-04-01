@@ -96,18 +96,18 @@
   "API_DOC_ENDPOINTS_ENABLED": true,
   "KAFKA": {
     "EVENT_TYPE_ACTION_TOPIC_MAP" : {
-      "POSITION":{
+     "POSITION":{
         "PREPARE": null,
-        "FX_PREPARE": null,
-        "BULK_PREPARE": null,
+        "FX_PREPARE": "topic-transfer-position-batch",
+        "BULK_PREPARE": "topic-transfer-position-batch",
         "COMMIT": null,
-        "BULK_COMMIT": null,
+        "BULK_COMMIT": "topic-transfer-position-batch",
         "RESERVE": null,
-        "FX_RESERVE": null,
+        "FX_RESERVE": "topic-transfer-position-batch",
         "TIMEOUT_RESERVED": null,
-        "FX_TIMEOUT_RESERVED": null,
+        "FX_TIMEOUT_RESERVED": "topic-transfer-position-batch",
         "ABORT": null,
-        "FX_ABORT": null
+        "FX_ABORT": "topic-transfer-position-batch"
       }
     },
     "TOPIC_TEMPLATES": {

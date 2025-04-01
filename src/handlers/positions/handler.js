@@ -112,12 +112,7 @@ const positions = async (error, messages) => {
     const eventType = message.value.metadata.event.type
     action = message.value.metadata.event.action
 
-
-
-    console.log('LD position handler - eventType is', eventType)
-
     assert(eventType, Enum.Events.Event.Type.POSITION, `Expected eventType to be: ${Enum.Events.Event.Type.POSITION}`)
-    console.log('LD position handler - action is', action)
 
     const transferId = payload.transferId || (message.value.content.uriParams && message.value.content.uriParams.id)
     if (!transferId) {

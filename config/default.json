@@ -99,9 +99,9 @@
       "POSITION":{
         "PREPARE": null,
         "FX_PREPARE": "topic-transfer-position-batch",
-        "BULK_PREPARE": null,
+        "BULK_PREPARE": "topic-transfer-position-batch",
         "COMMIT": null,
-        "BULK_COMMIT": null,
+        "BULK_COMMIT": "topic-transfer-position-batch",
         "RESERVE": null,
         "FX_RESERVE": "topic-transfer-position-batch",
         "TIMEOUT_RESERVED": null,

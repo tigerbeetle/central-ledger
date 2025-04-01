@@ -29,13 +29,12 @@ class Ledger {
    * TODO: ideally we could abstract over the transferlist here and not pass the transferList directly through
    * or possibly introduce a mapping layer 
    */
-  async buildPendingTransferBatch(transferList) {
-    assert(transferList.length === 1, 'buildPendingTransferBatch currently only handles 1 tx at a time')
-    const payerFsp = transferList[0].value.content.payload.payerFsp
-    const payeeFsp = transferList[0].value.content.payload.payeeFsp
-    const currency = transferList[0].value.content.payload.amount.currency
-    const amountStr = transferList[0].value.content.payload.amount.amount
-    const transferId = transferList[0].value.content.payload.transferId
+  async buildPendingTransfers(transferDto) {
+    const payerFsp = transferDto.value.content.payload.payerFsp
+    const payeeFsp = transferDto.value.content.payload.payeeFsp
+    const currency = transferDto.value.content.payload.amount.currency
+    const amountStr = transferDto.value.content.payload.amount.amount
+    const transferId = transferDto.value.content.payload.transferId
 
     // TODO: verify that this is accurate, and shouldn't be replaced with BigInt
     // MLNumber is based on BigNumber, which is a 3rd party dependency
@@ -71,9 +70,8 @@ class Ledger {
   /**
    * Commit side - take a list of Mojaloop Fulfilled Transfers and convert them to TigerBeetle Transfers
    */
-  async buildPostedTransferBatch(transferList) {
-    assert(transferList.length === 1, 'buildPendingTransferBatch currently only handles 1 tx at a time')
-    const transferId = transferList[0].transferId
+  async buildPostedTransfers(transferDto) {
+    const transferId = transferDto.transferId
     const pendingId = Helper.fromMojaloopId(transferId)
 
     return [

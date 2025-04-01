@@ -1,3 +1,5 @@
+const assert = require('assert')
+
 const accountWithIdAndFlags = (id, flags) => {
   return {
     id,
@@ -17,6 +19,7 @@ const accountWithIdAndFlags = (id, flags) => {
 }
 
 function fromMojaloopId(mojaloopId) {
+  assert(mojaloopId)
   // TODO: assert that this actually is a uuid
 
   const hex = mojaloopId.replace(/-/g, '');
