@@ -66,7 +66,7 @@ const handlePayeeResponse = async (transferId, payload, action, fspiopError) => 
   }
 
   try {
-    const transferBatch = await ledger.buildPostedTransfers({transferId})
+    const transferBatch = await ledger.buildPostedTransfers({ transferId })
     await Promise.all(transferBatch.map(transfer => ledger.enqueueTransfer(transfer)))
 
     // TODO: async save transfer metadata to metadata Database
