@@ -224,7 +224,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 500,
+              "batchSize": 1000,
               "pollFrequency": 10,
               "recursiveTimeout": 100,
               "messageCharset": "utf8",
@@ -272,7 +272,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 500,
+              "batchSize": 1000,
               "pollFrequency": 10,
               "recursiveTimeout": 10,
               "messageCharset": "utf8",
@@ -296,7 +296,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 500,
+              "batchSize": 1000,
               "pollFrequency": 10,
               "recursiveTimeout": 10,
               "messageCharset": "utf8",
@@ -469,8 +469,8 @@
               "dr_cb": true,
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
-              "batch.num.messages": 500,
-              "linger.ms": 10
+              "batch.num.messages": 8000,
+              "linger.ms": 15
             },
             "topicConf": {
               "request.required.acks": "all",

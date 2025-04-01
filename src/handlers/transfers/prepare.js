@@ -484,7 +484,7 @@ const _prepareMessage = async (message) => {
  * @returns {object} - Returns a boolean: true if successful, or throws and error if failed
  */
 const prepare = async (error, messages) => {
-  console.log(`LD: handling prepare with: ${messages.length} messages`)
+  // console.log(`LD: handling prepare with: ${messages.length} messages`)
 
   // const location = { module: 'PrepareHandler', method: '', path: '' }
 
