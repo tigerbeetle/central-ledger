@@ -230,7 +230,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 10
+              "consumeTimeout": 5
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-prepare",
@@ -278,7 +278,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 10
+              "consumeTimeout": 5
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-fulfil",
@@ -302,7 +302,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 10
+              "consumeTimeout": 5
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-position",
@@ -470,7 +470,7 @@
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
               "batch.num.messages": 500,
-              "linger.ms": 10
+              "linger.ms": 25
             },
             "topicConf": {
               "request.required.acks": "all",
@@ -493,7 +493,7 @@
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
               "batch.num.messages": 500,
-              "linger.ms": 10
+              "linger.ms": 25
             },
             "topicConf": {
               "request.required.acks": "all",
