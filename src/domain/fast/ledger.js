@@ -30,6 +30,21 @@ class Ledger {
    * or possibly introduce a mapping layer 
    */
   async buildPendingTransfers(transferDto) {
+    try {
+      assert(transferDto)
+      assert(transferDto.value)
+      assert(transferDto.value.content)
+      assert(transferDto.value.content.payload)
+      assert(transferDto.value.content.payload.transferId)
+      assert(transferDto.value.content.payload.amount)
+      assert(transferDto.value.content.payload.amount.amount)
+      assert(transferDto.value.content.payload.amount.currency)
+      assert(transferDto.value.content.payload.amount.currency)
+    } catch (err) {
+      console.log(`LD buildPendingTransfers validation failed - transferDto is: ${JSON.stringify(transferDto)}`)
+      throw err
+    }
+
     const payerFsp = transferDto.value.content.payload.payerFsp
     const payeeFsp = transferDto.value.content.payload.payeeFsp
     const currency = transferDto.value.content.payload.amount.currency

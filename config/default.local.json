@@ -224,7 +224,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 100,
               "pollFrequency": 10,
               "recursiveTimeout": 100,
               "messageCharset": "utf8",
@@ -296,7 +296,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 100,
               "pollFrequency": 10,
               "recursiveTimeout": 100,
               "messageCharset": "utf8",
@@ -468,7 +468,9 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 10000000,
+              "batch.num.messages": 100,
+              "linger.ms": 1000
             },
             "topicConf": {
               "request.required.acks": "all",

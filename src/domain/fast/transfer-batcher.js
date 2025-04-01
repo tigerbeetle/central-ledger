@@ -67,6 +67,7 @@ class TransferBatcher {
     }
 
     const batch = this._transferQueue.splice(0, this._batchSize)
+    console.log(`LD TransferBatcher.flushQueue() shipping batch of size: ${batch.length} to TigerBeetle.`)
     const errors = await this._client.createTransfers(batch.map(t => t.transfer))  
     // make into a dict for faster lookup
     const errorIndices = errors.reduce((acc, curr) => {

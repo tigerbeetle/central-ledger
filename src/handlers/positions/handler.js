@@ -65,23 +65,89 @@ const rethrow = Utility.rethrow
 const consumerCommit = true
 const fromSwitch = true
 
-/**
- * @function positions
- *
- * @async
- * @description This is the consumer callback function that gets registered to a topic. This then gets a list of messages,
- * we will only ever use the first message in non batch processing. We then break down the message into its payload and
- * begin validating the payload. Once the payload is validated successfully it will be written to the database to
- * the relevant tables. If the validation fails it is still written to the database for auditing purposes but with an
- * ABORT status
- *
- * @param {error} error - error thrown if something fails within Kafka
- * @param {array} messages - a list of messages to consume for the relevant topic
- *
- * @returns {object} - Returns a boolean: true if successful, or throws and error if failed
- */
+
+// would be faster to keep handling these in batch instead of splitting them up
+// but actions are different, so we need to be careful to make sure that messages get bucketed accordingly 
+const _handleFastPositionMessage = async (message) => {
+
+  try {
+    const payload = decodePayload(message.value.content.payload)
+    const eventType = message.value.metadata.event.type
+    const action = message.value.metadata.event.action
+
+    assert(eventType, Enum.Events.Event.Type.POSITION, `Expected eventType to be: ${Enum.Events.Event.Type.POSITION}`)
+
+    const kafkaTopic = message.topic
+    Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { method: 'positions' }))
+   
+    const params = { message, kafkaTopic, decodedPayload: payload, consumer: Consumer, producer: Producer }
+    const eventDetail = { action }
+    if (![Enum.Events.Event.Action.BULK_PREPARE, Enum.Events.Event.Action.BULK_COMMIT, Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED, Enum.Events.Event.Action.BULK_ABORT].includes(action)) {
+      eventDetail.functionality = Enum.Events.Event.Type.NOTIFICATION
+    } else {
+      eventDetail.functionality = Enum.Events.Event.Type.BULK_PROCESSING
+    }
+
+    switch (action) {
+      case Enum.Events.Event.Action.PREPARE:
+      case Enum.Events.Event.Action.BULK_PREPARE: {
+        Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'prepare' }))
+        // console.log("LD  - handling position-prepare here")
+
+        await PositionService.calculatePreparePositionsBatch(decodeMessages([message]))
+        // If the above failed, then it would have thrown an error
+        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
+
+        break;
+      }
+      case Enum.Events.Event.Action.COMMIT:
+      case Enum.Events.Event.Action.RESERVE:
+      case Enum.Events.Event.Action.BULK_COMMIT: {
+        Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'commit' }))
+   
+
+        Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `payee--4`))
+    
+        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
+        return true
+      }
+      case Enum.Events.Event.Action.REJECT:
+      case Enum.Events.Event.Action.ABORT:
+      case Enum.Events.Event.Action.ABORT_VALIDATION:
+      case Enum.Events.Event.Action.BULK_ABORT:
+      case Enum.Events.Event.Action.TIMEOUT_RESERVED:
+      case Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED:
+      default: {
+        Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, `invalidEventTypeOrAction--8`))
+        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(`Invalid event action:(${action}) and/or type:(${eventType})`)
+        const eventDetail = { functionality: Enum.Events.Event.Type.NOTIFICATION, action: Enum.Events.Event.Action.POSITION }
+        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING), eventDetail, fromSwitch, hubName: Config.HUB_NAME })
+        rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'positionsHandler' })
+      }
+    }
+  } catch (err) {
+    console.log("LD SOMETHING BROKEN HERE LEWIS!!", err)
+    Logger.isErrorEnabled && Logger.error(`${Utility.breadcrumb(location)}::${err.message}--0`)
+    histTimerEnd({ success: false, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
+    const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err)
+    const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message)
+    return true
+  }
+}
+
+const fastPositions = async (error, messages) => {
+  console.log(`LD: handling position with: ${messages.length} messages`)
+  if (error) {
+    throw new Error(`Kafka Error: ${error}`)
+  }
+
+  // Not sure if there's an easy way to pull them off and put them back on the batch together
+  await Promise.all(messages.map(message => _handleFastPositionMessage(message)))
+}
 
 const positions = async (error, messages) => {
+  console.log(`LD: handling positions with: ${messages.length} messages`)
+
   const histTimerEnd = Metrics.getHistogram(
     'transfer_position',
     'Consume a prepare transfer message from the kafka topic and process it accordingly',
@@ -156,7 +222,7 @@ const positions = async (error, messages) => {
       case Enum.Events.Event.Action.PREPARE:
       case Enum.Events.Event.Action.BULK_PREPARE: {
         Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'prepare' }))
-        console.log("LD  - handling position-prepare here")
+        // console.log("LD  - handling position-prepare here")
 
         // TODO: ship this straight to TigerBeetle - if it fails, then check:
         // 1. transferId already exists (therefore duplicate check triggered)
@@ -229,7 +295,7 @@ const positions = async (error, messages) => {
         //   const transfer = await TransferService.getById(transferInfo.transferId)
         //   message.value.content.payload = TransferObjectTransform.toFulfil(transfer)
         // }
-        console.log('LD: send message to kafka', params.kafkaTopic)
+        // console.log('LD: send message to kafka', params.kafkaTopic)
         await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
         histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
         return true
@@ -329,7 +395,8 @@ const registerPositionHandler = async () => {
   try {
     await SettlementModelCached.initialize()
     const positionHandler = {
-      command: positions,
+      // command: positions,
+      command: fastPositions,
       topicName: Kafka.transformGeneralTopicName(Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, Enum.Events.Event.Type.POSITION, Enum.Events.Event.Action.PREPARE),
       config: Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, Enum.Events.Event.Type.TRANSFER.toUpperCase(), Enum.Events.Event.Action.POSITION.toUpperCase())
     }
