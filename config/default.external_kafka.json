@@ -224,9 +224,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
@@ -272,9 +272,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
@@ -296,9 +296,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
@@ -468,7 +468,9 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 10000000,
+              "batch.num.messages": 500,
+              "linger.ms": 10
             },
             "topicConf": {
               "request.required.acks": "all",
@@ -489,7 +491,9 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 10000000,
+              "batch.num.messages": 500,
+              "linger.ms": 10
             },
             "topicConf": {
               "request.required.acks": "all",

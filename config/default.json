@@ -224,9 +224,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
@@ -272,9 +272,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
@@ -296,9 +296,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 1500,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
