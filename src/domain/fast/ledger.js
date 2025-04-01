@@ -116,8 +116,12 @@ class Ledger {
   }
 
   async enqueueTransfer(transfer) {
+    // lol skip tigerbeetle altogether, see what happens to performance
+
+    return Promise.resolve()
+    
     // send to the batch processor for processing
-    return this._transferBatcher.enqueueTransfer(transfer)
+    // return this._transferBatcher.enqueueTransfer(transfer)
   }
 
   async onboardDfsp(fspId, currency) {
