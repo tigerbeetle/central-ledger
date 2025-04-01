@@ -136,7 +136,7 @@ const _handleFastPositionMessage = async (message) => {
 }
 
 const fastPositions = async (error, messages) => {
-  console.log(`LD: handling position with: ${messages.length} messages`)
+  // console.log(`LD: handling position with: ${messages.length} messages`)
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }
@@ -155,10 +155,10 @@ const fastPositions = async (error, messages) => {
     return acc
   }, {})
 
-  console.log('LD: fastPositions() bucketed messages byAction:')
-  Object.keys(byAction).forEach(key => {
-    console.log(`  - ${key}: ${byAction[key].length} messages`)
-  })
+  // console.log('LD: fastPositions() bucketed messages byAction:')
+  // Object.keys(byAction).forEach(key => {
+  //   console.log(`  - ${key}: ${byAction[key].length} messages`)
+  // })
 
   // Not sure if there's an easy way to pull them off and put them back on the batch together
   await Promise.all(messages.map(message => _handleFastPositionMessage(message)))

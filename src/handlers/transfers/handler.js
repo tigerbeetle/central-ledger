@@ -71,7 +71,7 @@ const consumerCommit = true
 const fromSwitch = true
 
 const fastFulfil = async (error, messages) => {
-  console.log(`LD: fastFulfil() handling fulfil with: ${messages.length} messages`)
+  // console.log(`LD: fastFulfil() handling fulfil with: ${messages.length} messages`)
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }
@@ -90,15 +90,13 @@ const fastFulfil = async (error, messages) => {
     return acc
   }, {})
 
-  console.log('LD: fastFulfil() bucketed messages byAction:')
-  Object.keys(byAction).forEach(key => {
-    console.log(`  - ${key}: ${byAction[key].length} messages`)
-  })
+  // console.log('LD: fastFulfil() bucketed messages byAction:')
+  // Object.keys(byAction).forEach(key => {
+  //   console.log(`  - ${key}: ${byAction[key].length} messages`)
+  // })
 
   // Not sure if there's an easy way to pull them off and put them back on the batch together
   await Promise.all(messages.map(message => _handleFastFulfilMessage(message)))
-
-  console.log('LD: finished fastFulfil')
 }
 
 const fulfil = async (error, messages) => {
