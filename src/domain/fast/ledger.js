@@ -23,8 +23,9 @@ class Ledger {
     this._metadataStore = metadataStore
     this._transferBatcher = new TransferBatcher(this._tbClient, BATCH_SIZE, BATCH_INTERVAL_MS)
 
-
-    console.log("LD: Warn - `SKIP_TIGERBEETLE` is true - skipping tigerbeetle calls")
+    if (SKIP_TIGERBEETLE === true) {
+      console.log("LD: Warn - `SKIP_TIGERBEETLE` is true - skipping tigerbeetle calls")
+    }
   }
 
   /**
@@ -135,7 +136,7 @@ class Ledger {
   }
 
   async enqueueTransfer(transfer) {
-    if (SKIP_TIGERBEETLE) {
+    if (SKIP_TIGERBEETLE === true) {
       // skip tigerbeetle altogether, see what happens to performance
       return Promise.resolve()
     }
