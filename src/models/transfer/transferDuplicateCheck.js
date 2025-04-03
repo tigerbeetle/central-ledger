@@ -55,14 +55,9 @@ const getTransferDuplicateCheck = async (transferId) => {
   ).startTimer()
   Logger.isDebugEnabled && Logger.debug(`get transferDuplicateCheck (transferId=${transferId})`)
   try {
-    console.log('LD: READ from transferDuplicateCheck disabled')
-    // const result = Db.from('transferDuplicateCheck').findOne({ transferId })
-    // histTimerGetTransferDuplicateCheckEnd({ success: true, queryName: 'transferDuplicateCheck_getTransferDuplicateCheck' })
-
-
-    return Promise.resolve(null)
-
-    // return result
+    const result = Db.from('transferDuplicateCheck').findOne({ transferId })
+    histTimerGetTransferDuplicateCheckEnd({ success: true, queryName: 'transferDuplicateCheck_getTransferDuplicateCheck' })
+    return result
   } catch (err) {
     histTimerGetTransferDuplicateCheckEnd({ success: false, queryName: 'transferDuplicateCheck_getTransferDuplicateCheck' })
     rethrow.rethrowDatabaseError(err)
@@ -81,7 +76,6 @@ const getTransferDuplicateCheck = async (transferId) => {
  * @returns {integer} - Returns the database id of the inserted row, or throws an error if failed
  */
 
-// LD: Can't simply disable this, since the transfer table depends on it
 const saveTransferDuplicateCheck = async (transferId, hash) => {
   const histTimerSaveTransferDuplicateCheckEnd = Metrics.getHistogram(
     'model_transfer',
@@ -90,14 +84,9 @@ const saveTransferDuplicateCheck = async (transferId, hash) => {
   ).startTimer()
   Logger.isDebugEnabled && Logger.debug(`save transferDuplicateCheck (transferId=${transferId}, hash=${hash})`)
   try {
-    console.log('LD: WRITE to transferDuplicateCheck disabled')
-
-    // const result = Db.from('transferDuplicateCheck').insert({ transferId, hash })
-    
+    const result = Db.from('transferDuplicateCheck').insert({ transferId, hash })
     histTimerSaveTransferDuplicateCheckEnd({ success: true, queryName: 'transferDuplicateCheck_saveTransferDuplicateCheck' })
-    // return result
-    return true
-    
+    return result
   } catch (err) {
     histTimerSaveTransferDuplicateCheckEnd({ success: false, queryName: 'transferDuplicateCheck_saveTransferDuplicateCheck' })
     rethrow.rethrowDatabaseError(err)

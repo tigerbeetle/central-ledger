@@ -311,7 +311,6 @@ const processFulfilMessage = async (message, functionality, span) => {
 
   // LD transfer might not exist, we don't have time to read it from the database
   const transfer = await TransferService.getById(transferId)
-  console.log('LD fulfil handler, transfer is', transfer)
   const transferStateEnum = transfer?.transferStateEnumeration
 
   // List of valid actions for which source & destination headers are checked

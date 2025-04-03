@@ -30,6 +30,7 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Metrics = require('@mojaloop/central-services-metrics')
 const { Enum, Util } = require('@mojaloop/central-services-shared')
 const { Consumer, Producer } = require('@mojaloop/central-services-stream').Util
+const { decodePayload } = Util.StreamingProtocol
 
 const { logger } = require('../../shared/logger')
 const Config = require('../../lib/config')
@@ -60,6 +61,7 @@ const proceedForwardErrorMessage = async ({ fspiopError, isFx, params }) => {
     functionality: Type.NOTIFICATION,
     action: isFx ? Action.FX_FORWARDED : Action.FORWARDED
   }
+  console.log('LD proceedForwardErrorMessage', eventDetail)
   await Kafka.proceed(Config.KAFKA_CONFIG, params, {
     fspiopError,
     eventDetail,
@@ -97,33 +99,34 @@ const forwardPrepare = async ({ isFx, params, ID }) => {
       //            and the action is `fx-forwarded`, the ml-api-adapter will notify both.
       await proceedForwardErrorMessage({ fspiopError, isFx, params })
     }
-  } else {
-    const transfer = await TransferService.getById(ID)
-    if (!transfer) {
-      const fspiopError = ErrorHandler.Factory.createFSPIOPError(
-        FSPIOPErrorCodes.ID_NOT_FOUND,
-        'Forwarded transfer could not be found.'
-      ).toApiErrorObject(Config.ERROR_HANDLING)
-      // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
-      //            notify the payerFsp and proxy of the error.
-      //            As long as the `to` and `from` message values are the payer and payee,
-      //            and the action is `forwarded`, the ml-api-adapter will notify both.
-      await proceedForwardErrorMessage({ fspiopError, isFx, params })
-      return true
-    }
+    return
+  } 
+  
+  const transfer = await TransferService.getById(ID)
+  if (!transfer) {
+    const fspiopError = ErrorHandler.Factory.createFSPIOPError(
+      FSPIOPErrorCodes.ID_NOT_FOUND,
+      'Forwarded transfer could not be found.'
+    ).toApiErrorObject(Config.ERROR_HANDLING)
+    // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
+    //            notify the payerFsp and proxy of the error.
+    //            As long as the `to` and `from` message values are the payer and payee,
+    //            and the action is `forwarded`, the ml-api-adapter will notify both.
+    await proceedForwardErrorMessage({ fspiopError, isFx, params })
+    return true
+  }
 
-    if (transfer.transferState === TransferInternalState.RESERVED) {
-      await TransferService.forwardedPrepare(ID)
-    } else {
-      const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
-        `Invalid State: ${transfer.transferState} - expected: ${TransferInternalState.RESERVED}`
-      ).toApiErrorObject(Config.ERROR_HANDLING)
-      // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
-      //            notify the payerFsp and proxy of the error.
-      //            As long as the `to` and `from` message values are the payer and payee,
-      //            and the action is `forwarded`, the ml-api-adapter will notify both.
-      await proceedForwardErrorMessage({ fspiopError, isFx, params })
-    }
+  if (transfer.transferState === TransferInternalState.RESERVED) {
+    await TransferService.forwardedPrepare(ID)
+  } else {
+    const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
+      `Invalid State: ${transfer.transferState} - expected: ${TransferInternalState.RESERVED}`
+    ).toApiErrorObject(Config.ERROR_HANDLING)
+    // IMPORTANT: This singular message is taken by the ml-api-adapter and used to
+    //            notify the payerFsp and proxy of the error.
+    //            As long as the `to` and `from` message values are the payer and payee,
+    //            and the action is `forwarded`, the ml-api-adapter will notify both.
+    await proceedForwardErrorMessage({ fspiopError, isFx, params })
   }
 
   return true
@@ -217,6 +220,7 @@ const calculateProxyObligation = async ({ payload, isFx, params, functionality, 
   return proxyObligation
 }
 
+
 const checkDuplication = async ({ payload, isFx, ID, location }) => {
   const funcName = 'prepare_duplicateCheckComparator'
   const histTimerDuplicateCheckEnd = Metrics.getHistogram(
@@ -229,8 +233,17 @@ const checkDuplication = async ({ payload, isFx, ID, location }) => {
   const { hasDuplicateId, hasDuplicateHash } = await Comparators.duplicateCheckComparator(
     ID,
     payload,
+    // here we are passing in the 2 functions which will hit the database:
     remittance.getDuplicate,
     remittance.saveDuplicateHash
+    // () => {
+    //   console.log("DISABLED getDuplicate")
+    //   return {
+    //     hash: null
+    //   }
+    // },
+    // () => {console.log("DISABLED saveDuplicateHash")},
+
   )
 
   logger.info(Util.breadcrumb(location, { path: funcName }), { hasDuplicateId, hasDuplicateHash, isFx, ID })
@@ -391,16 +404,15 @@ const sendPositionPrepareMessage = async ({
     action
   }
 
-  const { messageKey, cyrilResult } = await definePositionParticipant({
-    payload: proxyObligation.payloadClone,
-    isFx,
-    determiningTransferCheckResult,
-    proxyObligation
-  })
+  // const { messageKey, cyrilResult } = await definePositionParticipant({
+  //   payload: proxyObligation.payloadClone,
+  //   isFx,
+  //   determiningTransferCheckResult,
+  //   proxyObligation
+  // })
 
   params.message.value.content.context = {
     ...params.message.value.content.context,
-    cyrilResult
   }
   // We route fx-prepare, bulk-prepare and prepare messages differently based on the topic configured for it.
   // Note: The batch handler does not currently support bulk-prepare messages, only prepare messages are supported.
@@ -412,15 +424,42 @@ const sendPositionPrepareMessage = async ({
   } else if (action === Action.FX_PREPARE) {
     topicNameOverride = Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.FX_PREPARE
   }
+
+  // console.log("LD sendPositionPrepareMessage. topicConfig", consumerCommit, eventDetail, messageKey, topicNameOverride)
+
   await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-    consumerCommit,
-    eventDetail,
-    messageKey,
-    topicNameOverride,
+    consumerCommit: true,
+    eventDetail: {
+      functionality: Type.POSITION,
+      action: undefined
+    },
     hubName: Config.HUB_NAME
   })
 
   return true
+}
+
+
+const _prepareMessage = async (message) => {
+  const payload = decodePayload(message.value.content.payload)
+  const { action } = message.value.metadata.event
+  
+  const params = {
+    message,
+    kafkaTopic: message.topic,
+    decodedPayload: payload,
+    consumer: Consumer,
+    producer: Producer
+  }
+
+  await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+    consumerCommit: true,
+    eventDetail: {
+      functionality: Type.POSITION,
+      action
+    },
+    hubName: Config.HUB_NAME
+  })
 }
 
 /**
@@ -444,6 +483,15 @@ const sendPositionPrepareMessage = async ({
  *
  * @returns {object} - Returns a boolean: true if successful, or throws and error if failed
  */
+const prepareFast = async (error, messages) => {
+  if (error) {
+    throw new Error(`Kafka Error: ${error}`)
+  }
+
+  // Not sure if there's an easy way to pull them off and put them back on the batch together
+  await Promise.all(messages.map(message => _prepareMessage(message)))
+}
+
 const prepare = async (error, messages) => {
   const location = { module: 'PrepareHandler', method: '', path: '' }
   const input = dto.prepareInputDto(error, messages)
@@ -479,50 +527,10 @@ const prepare = async (error, messages) => {
       producer: Producer
     }
 
-    if (proxyEnabled && isForwarded) {
-      const isOk = await forwardPrepare({ isFx, params, ID })
-      logger.info('forwardPrepare message is processed', { isOk, isFx, ID })
-      return isOk
-    }
-
-    const proxyObligation = await calculateProxyObligation({
-      payload, isFx, params, functionality, action
-    })
-
-    // LD: I think this is the duplicate check here?
-    // will need to bypass, but also pick up the error from TB regarding duplication
     
-    const duplication = await checkDuplication({ payload, isFx, ID, location })
-    if (duplication.hasDuplicateId) {
-      const success = await processDuplication({
-        duplication, isFx, ID, functionality, action, actionLetter, params, location
-      })
-      histTimerEnd({ success, fspId })
-      return success
-    }
+    // TODO: save to some in memory cache
 
-    const determiningTransferCheckResult = await createRemittanceEntity(isFx)
-      .checkIfDeterminingTransferExists(proxyObligation.payloadClone, proxyObligation)
-
-    const { validationPassed, reasons } = await Validator.validatePrepare(
-      payload,
-      headers,
-      isFx,
-      determiningTransferCheckResult,
-      proxyObligation
-    )
-
-    await savePreparedRequest({
-      validationPassed,
-      reasons,
-      payload,
-      isFx,
-      functionality,
-      params,
-      location,
-      determiningTransferCheckResult,
-      proxyObligation
-    })
+    const validationPassed = true
 
     if (!validationPassed) {
       logger.warn(Util.breadcrumb(location, { path: 'validationFailed' }))
@@ -546,12 +554,22 @@ const prepare = async (error, messages) => {
     }
 
     logger.info(Util.breadcrumb(location, `positionTopic1--${actionLetter}7`))
-    const success = await sendPositionPrepareMessage({
-      isFx, action, params, determiningTransferCheckResult, proxyObligation
+    // const success = await sendPositionPrepareMessage({
+    //   isFx, action, params
+    // })
+
+    await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+      consumerCommit: true,
+      eventDetail: {
+        functionality: Type.POSITION,
+        action: undefined
+      },
+      hubName: Config.HUB_NAME
     })
 
-    histTimerEnd({ success, fspId })
-    return success
+    histTimerEnd({ success: true, fspId })
+    return true
+
   } catch (err) {
     histTimerEnd({ success: false, fspId })
     const fspiopError = reformatFSPIOPError(err)
@@ -567,42 +585,6 @@ const prepare = async (error, messages) => {
   }
 }
 
-
-/**
- * We don't do anything here, since all of the business logic covered
- * by this case originally is now handled in TigerBeetle. We could even
- * skip this message altogether
- */
-const prepareFast = async (error, messages) => {
-  if (error) {
-    throw new Error(`Kafka Error: ${error}`)
-  }
-
-  // Not sure if there's an easy way to pull them off and put them back on the batch together
-  await Promise.all(messages.map(message => _prepareMessage(message)))
-}
-
-const _prepareMessage = async (message) => {
-  const payload = decodePayload(message.value.content.payload)
-  const { action } = message.value.metadata.event
-  
-  const params = {
-    message,
-    kafkaTopic: message.topic,
-    decodedPayload: payload,
-    consumer: Consumer,
-    producer: Producer
-  }
-
-  await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-    consumerCommit: true,
-    eventDetail: {
-      functionality: Type.POSITION,
-      action
-    },
-    hubName: Config.HUB_NAME
-  })
-}
 
 module.exports = {
   prepare: Config.FAST_MODE_ENABLED ? prepareFast : prepare,
