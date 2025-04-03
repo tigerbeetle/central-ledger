@@ -58,6 +58,7 @@ const decodePayload = require('@mojaloop/central-services-shared').Util.Streamin
 const decodeMessages = require('@mojaloop/central-services-shared').Util.StreamingProtocol.decodeMessages
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const assert = require('assert')
+const transferMessageCache = require('#src/domain/fast/TransferMessageCache')
 
 const location = { module: 'PositionHandler', method: '', path: '' } // var object used as pointer
 const rethrow = Utility.rethrow
@@ -317,9 +318,18 @@ const _handleFastPositionMessage = async (message) => {
       case Enum.Events.Event.Action.PREPARE:
       case Enum.Events.Event.Action.BULK_PREPARE: {
         Logger.isInfoEnabled && Logger.info(Utility.breadcrumb(location, { path: 'prepare' }))
-        // console.log("LD  - handling position-prepare here")
 
-        await FastPositionService.calculatePreparePositionsBatch(decodeMessages([message]))
+        const transferDtos = decodeMessages([message])
+
+        // default to 5 minute expiry, but we should consult the transfer
+        const defaultExpiry = (new Date(Date.now() + 5 * 60000)).getTime()
+        // Save the payload to our cache
+        transferDtos.forEach(transferDto => {
+          transferMessageCache.put(transferDto.value.id, transferDto.value.content.payload, defaultExpiry)
+        })
+
+        // Ship prepares to tigerbeetle
+        await FastPositionService.calculatePreparePositionsBatch(transferDtos)
         // If the above failed, then it would have thrown an error
         await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, hubName: Config.HUB_NAME })
         break;

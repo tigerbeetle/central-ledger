@@ -44,7 +44,6 @@ class Ledger {
       assert(transferDto.value.content.payload.amount)
       assert(transferDto.value.content.payload.amount.amount)
       assert(transferDto.value.content.payload.amount.currency)
-      assert(transferDto.value.content.payload.amount.currency)
     } catch (err) {
       console.log(`LD buildPendingTransfers validation failed - transferDto is: ${JSON.stringify(transferDto)}`)
       throw err
@@ -94,6 +93,32 @@ class Ledger {
     const transferId = transferDto.transferId
     const pendingId = Helper.fromMojaloopId(transferId)
 
+    try {
+      assert(transferDto)
+      assert(transferDto.transferId)
+      assert(transferDto.amount)
+      assert(transferDto.amount.amount)
+      assert(transferDto.amount.currency)
+    } catch (err) {
+      console.log(`LD buildPostedTransfers validation failed - transferDto is: ${JSON.stringify(transferDto)}`)
+      throw err
+    }
+
+    const payerFsp = transferDto.payerFsp
+    const payeeFsp = transferDto.payeeFsp
+    const currency = transferDto.amount.currency
+    const amountStr = transferDto.amount.amount
+    // TODO: verify that this is accurate, and shouldn't be replaced with BigInt
+    // MLNumber is based on BigNumber, which is a 3rd party dependency
+    const amount = BigInt((new MLNumber(amountStr)).toNumber())
+
+    const settlementMultilateralAccountIdPayer = await this._metadataStore.getAccountId(
+      AccountType.Settlement_Multilateral, payerFsp, currency
+    )
+    const settlementMultilateralAccountIdPayee = await this._metadataStore.getAccountId(
+      AccountType.Settlement_Multilateral, payeeFsp, currency
+    )
+
     return [
       {
         id: id(),
@@ -112,26 +137,21 @@ class Ledger {
         flags: TransferFlags.post_pending_transfer,
         timestamp: 0n,
       },
-
-      // TODO(LD): design issue here - at Fulfil time, we don't easily have access to the _amount_
-      // or other details of the transfer, only whether or not it was fulfilled or rejected.
-      // That means that we can't easily create new Settlement Transfers on the fulfil leg
-
-      // {
-      //   id: settlementMultilateralTransferId,
-      //   debit_account_id: settlementMultilateralAccountIdPayer,
-      //   credit_account_id: settlementMultilateralAccountIdPayee,
-      //   amount: BigInt(amount),
-      //   pending_id: 0n,
-      //   user_data_128: 0n,
-      //   user_data_64: 0n,
-      //   user_data_32: 0,
-      //   timeout: 0,
-      //   ledger: 1,
-      //   code: 2,
-      //   flags: 0,
-      //   timestamp: 0n,
-      // }
+      {
+        id: id(),
+        debit_account_id: settlementMultilateralAccountIdPayer,
+        credit_account_id: settlementMultilateralAccountIdPayee,
+        amount: BigInt(amount),
+        pending_id: 0n,
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        timeout: 0,
+        ledger: 1,
+        code: 2,
+        flags: 0,
+        timestamp: 0n,
+      }
     ]
   }
 

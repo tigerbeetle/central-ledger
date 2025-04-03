@@ -64,8 +64,6 @@ const changeParticipantPosition = (participantCurrencyId, isReversal, amount, tr
 const calculatePreparePositionsBatch = async (transferList) => {
   assert(Array.isArray(transferList), 'expected transferList to be an array')
 
-  // console.log('calculatePreparePositionsBatch, transferList.value is', transferList.map(transfer => transfer.value.content))
-
   // Ledger can return more than 1 physical transfer per logical transfer
   // this needs more thought since  
   const transfers = await Promise.all(transferList.map(transfer => ledger.buildPendingTransfers(transfer)))
