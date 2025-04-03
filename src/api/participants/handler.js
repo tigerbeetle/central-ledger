@@ -96,7 +96,6 @@ const create = async function (request, h) {
     }
     const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
     const allSettlementModels = await SettlementService.getAll()
-    console.log('found allSettlementModels models', allSettlementModels)
     let settlementModels = allSettlementModels.filter(model => model.currencyId === request.payload.currency)
     
     if (settlementModels.length === 0) {
@@ -241,8 +240,12 @@ const getEndpoint = async function (request) {
 const addLimitAndInitialPosition = async function (request, h) {
   try {
     // LD - replaced with TigerBeetle here
-    // await ParticipantService.addLimitAndInitialPosition(request.params.name, request.payload)
-    await FastAdmin.addLimitAndInitialPosition(request.params.name, request.payload)
+    if (Config.FAST_MODE_ENABLED) {
+      await FastAdmin.addLimitAndInitialPosition(request.params.name, request.payload)
+      return h.response().code(201)
+    }
+
+    await ParticipantService.addLimitAndInitialPosition(request.params.name, request.payload)
     return h.response().code(201)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddLimitAndInitialPosition' })
@@ -324,10 +327,13 @@ const getPositions = async function (request) {
 
 const getAccounts = async function (request) {
   try {
-    // TODO(LD): shim with TigerBeetle - need more design work in thew adaptation layer first
-    // return await ParticipantService.getAccounts(request.params.name, request.query)
-    assert(request.params.name, 'Expected name param to exist')
-    return await FastAdmin.getAccounts(request.params.name)
+    // shim with TigerBeetle 
+    if (Config.FAST_MODE_ENABLED) {
+      assert(request.params.name, 'Expected name param to exist')
+      return await FastAdmin.getAccounts(request.params.name)
+    }
+    return await ParticipantService.getAccounts(request.params.name, request.query)
+    
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetAccounts' })
   }
@@ -352,12 +358,14 @@ const updateAccount = async function (request, h) {
 
 const recordFunds = async function (request, h) {
   try {
-    // TODO(LD): not sure what we need these enums for
     const enums = await Enums.getEnums('all')
 
-    // await ParticipantService.recordFundsInOut(request.payload, request.params, enums)
-    // LD: Replaced with TigerBeetle here
-    await FastAdmin.recordFundsInOut(request.payload, request.params, enums)
+    if (Config.FAST_MODE_ENABLED) { 
+      await FastAdmin.recordFundsInOut(request.payload, request.params, enums)
+      return h.response().code(202)
+    }
+
+    await ParticipantService.recordFundsInOut(request.payload, request.params, enums)
     return h.response().code(202)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })
