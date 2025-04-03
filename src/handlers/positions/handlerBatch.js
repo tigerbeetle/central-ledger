@@ -47,68 +47,10 @@ const { randomUUID } = require('crypto')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const BatchPositionModel = require('../../models/position/batch')
 const decodePayload = require('@mojaloop/central-services-shared').Util.StreamingProtocol.decodePayload
-const decodeMessages = require('@mojaloop/central-services-shared').Util.StreamingProtocol.decodeMessages
-
 const { BATCHING } = require('../../shared/constants')
-
-const PositionService = require('../../domain/fast/position')
-
 
 const consumerCommit = true
 const rethrow = Utility.rethrow
-
-
-
-/**
- * @description Write positions immediately to tigerbeetle as whole batches
- */
-const fastPositions = async (error, messages) => {
-
-  if (error) {
-    histTimerEnd({ success: false })
-    rethrow.rethrowAndCountFspiopError(error, { operation: 'positionsHandlerBatch' })
-  }
-  let consumedMessages = []
-
-  if (Array.isArray(messages)) {
-    consumedMessages = Array.from(messages)
-  } else {
-    consumedMessages = [Object.assign({}, Utility.clone(messages))]
-  }
-
-  const actionBins = consumedMessages.reduce((acc, message) => {
-    const action = message.value.metadata.event.action
-    if (!acc[action]) {
-      acc[action] = [message]
-      return acc
-    }
-
-    const messages = acc[action]
-    messages.push(message)
-
-    console.log('message.topic', message.topic)
-
-    return acc
-  }, {})
-
-  
-  // meh hardcoding, probably a bad idea
-  const params = { message: consumedMessages.last, kafkaTopic: 'topic-transfer-position-batch', consumer: Consumer }
-
-  // for some reason, we're only handling position prepare messages here
-  const prepareBatch = actionBins[Enum.Events.Event.Action.PREPARE]
-  if (prepareBatch.length === 0) {
-    await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, hubName: Config.HUB_NAME })
-  }
-
-  console.log(`LD sending prepare batch of size: ${prepareBatch.length} to TigerBeetle`)
-
-  await PositionService.calculatePreparePositionsBatch(decodeMessages(prepareBatch))
-
-
-  // TODO: this fails here, not really sure why that is
-  await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, hubName: Config.HUB_NAME })
-}
 
 /**
  * @function positions
@@ -128,8 +70,6 @@ const positions = async (error, messages) => {
     'Consume a batch of prepare transfer messages from the kafka topic and process them',
     ['success']
   ).startTimer()
-
-  console.log('LD positions handler here!')
 
   if (error) {
     histTimerEnd({ success: false })
@@ -165,10 +105,7 @@ const positions = async (error, messages) => {
       binId
     })
 
-    console.log('message is', message)
-
-    // const accountID = message.key.toString()
-    const accountID = "1"
+    const accountID = message.key.toString()
 
     // Assign message to account-bin by accountID and child action-bin by action
     // (References to the messages to be stored in bins, no duplication of messages)
@@ -207,7 +144,6 @@ const positions = async (error, messages) => {
       for (const message of Object.values(lastPerPartition)) {
         const params = { message, kafkaTopic: message.topic, consumer: Consumer }
         // We are using Kafka.proceed() to just commit the offset of the last message in the array
-        console.log('LD calling kafka.proceed with params', params)
         await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, hubName: Config.HUB_NAME })
       }
 
@@ -234,7 +170,6 @@ const positions = async (error, messages) => {
           // Produce position message and audit message
           const action = item.binItem.message?.value.metadata.event.action
           const eventStatus = item?.message.metadata.event.state.status === Enum.Events.EventStatus.SUCCESS.status ? Enum.Events.EventStatus.SUCCESS : Enum.Events.EventStatus.FAILURE
-          console.log('LD is this where we go next?')
           return Kafka.produceGeneralMessage(
             Config.KAFKA_CONFIG,
             Producer,
@@ -296,10 +231,6 @@ const registerPositionHandler = async () => {
         Enum.Events.Event.Action.PREPARE
       )
     const positionHandler = {
-      // command: positions,
-      
-      // using the tigerbeetle adapted position handler
-      // command: fastPositions,
       command: positions,
       topicName,
       // There is no corresponding action for POSITION_BATCH, so using straight value

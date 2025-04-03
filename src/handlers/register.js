@@ -58,10 +58,9 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
 const registerAllHandlers = async () => {
   try {
-    const modules = await requireGlob(['./**/handler.js', './**/handlerBatch.js'])
+    const modules = await requireGlob(['./**/handler.js'])
     for (const key in modules) {
       Logger.isInfoEnabled && Logger.info(`Registering handler module[${key}]: ${JSON.stringify(modules[key])}`)
-      
       if (Object.prototype.hasOwnProperty.call(modules[key], 'handler')) {
         const handlerObject = modules[key]
         await handlerObject.handler.registerAllHandlers()
@@ -72,17 +71,7 @@ const registerAllHandlers = async () => {
           await handlerObject.handler.registerAllHandlers()
         }
       }
-
-      // also register handlerBatch
-      // if (Object.prototype.hasOwnProperty.call(modules[key], 'handlerBatch')) {
-      //   Logger.isInfoEnabled && Logger.info(`Registering handler module[${key}]: handlerBatch`)
-      //   const handlerObject = modules[key]
-      //   await handlerObject.handlerBatch.registerAllHandlers()
-      // }
     }
-
-    // handlerBatch.
-
     return true
   } catch (err) {
     Logger.isErrorEnabled && Logger.error(err)

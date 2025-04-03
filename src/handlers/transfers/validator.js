@@ -175,10 +175,8 @@ const validateConditionAndExpiration = async (payload) => {
     return false
   }
   if (payload.expiration) {
-    const now = new Date()
-    if (Date.parse(payload.expiration) < Date.parse(now.toISOString())) {
-
-      reasons.push(`Expiration date ${new Date(payload.expiration).toISOString()} is already in the past. Now is: ${now.toISOString()}`)
+    if (Date.parse(payload.expiration) < Date.parse(new Date().toISOString())) {
+      reasons.push(`Expiration date ${new Date(payload.expiration).toISOString()} is already in the past`)
       histTimerValidateTimer({ success: false, funcName: 'validateConditionAndExpiration' })
       return false
     }
