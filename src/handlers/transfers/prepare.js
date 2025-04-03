@@ -30,6 +30,8 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Metrics = require('@mojaloop/central-services-metrics')
 const { Enum, Util } = require('@mojaloop/central-services-shared')
 const { Consumer, Producer } = require('@mojaloop/central-services-stream').Util
+const { decodePayload } = Util.StreamingProtocol
+
 
 const { logger } = require('../../shared/logger')
 const Config = require('../../lib/config')

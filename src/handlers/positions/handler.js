@@ -57,6 +57,7 @@ const { randomUUID } = require('crypto')
 const decodePayload = require('@mojaloop/central-services-shared').Util.StreamingProtocol.decodePayload
 const decodeMessages = require('@mojaloop/central-services-shared').Util.StreamingProtocol.decodeMessages
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
+const assert = require('assert')
 
 const location = { module: 'PositionHandler', method: '', path: '' } // var object used as pointer
 const rethrow = Utility.rethrow
