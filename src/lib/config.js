@@ -2,9 +2,8 @@
 const PATH_TO_CONFIG_FILE = process.env.PATH_TO_CONFIG_FILE || '../../config/default.local.json'
 const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
 
-console.log("RC.PORT is", RC.PORT)
-
 module.exports = {
+  FAST_MODE_ENABLED: RC.FAST_MODE_ENABLED,
   HOSTNAME: RC.HOSTNAME.replace(/\/$/, ''),
   PORT: RC.PORT,
   MAX_FULFIL_TIMEOUT_DURATION_SECONDS: RC.MAX_FULFIL_TIMEOUT_DURATION_SECONDS || 300,

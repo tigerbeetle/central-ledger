@@ -295,6 +295,7 @@ class Ledger {
 }
 
 // TODO: globals are a real pain to deal with in testing, but let's just do this for now
+// TODO: move this to the other shared setup stuff
 
 const tbClient = createClient({
   cluster_id: 0n,

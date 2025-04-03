@@ -70,8 +70,7 @@ const { rethrow } = Util
 const consumerCommit = true
 const fromSwitch = true
 
-const fastFulfil = async (error, messages) => {
-  // console.log(`LD: fastFulfil() handling fulfil with: ${messages.length} messages`)
+const fulfilFast = async (error, messages) => {
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }
@@ -90,16 +89,13 @@ const fastFulfil = async (error, messages) => {
     return acc
   }, {})
 
-  // console.log('LD: fastFulfil() bucketed messages byAction:')
-  // Object.keys(byAction).forEach(key => {
-  //   console.log(`  - ${key}: ${byAction[key].length} messages`)
-  // })
 
   // Not sure if there's an easy way to pull them off and put them back on the batch together
-  await Promise.all(messages.map(message => _handleFastFulfilMessage(message)))
+  await Promise.all(messages.map(message => _handleFulfilFastMessage(message)))
 }
 
 const fulfil = async (error, messages) => {
+  // TODO: revert this!
   if (error) {
     rethrow.rethrowAndCountFspiopError(error, { operation: 'fulfil' })
   }
@@ -145,7 +141,7 @@ const fulfil = async (error, messages) => {
     if (fxActions.includes(action)) {
       return await processFxFulfilMessage(message, functionality, span)
     } else {
-      return await _handleFastFulfilMessage(message, functionality, span)
+      return await processFulfilMessage(message, functionality, span)
     }
   } catch (err) {
     logger.error(`error in FulfilHandler: ${err?.message}`, { err })
@@ -161,14 +157,13 @@ const fulfil = async (error, messages) => {
   }
 }
 
-const _handleFastFulfilMessage = async (message, functionality, span) => { 
+const _handleFulfilFastMessage = async (message, functionality, span) => { 
   const location = { module: 'FulfilHandlerFast', method: '', path: '' }
   const histTimerEnd = Metrics.getHistogram(
     'transfer_fulfil',
     'Consume a fulfil transfer message from the kafka topic and process it accordingly',
     ['success', 'fspId']
   ).startTimer()
-
 
   const payload = decodePayload(message.value.content.payload)
   const headers = message.value.content.headers
@@ -1015,8 +1010,6 @@ const registerPrepareHandler = async () => {
     const consumeConfig = Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, TRANSFER.toUpperCase(), PREPARE.toUpperCase())
     consumeConfig.rdkafkaConf['client.id'] = topicName
 
-    // TODO: how do we get batches off of kafka here? Need to read more about Kafka
-
     await Consumer.createHandler(topicName, consumeConfig, prepare)
     return true
   } catch (err) {
@@ -1035,8 +1028,7 @@ const registerPrepareHandler = async () => {
 const registerFulfilHandler = async () => {
   try {
     const fulfillHandler = {
-      // command: fulfil,
-      command: fastFulfil,
+      command: Config.FAST_MODE_ENABLED ? fulfilFast : fulfil,
       topicName: Kafka.transformGeneralTopicName(Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, TransferEventType.TRANSFER, TransferEventType.FULFIL),
       config: Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, TransferEventType.TRANSFER.toUpperCase(), TransferEventType.FULFIL.toUpperCase())
     }
@@ -1092,7 +1084,7 @@ const registerAllHandlers = async () => {
 
 module.exports = {
   prepare,
-  fulfil,
+  fulfil: Config.FAST_MODE_ENABLED ? fulfilFast : fulfil,
   getTransfer,
   registerPrepareHandler,
   registerFulfilHandler,

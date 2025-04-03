@@ -483,113 +483,114 @@ const _prepareMessage = async (message) => {
  *
  * @returns {object} - Returns a boolean: true if successful, or throws and error if failed
  */
-const prepare = async (error, messages) => {
-  // console.log(`LD: handling prepare with: ${messages.length} messages`)
-
-  // const location = { module: 'PrepareHandler', method: '', path: '' }
-
+const prepareFast = async (error, messages) => {
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }
 
   // Not sure if there's an easy way to pull them off and put them back on the batch together
   await Promise.all(messages.map(message => _prepareMessage(message)))
-
-  // const input = dto.prepareInputDto(error, messages)
-
-  // const histTimerEnd = Metrics.getHistogram(
-  //   input.metric,
-  //   `Consume a ${input.metric} message from the kafka topic and process it accordingly`,
-  //   ['success', 'fspId']
-  // ).startTimer()
-  // if (error) {
-  //   histTimerEnd({ success: false, fspId })
-  //   rethrow.rethrowAndCountFspiopError(error, { operation: 'transferPrepare' })
-  // }
-
-  // const {
-  //   message, payload, isFx, ID, headers, action, actionLetter, functionality, isForwarded
-  // } = input
-
-  // console.log('input is', input)
-
-  // const contextFromMessage = EventSdk.Tracer.extractContextFromMessage(message.value)
-  // const span = EventSdk.Tracer.createChildSpanFromContext(`cl_${input.metric}`, contextFromMessage)
-
-  // try {
-  //   span.setTags({ transactionId: ID })
-  //   await span.audit(message, EventSdk.AuditEventAction.start)
-  //   logger.info(Util.breadcrumb(location, { method: 'prepare' }))
-
-  //   const params = {
-  //     message,
-  //     kafkaTopic: message.topic,
-  //     decodedPayload: payload,
-  //     span,
-  //     consumer: Consumer,
-  //     producer: Producer
-  //   }
-
-    
-  //   // TODO: save to some in memory cache
-
-  //   const validationPassed = true
-
-  //   if (!validationPassed) {
-  //     logger.warn(Util.breadcrumb(location, { path: 'validationFailed' }))
-  //     const fspiopError = createFSPIOPError(FSPIOPErrorCodes.VALIDATION_ERROR, reasons.toString())
-  //     await createRemittanceEntity(isFx)
-  //       .logTransferError(ID, FSPIOPErrorCodes.VALIDATION_ERROR.code, reasons.toString())
-  //     /**
-  //      * TODO: BULK-Handle at BulkProcessingHandler (not in scope of #967)
-  //      * HOWTO: For regular transfers this branch may be triggered by sending
-  //      * a transfer in a currency not supported by either dfsp. Not sure if it
-  //      * will be triggered for bulk, because of the BulkPrepareHandler.
-  //      */
-  //     await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-  //       consumerCommit,
-  //       fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING),
-  //       eventDetail: { functionality, action },
-  //       fromSwitch,
-  //       hubName: Config.HUB_NAME
-  //     })
-  //     rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'transferPrepare' })
-  //   }
-
-  //   logger.info(Util.breadcrumb(location, `positionTopic1--${actionLetter}7`))
-  //   // const success = await sendPositionPrepareMessage({
-  //   //   isFx, action, params
-  //   // })
-
-  //   await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-  //     consumerCommit: true,
-  //     eventDetail: {
-  //       functionality: Type.POSITION,
-  //       action: undefined
-  //     },
-  //     hubName: Config.HUB_NAME
-  //   })
-
-  //   histTimerEnd({ success: true, fspId })
-  //   return true
-
-  // } catch (err) {
-  //   histTimerEnd({ success: false, fspId })
-  //   const fspiopError = reformatFSPIOPError(err)
-  //   logger.error(`${Util.breadcrumb(location)}::${err.message}`, err)
-  //   const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message)
-  //   await span.error(fspiopError, state)
-  //   await span.finish(fspiopError.message, state)
-  //   return true
-  // } finally {
-  //   if (!span.isFinished) {
-  //     await span.finish()
-  //   }
-  // }
 }
 
+const prepare = async (error, messages) => {
+
+  const location = { module: 'PrepareHandler', method: '', path: '' }
+  const input = dto.prepareInputDto(error, messages)
+
+  const histTimerEnd = Metrics.getHistogram(
+    input.metric,
+    `Consume a ${input.metric} message from the kafka topic and process it accordingly`,
+    ['success', 'fspId']
+  ).startTimer()
+  if (error) {
+    histTimerEnd({ success: false, fspId })
+    rethrow.rethrowAndCountFspiopError(error, { operation: 'transferPrepare' })
+  }
+
+  const {
+    message, payload, isFx, ID, headers, action, actionLetter, functionality, isForwarded
+  } = input
+
+  console.log('input is', input)
+
+  const contextFromMessage = EventSdk.Tracer.extractContextFromMessage(message.value)
+  const span = EventSdk.Tracer.createChildSpanFromContext(`cl_${input.metric}`, contextFromMessage)
+
+  try {
+    span.setTags({ transactionId: ID })
+    await span.audit(message, EventSdk.AuditEventAction.start)
+    logger.info(Util.breadcrumb(location, { method: 'prepare' }))
+
+    const params = {
+      message,
+      kafkaTopic: message.topic,
+      decodedPayload: payload,
+      span,
+      consumer: Consumer,
+      producer: Producer
+    }
+
+    
+    // TODO: save to some in memory cache
+
+    const validationPassed = true
+
+    if (!validationPassed) {
+      logger.warn(Util.breadcrumb(location, { path: 'validationFailed' }))
+      const fspiopError = createFSPIOPError(FSPIOPErrorCodes.VALIDATION_ERROR, reasons.toString())
+      await createRemittanceEntity(isFx)
+        .logTransferError(ID, FSPIOPErrorCodes.VALIDATION_ERROR.code, reasons.toString())
+      /**
+       * TODO: BULK-Handle at BulkProcessingHandler (not in scope of #967)
+       * HOWTO: For regular transfers this branch may be triggered by sending
+       * a transfer in a currency not supported by either dfsp. Not sure if it
+       * will be triggered for bulk, because of the BulkPrepareHandler.
+       */
+      await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+        consumerCommit,
+        fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING),
+        eventDetail: { functionality, action },
+        fromSwitch,
+        hubName: Config.HUB_NAME
+      })
+      rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'transferPrepare' })
+    }
+
+    logger.info(Util.breadcrumb(location, `positionTopic1--${actionLetter}7`))
+    // const success = await sendPositionPrepareMessage({
+    //   isFx, action, params
+    // })
+
+    await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+      consumerCommit: true,
+      eventDetail: {
+        functionality: Type.POSITION,
+        action: undefined
+      },
+      hubName: Config.HUB_NAME
+    })
+
+    histTimerEnd({ success: true, fspId })
+    return true
+
+  } catch (err) {
+    histTimerEnd({ success: false, fspId })
+    const fspiopError = reformatFSPIOPError(err)
+    logger.error(`${Util.breadcrumb(location)}::${err.message}`, err)
+    const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message)
+    await span.error(fspiopError, state)
+    await span.finish(fspiopError.message, state)
+    return true
+  } finally {
+    if (!span.isFinished) {
+      await span.finish()
+    }
+  }
+}
+
+
 module.exports = {
-  prepare,
+  prepare: Config.FAST_MODE_ENABLED ? prepareFast : prepare,
   forwardPrepare,
   calculateProxyObligation,
   checkDuplication,
