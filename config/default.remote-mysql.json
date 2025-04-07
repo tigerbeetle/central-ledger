@@ -98,16 +98,16 @@
   "KAFKA": {
     "EVENT_TYPE_ACTION_TOPIC_MAP" : {
       "POSITION":{
-        "PREPARE": null,
+        "PREPARE": "topic-transfer-position-batch",
         "FX_PREPARE": "topic-transfer-position-batch",
         "BULK_PREPARE": "topic-transfer-position-batch",
-        "COMMIT": null,
+        "COMMIT": "topic-transfer-position-batch",
         "BULK_COMMIT": "topic-transfer-position-batch",
-        "RESERVE": null,
+        "RESERVE": "topic-transfer-position-batch",
         "FX_RESERVE": "topic-transfer-position-batch",
-        "TIMEOUT_RESERVED": null,
+        "TIMEOUT_RESERVED": "topic-transfer-position-batch",
         "FX_TIMEOUT_RESERVED": "topic-transfer-position-batch",
-        "ABORT": null,
+        "ABORT": "topic-transfer-position-batch",
         "FX_ABORT": "topic-transfer-position-batch"
       }
     },
@@ -297,7 +297,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 100,
               "pollFrequency": 10,
               "recursiveTimeout": 10,
               "messageCharset": "utf8",
