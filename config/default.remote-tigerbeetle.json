@@ -454,7 +454,7 @@
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
               "linger.ms": 50,
-              "batch.num.messages": 1000
+              "batch.num.messages": 8000
             },
             "topicConf": {
               "request.required.acks": "all",
@@ -475,7 +475,7 @@
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
               "batch.num.messages": 8000,
-              "linger.ms": 15
+              "linger.ms": 50
             },
             "topicConf": {
               "request.required.acks": "all",
