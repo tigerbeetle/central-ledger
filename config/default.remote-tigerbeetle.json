@@ -497,7 +497,7 @@
               "dr_cb": true,
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
-              "batch.num.messages": 100,
+              "batch.num.messages": 50,
               "linger.ms": 5
             },
             "topicConf": {
