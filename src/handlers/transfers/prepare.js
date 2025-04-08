@@ -582,8 +582,38 @@ const prepareFast = async (error, messages) => {
     throw new Error(`Kafka Error: ${error}`)
   }
 
+  // TODO: process in batch to tigerbeetle
+
+
+
   // Not sure if there's an easy way to pull them off and put them back on the batch together
-  await Promise.all(messages.map(message => _prepareMessage(message)))
+  await Promise.all(messages.map(message => _continuePrepare(message)))
+}
+
+
+// don't emit a position message, it's now redundant
+const _continuePrepare = async (message) => {
+  const payload = decodePayload(message.value.content.payload)
+  const { action } = message.value.metadata.event
+  
+  const params = {
+    message,
+    kafkaTopic: message.topic,
+    decodedPayload: payload,
+    consumer: Consumer,
+    producer: Producer
+  }
+
+  await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+    consumerCommit: true,
+    eventDetail: {
+      functionality: Type.NOTIFICATION,
+      action
+    },
+    hubName: Config.HUB_NAME
+  })
+
+
 }
 
 const _prepareMessage = async (message) => {

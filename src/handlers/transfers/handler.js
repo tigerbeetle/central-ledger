@@ -92,10 +92,47 @@ const fulfilFast = async (error, messages) => {
     return acc
   }, {})
 
+  // TODO: handle the batch in tigerbeetle
+
+
+
 
   // Not sure if there's an easy way to pull them off and put them back on the batch together
-  await Promise.all(messages.map(message => _handleFulfilFastMessage(message)))
+  await Promise.all(messages.map(message => _continueFulfil(message)))
 }
+
+const _continueFulfil = async (message) => { 
+  const payload = decodePayload(message.value.content.payload)
+  const eventType = message.value.metadata.event.type
+  // const kafkaTopic = message.topic
+  
+
+  const params = { 
+    message, 
+    kafkaTopic: message.topic,
+    decodedPayload: payload, 
+    consumer: Consumer, 
+    producer: Producer 
+  }
+
+  const eventDetail = { 
+    action: message.value.metadata.event.action,
+    functionality:  Enum.Events.Event.Type.NOTIFICATION
+  }
+
+  await Kafka.proceed(
+    Config.KAFKA_CONFIG, 
+    params, 
+    { 
+      consumerCommit,
+      eventDetail, 
+      hubName: Config.HUB_NAME 
+    }
+  );
+  
+}
+
+
 
 const fulfil = async (error, messages) => {
   if (error) {
