@@ -431,7 +431,9 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 10000000,
+              "linger.ms": 50,
+              "batch.num.messages": 1000
             },
             "topicConf": {
               "request.required.acks": "all",
@@ -450,7 +452,9 @@
               "event_cb": true,
               "dr_cb": true,
               "socket.keepalive.enable": true,
-              "queue.buffering.max.messages": 10000000
+              "queue.buffering.max.messages": 10000000,
+              "linger.ms": 50,
+              "batch.num.messages": 1000
             },
             "topicConf": {
               "request.required.acks": "all",
@@ -493,7 +497,7 @@
               "dr_cb": true,
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
-              "batch.num.messages": 500,
+              "batch.num.messages": 1000,
               "linger.ms": 10
             },
             "topicConf": {
