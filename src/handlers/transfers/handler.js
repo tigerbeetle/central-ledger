@@ -209,9 +209,6 @@ const _handleFulfilFastMessage = async (message, functionality, span) => {
     histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId })
     return true
   }
-
-  console.log('LD: headers are', headers)
-
   
   // doing this just for performance test purposes
   const dummyPreparePayload = {
