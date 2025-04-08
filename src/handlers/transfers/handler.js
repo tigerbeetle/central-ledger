@@ -72,6 +72,8 @@ const consumerCommit = true
 const fromSwitch = true
 
 const fulfilFast = async (error, messages) => {
+  console.log(`LD fulfilFast Handler - processing:${messages.length} messages`)
+  
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }

@@ -285,6 +285,8 @@ const positions = async (error, messages) => {
  * @returns {boolean} - Returns a boolean: true if successful, or throws and error if failed
  */
 const positionsFast = async (error, messages) => {
+  console.log(`LD positionsFast Handler - processing:${messages.length} messages`)
+  
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }

@@ -576,6 +576,8 @@ const prepare = async (error, messages) => {
  * skip this message altogether
  */
 const prepareFast = async (error, messages) => {
+  console.log(`LD prepareFast Handler - processing:${messages.length} messages`)
+  
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }
