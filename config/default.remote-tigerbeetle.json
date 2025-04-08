@@ -227,7 +227,7 @@
               "mode": 2,
               "batchSize": 5000,
               "pollFrequency": 10,
-              "recursiveTimeout": 1000,
+              "recursiveTimeout": 100,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
