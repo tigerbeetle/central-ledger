@@ -211,11 +211,13 @@ const _handleFulfilFastMessage = async (message, functionality, span) => {
   }
 
   // TODO: need to validate that the fulfilment is valid, and transfer hasn't changed
-  const preparePayload = transferMessageCache.getAndImmediatelyExpire(transferId);
-  const isValid = Validator.validateFulfilCondition(payload.fulfilment, preparePayload.condition);
-  if (!isValid) {
-    throw new Error(`condition and fulfillment don't match!`);
-  }
+  // const preparePayload = transferMessageCache.getAndImmediatelyExpire(transferId);
+  // const isValid = Validator.validateFulfilCondition(payload.fulfilment, preparePayload.condition);
+  // if (!isValid) {
+  //   throw new Error(`condition and fulfillment don't match!`);
+  // }
+  
+  // TODO: perform the validation
 
   // looks something like this
   // {
