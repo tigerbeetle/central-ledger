@@ -225,9 +225,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 5000,
+              "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
@@ -273,9 +273,9 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1000,
+              "batchSize": 500,
               "pollFrequency": 10,
-              "recursiveTimeout": 5,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
