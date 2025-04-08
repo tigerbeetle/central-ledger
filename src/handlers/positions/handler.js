@@ -286,7 +286,7 @@ const positions = async (error, messages) => {
  */
 const positionsFast = async (error, messages) => {
   console.log(`LD positionsFast Handler - processing:${messages.length} messages`)
-  
+
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }

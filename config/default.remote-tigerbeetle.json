@@ -355,7 +355,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-admin",
@@ -432,7 +432,7 @@
               "dr_cb": true,
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
-              "linger.ms": 50,
+              "linger.ms": 5,
               "batch.num.messages": 1000
             },
             "topicConf": {
@@ -453,7 +453,7 @@
               "dr_cb": true,
               "socket.keepalive.enable": true,
               "queue.buffering.max.messages": 10000000,
-              "linger.ms": 50,
+              "linger.ms": 5,
               "batch.num.messages": 8000
             },
             "topicConf": {
