@@ -44,6 +44,7 @@ const dto = require('./dto')
 const TransferService = require('../../domain/transfer/index')
 const ProxyCache = require('../../lib/proxyCache')
 const FxTransferService = require('../../domain/fx/index')
+const ledger = require('#src/domain/fast/ledger')
 
 const { Kafka, Comparators } = Util
 const { TransferState, TransferInternalState } = Enum.Transfers
@@ -576,22 +577,26 @@ const prepare = async (error, messages) => {
  * skip this message altogether
  */
 const prepareFast = async (error, messages) => {
-  console.log(`LD prepareFast Handler - processing:${messages.length} messages`)
+  console.log(`LD prepareFast Handler - processing:${messages.length.toString().padStart(5, " ")} messages`)
   
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }
 
-  // TODO: process in batch to tigerbeetle
+  // Ship the entire batch to TigerBeetle
+  const prepareDtos = messages.map(message => decodePayload(message.value.content.payload))
 
+  const batch = await ledger.assemblePrepareBatch(prepareDtos)
+  await ledger.createTransfers(batch)
 
-
-  // Not sure if there's an easy way to pull them off and put them back on the batch together
+  // I'm not sure if there's an easy way to pull them off and put them back on the batch together
   await Promise.all(messages.map(message => _continuePrepare(message)))
 }
 
-
-// don't emit a position message, it's now redundant
+/**
+ * Is there a way to write a batch completely back to kafka without reading one by one?
+ * There are definitely performance gains to be had here!
+ */
 const _continuePrepare = async (message) => {
   const payload = decodePayload(message.value.content.payload)
   const { action } = message.value.metadata.event
@@ -608,30 +613,6 @@ const _continuePrepare = async (message) => {
     consumerCommit: true,
     eventDetail: {
       functionality: Type.NOTIFICATION,
-      action
-    },
-    hubName: Config.HUB_NAME
-  })
-
-
-}
-
-const _prepareMessage = async (message) => {
-  const payload = decodePayload(message.value.content.payload)
-  const { action } = message.value.metadata.event
-  
-  const params = {
-    message,
-    kafkaTopic: message.topic,
-    decodedPayload: payload,
-    consumer: Consumer,
-    producer: Producer
-  }
-
-  await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-    consumerCommit: true,
-    eventDetail: {
-      functionality: Type.POSITION,
       action
     },
     hubName: Config.HUB_NAME

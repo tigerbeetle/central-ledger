@@ -133,7 +133,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-prepare",
@@ -157,7 +157,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-processing",
@@ -181,7 +181,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-fulfil",
@@ -205,7 +205,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-get",
@@ -255,7 +255,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-get",
@@ -328,7 +328,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-position-batch",
@@ -355,7 +355,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-admin",
@@ -381,7 +381,7 @@
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "TESTONLY",

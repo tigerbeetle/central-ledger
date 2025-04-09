@@ -60,6 +60,7 @@ const FxFulfilService = require('./FxFulfilService')
 // particular handlers
 const { prepare } = require('./prepare')
 const transferMessageCache = require('#src/domain/fast/TransferMessageCache')
+const ledger = require('#src/domain/fast/ledger')
 
 const { Kafka, Comparators } = Util
 const TransferState = Enum.Transfers.TransferState
@@ -72,30 +73,55 @@ const consumerCommit = true
 const fromSwitch = true
 
 const fulfilFast = async (error, messages) => {
-  console.log(`LD fulfilFast Handler - processing:${messages.length} messages`)
+  console.log(`LD fulfilFast  Handler - processing:${messages.length.toString().padStart(5, " ")} messages`)
   
   if (error) {
     throw new Error(`Kafka Error: ${error}`)
   }
 
-  const byAction = messages.reduce((acc, message) => {
-    const action = message.value.metadata.event.action
-    if (!acc[action]) {
-      acc[action] = [message]
-      return acc
+  const transferIds = []
+  const fulfilDtos = []
+  const headerList = []
+  messages.forEach(message => {
+    transferIds.push(message.value.content.uriParams.id)
+    fulfilDtos.push(decodePayload(message.value.content.payload))
+    headerList.push(message.value.content.headers)
+  })
+
+
+  // TODO: We need to load the prepareContext in here so that we can check that the condition
+  // and fulfilment match one another. My plan is to have this already loaded in-memory from
+  // a broadcast message that the ml-api-adapter broadcasts to each of the fulfil handlers.
+  //
+  // For now, we can 'make up' some dummy data and assume that the condition and fulfilment match
+  const dummyPrepareContext = fulfilDtos.map((dto, idx) => {
+    const transferId = transferIds[idx]
+    const headers = headerList[idx]
+    return {
+      transferId,
+      payeeFsp: headers['fspiop-source'],
+      payerFsp: headers['fspiop-destination'],
+      amount: { amount: '1', currency: 'USD' },
+      ilpPacket: 'DIICtgAAAAAAD0JAMjAyNDEyMDUxNjA4MDM5MDcYjF3nFyiGSaedeiWlO_87HCnJof_86Krj0lO8KjynIApnLm1vamFsb29wggJvZXlKeGRXOTBaVWxrSWpvaU1ERktSVUpUTmpsV1N6WkJSVUU0VkVkQlNrVXpXa0U1UlVnaUxDSjBjbUZ1YzJGamRHbHZia2xrSWpvaU1ERktSVUpUTmpsV1N6WkJSVUU0VkVkQlNrVXpXa0U1UlVvaUxDSjBjbUZ1YzJGamRHbHZibFI1Y0dVaU9uc2ljMk5sYm1GeWFXOGlPaUpVVWtGT1UwWkZVaUlzSW1sdWFYUnBZWFJ2Y2lJNklsQkJXVVZTSWl3aWFXNXBkR2xoZEc5eVZIbHdaU0k2SWtKVlUwbE9SVk5USW4wc0luQmhlV1ZsSWpwN0luQmhjblI1U1dSSmJtWnZJanA3SW5CaGNuUjVTV1JVZVhCbElqb2lUVk5KVTBST0lpd2ljR0Z5ZEhsSlpHVnVkR2xtYVdWeUlqb2lNamMzTVRNNE1ETTVNVElpTENKbWMzQkpaQ0k2SW5CaGVXVmxabk53SW4xOUxDSndZWGxsY2lJNmV5SndZWEowZVVsa1NXNW1ieUk2ZXlKd1lYSjBlVWxrVkhsd1pTSTZJazFUU1ZORVRpSXNJbkJoY25SNVNXUmxiblJwWm1sbGNpSTZJalEwTVRJek5EVTJOemc1SWl3aVpuTndTV1FpT2lKMFpYTjBhVzVuZEc5dmJHdHBkR1JtYzNBaWZYMHNJbVY0Y0dseVlYUnBiMjRpT2lJeU1ESTBMVEV5TFRBMVZERTJPakE0T2pBekxqa3dOMW9pTENKaGJXOTFiblFpT25zaVlXMXZkVzUwSWpvaU1UQXdJaXdpWTNWeWNtVnVZM2tpT2lKWVdGZ2lmWDA',
+      condition: 'GIxd5xcohkmnnXolpTv_OxwpyaH__Oiq49JTvCo8pyA',
+      expiration: '2025-04-03T19:23:01.961Z'
     }
+  })
 
-    const bucketed = acc[action]
-    bucketed.push(message)
-    acc[action] = bucketed
+  dummyPrepareContext.forEach((context, idx) => {
+    // We put in this call so that performance is mocked out appropriately
+    const dummyFulfilment = 'V-IalzIzy-zxy0SrlY1Ku2OE9aS4KgGZ0W-Zq5_BeC0'
+    const dummyCondition = 'GIxd5xcohkmnnXolpTv_OxwpyaH__Oiq49JTvCo8pyA'
+    const isValid = Validator.validateFulfilCondition(dummyFulfilment, dummyCondition);
 
-    return acc
-  }, {})
+    // We wont just throw here, but instead separate out from the batch
+    if (!isValid) {
+      throw new Error(`condition and fulfillment don't match!`);
+    }
+  })
 
-  // TODO: handle the batch in tigerbeetle
-
-
-
+  const batch = await ledger.assembleFulfilBatch(fulfilDtos, dummyPrepareContext)
+  await ledger.createTransfers(batch)
 
   // Not sure if there's an easy way to pull them off and put them back on the batch together
   await Promise.all(messages.map(message => _continueFulfil(message)))
@@ -103,10 +129,6 @@ const fulfilFast = async (error, messages) => {
 
 const _continueFulfil = async (message) => { 
   const payload = decodePayload(message.value.content.payload)
-  const eventType = message.value.metadata.event.type
-  // const kafkaTopic = message.topic
-  
-
   const params = { 
     message, 
     kafkaTopic: message.topic,
@@ -128,8 +150,7 @@ const _continueFulfil = async (message) => {
       eventDetail, 
       hubName: Config.HUB_NAME 
     }
-  );
-  
+  ); 
 }
 
 
