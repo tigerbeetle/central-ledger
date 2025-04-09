@@ -59,7 +59,6 @@ const FxFulfilService = require('./FxFulfilService')
 
 // particular handlers
 const { prepare } = require('./prepare')
-const transferMessageCache = require('#src/domain/fast/TransferMessageCache')
 const ledger = require('#src/domain/fast/ledger')
 
 const { Kafka, Comparators } = Util
@@ -91,7 +90,7 @@ const fulfilFast = async (error, messages) => {
 
   // TODO: We need to load the prepareContext in here so that we can check that the condition
   // and fulfilment match one another. My plan is to have this already loaded in-memory from
-  // a broadcast message that the ml-api-adapter broadcasts to each of the fulfil handlers.
+  // a message that the ml-api-adapter broadcasts to each of the fulfil handlers.
   //
   // For now, we can 'make up' some dummy data and assume that the condition and fulfilment match
   const dummyPrepareContext = fulfilDtos.map((dto, idx) => {
@@ -153,8 +152,6 @@ const _continueFulfil = async (message) => {
   ); 
 }
 
-
-
 const fulfil = async (error, messages) => {
   if (error) {
     rethrow.rethrowAndCountFspiopError(error, { operation: 'fulfil' })
@@ -213,143 +210,6 @@ const fulfil = async (error, messages) => {
   } finally {
     if (!span.isFinished) {
       await span.finish()
-    }
-  }
-}
-
-const _handleFulfilFastMessage = async (message, functionality, span) => { 
-  const location = { module: 'FulfilHandlerFast', method: '', path: '' }
-  const histTimerEnd = Metrics.getHistogram(
-    'transfer_fulfil',
-    'Consume a fulfil transfer message from the kafka topic and process it accordingly',
-    ['success', 'fspId']
-  ).startTimer()
-
-  const payload = decodePayload(message.value.content.payload)
-  const headers = message.value.content.headers
-  const type = message.value.metadata.event.type
-  const action = message.value.metadata.event.action
-  const transferId = message.value.content.uriParams.id
-  const kafkaTopic = message.topic
-  Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, { method: `fulfil:${action}` }))
-  const params = { message, kafkaTopic, decodedPayload: payload, span, consumer: Consumer, producer: Producer }
-
-
-  const actionLetter = (() => {
-    switch (action) {
-      case TransferEventAction.COMMIT: return Enum.Events.ActionLetter.commit
-      case TransferEventAction.RESERVE: return Enum.Events.ActionLetter.reserve
-      case TransferEventAction.REJECT: return Enum.Events.ActionLetter.reject
-      case TransferEventAction.ABORT: return Enum.Events.ActionLetter.abort
-      case TransferEventAction.BULK_COMMIT: return Enum.Events.ActionLetter.bulkCommit
-      case TransferEventAction.BULK_ABORT: return Enum.Events.ActionLetter.bulkAbort
-      default: return Enum.Events.ActionLetter.unknown
-    }
-  })()
-
-  // TODO: there should be some library for this sort of thing
-  const resolveTopicNameOverride = (action)  => {
-    switch (action) {
-      case TransferEventAction.COMMIT:
-        return Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.COMMIT 
-      case TransferEventAction.RESERVE:
-        return Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.RESERVE
-      case TransferEventAction.BULK_COMMIT:
-        return Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.BULK_COMMIT;
-      default: 
-        return undefined
-    }
-  }
-
-  // Validate the fulfil message
-  if (action === TransferEventAction.REJECT) {
-    const errorMessage = 'action REJECT is not allowed into fulfil handler'
-    Logger.isErrorEnabled && Logger.error(errorMessage)
-    !!span && span.error(errorMessage)
-    histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId })
-    return true
-  }
-  
-  // doing this just for performance test purposes
-  const dummyPreparePayload = {
-    transferId,
-    payeeFsp: headers['fspiop-source'],
-    payerFsp: headers['fspiop-destination'],
-    amount: { amount: '1', currency: 'USD' },
-    ilpPacket: 'DIICtgAAAAAAD0JAMjAyNDEyMDUxNjA4MDM5MDcYjF3nFyiGSaedeiWlO_87HCnJof_86Krj0lO8KjynIApnLm1vamFsb29wggJvZXlKeGRXOTBaVWxrSWpvaU1ERktSVUpUTmpsV1N6WkJSVUU0VkVkQlNrVXpXa0U1UlVnaUxDSjBjbUZ1YzJGamRHbHZia2xrSWpvaU1ERktSVUpUTmpsV1N6WkJSVUU0VkVkQlNrVXpXa0U1UlVvaUxDSjBjbUZ1YzJGamRHbHZibFI1Y0dVaU9uc2ljMk5sYm1GeWFXOGlPaUpVVWtGT1UwWkZVaUlzSW1sdWFYUnBZWFJ2Y2lJNklsQkJXVVZTSWl3aWFXNXBkR2xoZEc5eVZIbHdaU0k2SWtKVlUwbE9SVk5USW4wc0luQmhlV1ZsSWpwN0luQmhjblI1U1dSSmJtWnZJanA3SW5CaGNuUjVTV1JVZVhCbElqb2lUVk5KVTBST0lpd2ljR0Z5ZEhsSlpHVnVkR2xtYVdWeUlqb2lNamMzTVRNNE1ETTVNVElpTENKbWMzQkpaQ0k2SW5CaGVXVmxabk53SW4xOUxDSndZWGxsY2lJNmV5SndZWEowZVVsa1NXNW1ieUk2ZXlKd1lYSjBlVWxrVkhsd1pTSTZJazFUU1ZORVRpSXNJbkJoY25SNVNXUmxiblJwWm1sbGNpSTZJalEwTVRJek5EVTJOemc1SWl3aVpuTndTV1FpT2lKMFpYTjBhVzVuZEc5dmJHdHBkR1JtYzNBaWZYMHNJbVY0Y0dseVlYUnBiMjRpT2lJeU1ESTBMVEV5TFRBMVZERTJPakE0T2pBekxqa3dOMW9pTENKaGJXOTFiblFpT25zaVlXMXZkVzUwSWpvaU1UQXdJaXdpWTNWeWNtVnVZM2tpT2lKWVdGZ2lmWDA',
-    condition: 'GIxd5xcohkmnnXolpTv_OxwpyaH__Oiq49JTvCo8pyA',
-    expiration: '2025-04-03T19:23:01.961Z'
-  }
-  const preparePayload = dummyPreparePayload;
-
-  // TODO: need to validate that the fulfilment is valid, and transfer hasn't changed
-  // const preparePayload = transferMessageCache.getAndImmediatelyExpire(transferId);
-  // const isValid = Validator.validateFulfilCondition(payload.fulfilment, preparePayload.condition);
-  // if (!isValid) {
-  //   throw new Error(`condition and fulfillment don't match!`);
-  // }
-
-  // TODO: perform the validation
-
-  // looks something like this
-  // {
-  //   transferId: 'd4f5cd10-9775-489c-923e-3ae307ed0779',
-  //   payeeFsp: 'dfsp_b',
-  //   payerFsp: 'dfsp_a',
-  //   amount: { amount: '1', currency: 'USD' },
-  //   ilpPacket: 'DIICtgAAAAAAD0JAMjAyNDEyMDUxNjA4MDM5MDcYjF3nFyiGSaedeiWlO_87HCnJof_86Krj0lO8KjynIApnLm1vamFsb29wggJvZXlKeGRXOTBaVWxrSWpvaU1ERktSVUpUTmpsV1N6WkJSVUU0VkVkQlNrVXpXa0U1UlVnaUxDSjBjbUZ1YzJGamRHbHZia2xrSWpvaU1ERktSVUpUTmpsV1N6WkJSVUU0VkVkQlNrVXpXa0U1UlVvaUxDSjBjbUZ1YzJGamRHbHZibFI1Y0dVaU9uc2ljMk5sYm1GeWFXOGlPaUpVVWtGT1UwWkZVaUlzSW1sdWFYUnBZWFJ2Y2lJNklsQkJXVVZTSWl3aWFXNXBkR2xoZEc5eVZIbHdaU0k2SWtKVlUwbE9SVk5USW4wc0luQmhlV1ZsSWpwN0luQmhjblI1U1dSSmJtWnZJanA3SW5CaGNuUjVTV1JVZVhCbElqb2lUVk5KVTBST0lpd2ljR0Z5ZEhsSlpHVnVkR2xtYVdWeUlqb2lNamMzTVRNNE1ETTVNVElpTENKbWMzQkpaQ0k2SW5CaGVXVmxabk53SW4xOUxDSndZWGxsY2lJNmV5SndZWEowZVVsa1NXNW1ieUk2ZXlKd1lYSjBlVWxrVkhsd1pTSTZJazFUU1ZORVRpSXNJbkJoY25SNVNXUmxiblJwWm1sbGNpSTZJalEwTVRJek5EVTJOemc1SWl3aVpuTndTV1FpT2lKMFpYTjBhVzVuZEc5dmJHdHBkR1JtYzNBaWZYMHNJbVY0Y0dseVlYUnBiMjRpT2lJeU1ESTBMVEV5TFRBMVZERTJPakE0T2pBekxqa3dOMW9pTENKaGJXOTFiblFpT25zaVlXMXZkVzUwSWpvaU1UQXdJaXdpWTNWeWNtVnVZM2tpT2lKWVdGZ2lmWDA',
-  //   condition: 'GIxd5xcohkmnnXolpTv_OxwpyaH__Oiq49JTvCo8pyA',
-  //   expiration: '2025-04-03T19:23:01.961Z'
-  // }
-
-
-  // if the post_pending_transfer fails because pending_id not found, then we know that the pending
-  // is in the wrong state already
-  // if the transfer has expired, let's rely on TigerBeetle to have expired it
-
-  // Validations Succeeded - process the fulfil
-  Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, { path: 'validationPassed' }))
-  switch (action) {
-    case TransferEventAction.COMMIT:
-    case TransferEventAction.RESERVE: {
-      let topicNameOverride = resolveTopicNameOverride(action)
-      
-      Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, `positionTopic2--${actionLetter}12`))
-
-      await FastTransferService.handlePayeeResponse(transferId, preparePayload, action)
-
-      const eventDetail = { functionality: TransferEventType.POSITION, action }
-      // Key position fulfil message with payee account id
-      // const payeeAccount = await Participant.getAccountByNameAndCurrency(transfer.payeeFsp, transfer.currency, Enum.Accounts.LedgerAccountType.POSITION)
-
-      // not actually sure what happens here
-      await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, eventDetail, topicNameOverride, hubName: Config.HUB_NAME })
-      histTimerEnd({ success: true, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId })
-      
-      return true
-    }
-    case TransferEventAction.ABORT: {
-      // abort pending transfer
-      Logger.isInfoEnabled && Logger.info(Util.breadcrumb(location, `positionTopic4--${actionLetter}14`))
-      let fspiopError
-      try { // handle only valid errorCodes provided by the payee
-        fspiopError = ErrorHandler.Factory.createFSPIOPErrorFromErrorInformation(payload.errorInformation)
-      } catch (err) {
-        Logger.isErrorEnabled && Logger.error(`${Util.breadcrumb(location)}::${err.message}`)
-        fspiopError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'API specification undefined errorCode')
-        await FastTransferService.handlePayeeResponse(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
-        const eventDetail = { functionality: TransferEventType.POSITION, action }
-        // Key position abort with payer account id
-        const payerAccount = await Participant.getAccountByNameAndCurrency(transfer.payerFsp, transfer.currency, Enum.Accounts.LedgerAccountType.POSITION)
-        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING), eventDetail, messageKey: payerAccount.participantCurrencyId.toString(), hubName: Config.HUB_NAME })
-        rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'processFulfilMessage' })
-      }
-      await TransferService.FastTransferService(transferId, payload, action, fspiopError.toApiErrorObject(Config.ERROR_HANDLING))
-
-      // TODO: removed a bunch of fx related stuff here, hopefully that won't break everything
-    }
-    default: {
-      throw new Error(`Not implemented: Unhandled TransferEventAction: ${TransferEventAction}`)
     }
   }
 }
