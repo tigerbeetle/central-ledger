@@ -7,26 +7,39 @@ const decodePayload = Util.StreamingProtocol.decodePayload
 const assert = require('assert')
 
 
+const _validatePreparesMessage = (message) => {
+  try {
+    assert(message.value)
+    assert(message.value.content)
+    assert(message.value.content.count)
+    assert(message.value.content.batch)
+    assert(message.value.metadata)
+    assert(message.value.id)
+  } catch (err) {
+    throw err;
+  }
+}
 
 const handlePrepares = async (error, messages) => {
+  if (error) {
+    // need to understand these error conditions
+    throw new Error(`Kafka Error: ${error}`)
+  }
+
   assert(messages)
   assert(Array.isArray(messages))
   assert(messages.length === 1, 'Expected only 1 message from Kafka')
   const message = messages[0]
 
-  assert(message.value)
-  assert(message.value.id)
-  assert(message.value.content)
-  assert(message.value.content.count)
-  assert(message.value.content.batch)
-  assert(message.value.metadata)
 
-  const batchId = message.value.id
-
-  if (error) {
-    // need to understand these error conditions
-    throw new Error(`Kafka Error: ${error}`)
+  try {
+    _validatePreparesMessage(message)
+  } catch (err) {
+    console.log('TODO: handle invalid message from kafka!')
+    return;
   }
+  
+  const batchId = message.value.id
 
   console.log(`LD handlePrepares, handling batch of`, message.value.content.count)
 
@@ -42,8 +55,16 @@ const handlePrepares = async (error, messages) => {
   const messageProtocol = {
     content: {
       count: batch.length,
+      batch: prepares,
+
       // map of ids and error codes 
       failed: {},
+    },
+    metadata: {
+      event: {
+        type: 'notification',
+        action: 'prepare',
+      }
     },
     id: batchId,
   }
@@ -73,8 +94,8 @@ const registerHandlePreparesHandler = async () => {
       consumeTimeout: 1
     },
     rdkafkaConf: {
-      "client.id": "cl-con-transfer-prepare",
-      "group.id": "cl-group-transfer-prepare",
+      "client.id": "transfer-batch-prepares",
+      "group.id": "transfer-batch-prepares",
       "metadata.broker.list": "localhost:9192",
       "socket.keepalive.enable": true,
       "allow.auto.create.topics": true

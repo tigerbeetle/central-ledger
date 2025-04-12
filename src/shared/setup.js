@@ -53,6 +53,7 @@ const ParticipantLimitCached = require('../models/participant/participantLimitCa
 const externalParticipantCached = require('../models/participant/externalParticipantCached')
 const BatchPositionModelCached = require('../models/position/batchCached')
 const Plugins = require('./plugins')
+const Kafka = require('@mojaloop/central-services-stream').Util
 
 const migrate = (runMigrations) => {
   return runMigrations ? Migrator.migrate() : true
@@ -90,6 +91,42 @@ const connectMongoose = async () => {
   } else {
     return null
   }
+}
+
+// TODO: add in other producers here.
+const connectKakfaProducers = async () => {
+  const config = [{
+    topicConfig: {
+      topicName: 'notification-batch',
+      key: null,
+      partition: null,
+      opaqueKey: null
+    },
+    kafkaConfig: {
+      options: {
+        messageCharset: 'utf8' 
+      },
+      rdkafkaConf: {
+        'metadata.broker.list': 'localhost:9192',
+        'client.id': 'ml-prod-transfer-prepare',
+        event_cb: true,
+        dr_cb: true,
+        'socket.keepalive.enable': true,
+        'queue.buffering.max.messages': 10000000,
+
+        // 10 MB
+        'message.max.bytes': 1000 * 1000 * 10,
+        'linger.ms': 10,
+        'compression.type': 'lz4'
+      },
+      topicConf: { 
+        'request.required.acks': '1', 
+        partitioner: 'murmur2_random' 
+      },
+      // logger: configs[0].kafkaConfig.logger,
+    }
+  }]
+  await Kafka.Producer.connectAll(config)
 }
 
 /**
@@ -258,6 +295,7 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
     await connectDatabase()
     await connectMongoose()
     await initializeCache()
+    await connectKakfaProducers()
     if (Config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.connect()
     }
