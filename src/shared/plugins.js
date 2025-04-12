@@ -82,7 +82,13 @@ const registerPlugins = async (server) => {
     options: { log: logger }
   })
 
-  await server.register([Inert, Vision, Blipp, ErrorHandling])
+  await server.register([
+    Inert, 
+    Vision, 
+    // TODO: turn this off by default in config, super annoying
+    // Blipp, 
+    ErrorHandling
+  ])
 }
 
 module.exports = {

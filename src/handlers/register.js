@@ -54,6 +54,7 @@ const PositionHandlersBatch = require('./positions/handlerBatch')
 const TimeoutHandlers = require('./timeouts/handler')
 const AdminHandlers = require('./admin/handler')
 const BulkHandlers = require('./bulk')
+const TransferBatch = require('./transfers/transferBatch')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
 const registerAllHandlers = async () => {
@@ -72,6 +73,12 @@ const registerAllHandlers = async () => {
         }
       }
     }
+
+    // TODO: make tidier, but for now:
+    await TransferBatch.registerHandlePreparesHandler()
+    // await TransferBatch.registerHandleFulfilsHandler()
+
+
     return true
   } catch (err) {
     Logger.isErrorEnabled && Logger.error(err)
@@ -108,5 +115,8 @@ module.exports = {
     registerBulkFulfilHandler: BulkHandlers.registerBulkFulfilHandler,
     registerBulkProcessingHandler: BulkHandlers.registerBulkProcessingHandler,
     registerBulkGetHandler: BulkHandlers.registerGetBulkTransferHandler
-  }
+  },
+  // transferBatch {
+  //   reg
+  // }
 }

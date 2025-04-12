@@ -329,6 +329,7 @@ class Ledger {
       return Promise.resolve()
     }
 
+    // TODO: handle the errors nicely here
     return this._tbClient.createTransfers(batch);
   }
 
