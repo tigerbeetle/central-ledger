@@ -27,6 +27,7 @@ const stringToBool = (input) => {
 
 module.exports = {
   FAST_MODE_ENABLED: stringToBool(defaultValue(RC.FAST_MODE_ENABLED || false)),
+  DEFAULT_KAFKA_BROKER: defaultValue(RC.DEFAULT_KAFKA_BROKER, 'localhost:9192'),
   HOSTNAME: RC.HOSTNAME.replace(/\/$/, ''),
   PORT: RC.PORT,
   MAX_FULFIL_TIMEOUT_DURATION_SECONDS: RC.MAX_FULFIL_TIMEOUT_DURATION_SECONDS || 300,

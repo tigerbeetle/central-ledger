@@ -9,6 +9,7 @@ const Validator = require('./validator')
 const assert = require('assert')
 const { fulfil } = require('./handler')
 const { CreateTransferError } = require('tigerbeetle-node')
+const config = require('#src/lib/config')
 
 
 const _validatePreparesMessage = (message) => {
@@ -221,7 +222,7 @@ const registerHandlePreparesHandler = async () => {
     rdkafkaConf: {
       "client.id": "transfer-batch-prepares",
       "group.id": "transfer-batch-prepares",
-      "metadata.broker.list": "localhost:9192",
+      "metadata.broker.list": config.DEFAULT_KAFKA_BROKER,
       "socket.keepalive.enable": true,
       "allow.auto.create.topics": true
     },
@@ -250,7 +251,7 @@ const registerHandleFulfilsHandler = async () => {
     rdkafkaConf: {
       "client.id": "transfer-batch-fulfils",
       "group.id": "transfer-batch-fulfils",
-      "metadata.broker.list": "localhost:9192",
+      "metadata.broker.list": config.DEFAULT_KAFKA_BROKER,
       "socket.keepalive.enable": true,
       "allow.auto.create.topics": true
     },
