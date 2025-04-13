@@ -56,7 +56,7 @@ const kafkaWithBrokerOverrides = (input, defaultBroker) => {
           && leafConfig.config.rdkafkaConf
           && !leafConfig.config.rdkafkaConf['metadata.broker.list']
         ) {
-          Logger.info(`Config kafkaWithBrokerOverrides() overriding: ${path}.config.rdkafkaConf['metadata.broker.list']`)
+          Logger.info(`Config kafkaWithBrokerOverrides() overriding: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
           input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
         }
       })
