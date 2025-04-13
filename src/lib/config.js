@@ -189,7 +189,7 @@ const resolvedConfig = {
       * 
       * Default: 3000
       */
-      TB_ADDRESS: defaultValue(RC.LEDGER.OPTIONS.DEBUG_SKIP_TIGERBEETLE || '3000').split(','),
+      TB_ADDRESS: defaultValue(RC.LEDGER.OPTIONS.TB_ADDRESS || '3000').split(','),
 
       /**
        * DEBUG_SKIP_TIGERBEETLE
