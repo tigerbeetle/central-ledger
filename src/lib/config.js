@@ -1,9 +1,5 @@
-const PATH_TO_CONFIG_FILE = process.env.PATH_TO_CONFIG_FILE || '../../config/default.local.json'
-const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
+const Logger = require('@mojaloop/central-services-logger')
 
-console.log('PATH_TO_CONFIG_FILE is ', PATH_TO_CONFIG_FILE)
-
-const assert = require('assert')
 
 const defaultValue = (maybeValue, dflt) => {
   if (maybeValue === undefined) {
@@ -13,6 +9,12 @@ const defaultValue = (maybeValue, dflt) => {
   return maybeValue
 }
 
+const PATH_TO_CONFIG_FILE = defaultValue(process.env.PATH_TO_CONFIG_FILE,'../../config/default.local.json')
+Logger.info(`Config - loading config file from '${PATH_TO_CONFIG_FILE}'`)
+
+const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
+
+const assert = require('assert')
 
 const stringToBool = (input) => {
   assert(input !== undefined)
@@ -25,6 +27,53 @@ const stringToBool = (input) => {
   }
   throw new Error(`stringToBool, invalid input: ${input}`)
 }
+
+/**
+ * @function kafkaWithBrokerOverrides
+ * @description Allows us to easily configure the metadata.broker.list without needing to touch
+ *   each config file
+ */
+const kafkaWithBrokerOverrides = (input, defaultBroker) => {
+  assert(defaultBroker)
+  assert(input.CONSUMER)
+  assert(input.PRODUCER)
+
+  Object.keys(input).filter(groupKey => {
+    if (groupKey === 'CONSUMER') {
+      return true
+    }
+    if (groupKey === 'PRODUCER') {
+      return true
+    }
+    return false
+  }).forEach(groupKey => {
+    const group = input[groupKey]
+
+    Object.keys(group).forEach(key => {
+      const topic = input[groupKey][key]
+      Object.keys(topic).forEach(topicKey => {
+        const leafConfig = topic[topicKey]
+        const path = `input.${groupKey}.${key}.${topicKey}`
+        if (leafConfig.config 
+          && leafConfig.config.rdkafkaConf
+          && !leafConfig.config.rdkafkaConf['metadata.broker.list']
+        ) {
+          Logger.info(`Config kafkaWithBrokerOverrides() overriding: ${path}.config.rdkafkaConf['metadata.broker.list']`)
+          input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
+        }
+      })
+    })
+  })
+
+  return input
+}
+
+
+// need to nested iterate or something
+
+const defaultBroker = defaultValue(RC.KAFKA.DEFAULT_BROKER, 'localhost:9192')
+const kafka = kafkaWithBrokerOverrides(RC.KAFKA, defaultBroker)
+
 
 const resolvedConfig = {
   HOSTNAME: RC.HOSTNAME.replace(/\/$/, ''),
@@ -52,7 +101,7 @@ const resolvedConfig = {
   PROXY_CACHE_CONFIG: RC.PROXY_CACHE,
   // TODO (LD): CONFIG here is redundant, this is already config
   // Duplicating to plain KAFKA to maintain backwards compatibility
-  KAFKA_CONFIG: RC.KAFKA,
+  KAFKA_CONFIG: kafka,
   KAFKA: {
     /**
      * DEFAULT_BROKER
@@ -72,11 +121,6 @@ const resolvedConfig = {
      * Default: false
      */
     DEBUG_EXTREME_BATCHING: stringToBool(defaultValue(RC.KAFKA.DEBUG_EXTREME_BATCHING || false)),
-
-
-
-
-
   },
   PARTICIPANT_INITIAL_POSITION: RC.PARTICIPANT_INITIAL_POSITION,
   RUN_MIGRATIONS: !RC.MIGRATIONS.DISABLED,
@@ -164,8 +208,6 @@ const resolvedConfig = {
   },
 }
 
-
-// TODO: implement kafka broker overrides
 
 
 // Validate config

@@ -1,5 +1,4 @@
 {
-  "FAST_MODE_ENABLED": true,
   "PORT": 3001,
   "HOSTNAME": "http://central-ledger",
   "DATABASE": {
