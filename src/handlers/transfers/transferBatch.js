@@ -206,6 +206,8 @@ const handleFulfils = async (error, messages) => {
 }
 
 const registerHandlePreparesHandler = async () => {
+  console.log('registerHandlePreparesHandler metadata.broker.list', config.DEFAULT_KAFKA_BROKER)
+
   const topicName = `transfer-batch-prepare`
   // TODO: configure
   const consumeConfig = {
@@ -235,6 +237,8 @@ const registerHandlePreparesHandler = async () => {
 }
 
 const registerHandleFulfilsHandler = async () => {
+  console.log('registerHandleFulfilsHandler metadata.broker.list', config.DEFAULT_KAFKA_BROKER)
+
   const topicName = `transfer-batch-fulfil`
   // TODO: configure
   const consumeConfig = {
