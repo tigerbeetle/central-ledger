@@ -53,7 +53,6 @@ const ParticipantLimitCached = require('../models/participant/participantLimitCa
 const externalParticipantCached = require('../models/participant/externalParticipantCached')
 const BatchPositionModelCached = require('../models/position/batchCached')
 const Plugins = require('./plugins')
-const Config = require('../lib/config')
 const Kafka = require('@mojaloop/central-services-stream').Util
 
 const migrate = (runMigrations) => {
