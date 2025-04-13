@@ -2,6 +2,10 @@
 const PATH_TO_CONFIG_FILE = process.env.PATH_TO_CONFIG_FILE || '../../config/default.local.json'
 const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
 
+console.log('config!')
+console.log('PATH_TO_CONFIG_FILE is ', PATH_TO_CONFIG_FILE)
+console.log('RC.DEFAULT_KAFKA_BROKER', RC.DEFAULT_KAFKA_BROKER)
+
 const assert = require('assert')
 
 const defaultValue = (maybeValue, dflt) => {
