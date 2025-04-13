@@ -58,6 +58,7 @@ const TransferBatch = require('./transfers/transferBatch')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
 const registerAllHandlers = async () => {
+  console.log("registerAllHandlers - registering all handlers")
   try {
     const modules = await requireGlob(['./**/handler.js'])
     for (const key in modules) {
@@ -75,6 +76,7 @@ const registerAllHandlers = async () => {
     }
 
     // TODO: make tidier, but for now:
+    // I think this is confusing kafka
     await TransferBatch.registerHandlePreparesHandler()
     await TransferBatch.registerHandleFulfilsHandler()
 
