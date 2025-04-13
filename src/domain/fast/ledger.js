@@ -8,6 +8,7 @@ const Hydrator = require('./hydrator')
 const AccountType = require('./AccountType')
 const TransferBatcher = require('./transfer-batcher')
 const util = require('util')
+const Config = require('#src/lib/config')
 
 // TODO: expose these to config options
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '250');
@@ -506,9 +507,10 @@ class Ledger {
 // TODO: globals are a real pain to deal with in testing, but let's just do this for now
 // TODO: move this to the other shared setup stuff
 
+// TODO: switch to config
 const tbClient = createClient({
   cluster_id: 0n,
-  replica_addresses: process.env.TB_ADDRESS && process.env.TB_ADDRESS.split(',') || ['3000'],
+  replica_addresses: Config.LEDGER.OPTIONS.TB_ADDRESS,
 });
 const sqliteClient = new Database('metdata.db');
 const metadataStore = new CachedMetadataStore(sqliteClient)

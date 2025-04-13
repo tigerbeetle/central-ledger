@@ -1,6 +1,5 @@
 const Logger = require('@mojaloop/central-services-logger')
 
-
 const defaultValue = (maybeValue, dflt) => {
   if (maybeValue === undefined) {
     return dflt
@@ -9,7 +8,7 @@ const defaultValue = (maybeValue, dflt) => {
   return maybeValue
 }
 
-const PATH_TO_CONFIG_FILE = defaultValue(process.env.PATH_TO_CONFIG_FILE,'../../config/default.local.json')
+const PATH_TO_CONFIG_FILE = defaultValue(process.env.PATH_TO_CONFIG_FILE,'../../config/default.json')
 Logger.info(`Config - loading config file from '${PATH_TO_CONFIG_FILE}'`)
 
 const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
@@ -193,7 +192,7 @@ const resolvedConfig = {
       * 
       * Default: 3000
       */
-      TB_ADDRESS: defaultValue(RC.LEDGER.OPTIONS.DEBUG_SKIP_TIGERBEETLE || '3000'),
+      TB_ADDRESS: defaultValue(RC.LEDGER.OPTIONS.DEBUG_SKIP_TIGERBEETLE || '3000').split(','),
 
       /**
        * DEBUG_SKIP_TIGERBEETLE
@@ -218,6 +217,13 @@ if (['SQL', 'TIGERBEETLE'].indexOf(resolvedConfig.LEDGER.MODE) === -1) {
 
 if (resolvedConfig.LEDGER.MODE === 'SQL' && resolvedConfig.KAFKA.DEBUG_EXTREME_BATCHING) {
   throw new Error(`ConfigError - 'KAFKA.DEBUG_EXTREME_BATCHING' cannot be enabled when 'LEDGER.MODE' is SQL`)
+}
+
+if (resolvedConfig.LEDGER.MODE === 'TIGERBEETLE') {
+  assert(resolvedConfig.LEDGER.OPTIONS.TB_ADDRESS)
+  assert(Array.isArray(resolvedConfig.LEDGER.OPTIONS.TB_ADDRESS))
+  assert(resolvedConfig.LEDGER.OPTIONS.TB_ADDRESS.length > 0)
+  assert(resolvedConfig.LEDGER.OPTIONS.TB_ADDRESS.length <= 6)
 }
 
 
