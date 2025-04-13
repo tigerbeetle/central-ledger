@@ -4,13 +4,9 @@ const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
 
 const assert = require('assert')
 
-const defaultString = (maybeValue, dflt) => {
+const defaultValue = (maybeValue, dflt) => {
   if (maybeValue === undefined) {
     return dflt
-  }
-
-  if (typeof maybeValue !== 'string') {
-    throw new Error(`Config.defaultString() - invalid 'maybeValue': ${maybeValue}`)
   }
 
   return maybeValue
@@ -19,7 +15,7 @@ const defaultString = (maybeValue, dflt) => {
 
 const stringToBool = (input) => {
   assert(input)
-  const lowerStr = input.toLowerCase()
+  const lowerStr = `${input}`.toLowerCase()
   if (lowerStr === 'false') {
     return false
   }
@@ -30,7 +26,7 @@ const stringToBool = (input) => {
 }
 
 module.exports = {
-  FAST_MODE_ENABLED: stringToBool(defaultString(RC.FAST_MODE_ENABLED || 'false')),
+  FAST_MODE_ENABLED: stringToBool(defaultValue(RC.FAST_MODE_ENABLED || false)),
   HOSTNAME: RC.HOSTNAME.replace(/\/$/, ''),
   PORT: RC.PORT,
   MAX_FULFIL_TIMEOUT_DURATION_SECONDS: RC.MAX_FULFIL_TIMEOUT_DURATION_SECONDS || 300,
