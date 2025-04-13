@@ -53,7 +53,7 @@ const ParticipantLimitCached = require('../models/participant/participantLimitCa
 const externalParticipantCached = require('../models/participant/externalParticipantCached')
 const BatchPositionModelCached = require('../models/position/batchCached')
 const Plugins = require('./plugins')
-const config = require('../lib/config')
+const Config = require('../lib/config')
 const Kafka = require('@mojaloop/central-services-stream').Util
 
 const migrate = (runMigrations) => {
@@ -108,7 +108,7 @@ const connectKakfaProducers = async () => {
         messageCharset: 'utf8' 
       },
       rdkafkaConf: {
-        'metadata.broker.list': config.DEFAULT_KAFKA_BROKER,
+        'metadata.broker.list': Config.DEFAULT_KAFKA_BROKER,
         'client.id': 'ml-prod-transfer-prepare',
         event_cb: true,
         dr_cb: true,
