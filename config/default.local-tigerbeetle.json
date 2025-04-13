@@ -1,6 +1,4 @@
 {
-  "FAST_MODE_ENABLED": true,
-  "DEFAULT_KAFKA_BROKER": "192.168.100.3:9092",
   "PORT": 3001,
   "HOSTNAME": "http://central-ledger",
   "DATABASE": {
@@ -97,6 +95,8 @@
   },
   "API_DOC_ENDPOINTS_ENABLED": true,
   "KAFKA": {
+    "DEBUG_EXTREME_BATCHING": true,
+    "DEFAULT_BROKER": "localhost:9192",
     "EVENT_TYPE_ACTION_TOPIC_MAP" : {
      "POSITION":{
         "PREPARE": null,

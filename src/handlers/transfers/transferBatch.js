@@ -206,8 +206,6 @@ const handleFulfils = async (error, messages) => {
 }
 
 const registerHandlePreparesHandler = async () => {
-  console.log('registerHandlePreparesHandler metadata.broker.list', config.DEFAULT_KAFKA_BROKER)
-
   const topicName = `transfer-batch-prepare`
   // TODO: configure
   const consumeConfig = {
@@ -224,7 +222,7 @@ const registerHandlePreparesHandler = async () => {
     rdkafkaConf: {
       "client.id": "transfer-batch-prepares",
       "group.id": "transfer-batch-prepares",
-      "metadata.broker.list": config.DEFAULT_KAFKA_BROKER,
+      "metadata.broker.list": config.KAFKA.DEFAULT_BROKER,
       "socket.keepalive.enable": true,
       "allow.auto.create.topics": true
     },
@@ -237,8 +235,6 @@ const registerHandlePreparesHandler = async () => {
 }
 
 const registerHandleFulfilsHandler = async () => {
-  console.log('registerHandleFulfilsHandler metadata.broker.list', config.DEFAULT_KAFKA_BROKER)
-
   const topicName = `transfer-batch-fulfil`
   // TODO: configure
   const consumeConfig = {
@@ -255,7 +251,7 @@ const registerHandleFulfilsHandler = async () => {
     rdkafkaConf: {
       "client.id": "transfer-batch-fulfils",
       "group.id": "transfer-batch-fulfils",
-      "metadata.broker.list": config.DEFAULT_KAFKA_BROKER,
+      "metadata.broker.list": config.KAFKA.DEFAULT_BROKER,
       "socket.keepalive.enable": true,
       "allow.auto.create.topics": true
     },

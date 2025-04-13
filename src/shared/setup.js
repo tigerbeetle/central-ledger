@@ -107,7 +107,7 @@ const connectKakfaProducers = async () => {
         messageCharset: 'utf8' 
       },
       rdkafkaConf: {
-        'metadata.broker.list': Config.DEFAULT_KAFKA_BROKER,
+        'metadata.broker.list': Config.KAFKA.DEFAULT_BROKER,
         'client.id': 'ml-prod-transfer-prepare',
         event_cb: true,
         dr_cb: true,

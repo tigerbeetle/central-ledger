@@ -1,10 +1,7 @@
-// const RC = require('parse-strings-in-object')(require('rc')('CLEDG', require('../../config/default.json')))
 const PATH_TO_CONFIG_FILE = process.env.PATH_TO_CONFIG_FILE || '../../config/default.local.json'
 const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
 
-console.log('config!')
 console.log('PATH_TO_CONFIG_FILE is ', PATH_TO_CONFIG_FILE)
-console.log('RC.DEFAULT_KAFKA_BROKER', RC.DEFAULT_KAFKA_BROKER)
 
 const assert = require('assert')
 
@@ -18,7 +15,7 @@ const defaultValue = (maybeValue, dflt) => {
 
 
 const stringToBool = (input) => {
-  assert(input)
+  assert(input !== undefined)
   const lowerStr = `${input}`.toLowerCase()
   if (lowerStr === 'false') {
     return false
@@ -29,10 +26,7 @@ const stringToBool = (input) => {
   throw new Error(`stringToBool, invalid input: ${input}`)
 }
 
-module.exports = {
-  FAST_MODE_ENABLED: stringToBool(defaultValue(RC.FAST_MODE_ENABLED || false)),
-  // DEFAULT_KAFKA_BROKER: defaultValue(RC.DEFAULT_KAFKA_BROKER, 'localhost:9192'),
-  DEFAULT_KAFKA_BROKER: RC.DEFAULT_KAFKA_BROKER,
+const resolvedConfig = {
   HOSTNAME: RC.HOSTNAME.replace(/\/$/, ''),
   PORT: RC.PORT,
   MAX_FULFIL_TIMEOUT_DURATION_SECONDS: RC.MAX_FULFIL_TIMEOUT_DURATION_SECONDS || 300,
@@ -56,7 +50,34 @@ module.exports = {
   HANDLERS_TIMEOUT_TIMEZONE: RC.HANDLERS.TIMEOUT.TIMEZONE,
   CACHE_CONFIG: RC.CACHE,
   PROXY_CACHE_CONFIG: RC.PROXY_CACHE,
+  // TODO (LD): CONFIG here is redundant, this is already config
+  // Duplicating to plain KAFKA to maintain backwards compatibility
   KAFKA_CONFIG: RC.KAFKA,
+  KAFKA: {
+    /**
+     * DEFAULT_BROKER
+     * 
+     * Overwritten by specific producer/consumer config
+     * 
+     * Default: localhost:9192
+     */
+    DEFAULT_BROKER: defaultValue(RC.KAFKA.DEFAULT_BROKER, 'localhost:9192'),
+
+    /**
+     * DEBUG_EXTREME_BATCHING
+     * 
+     * Description: When `true`, uses in-message Kafka batching, where many Prepares and Fulfils
+     *   are combined into the same Kafka message.
+     * 
+     * Default: false
+     */
+    DEBUG_EXTREME_BATCHING: stringToBool(defaultValue(RC.KAFKA.DEBUG_EXTREME_BATCHING || false)),
+
+
+
+
+
+  },
   PARTICIPANT_INITIAL_POSITION: RC.PARTICIPANT_INITIAL_POSITION,
   RUN_MIGRATIONS: !RC.MIGRATIONS.DISABLED,
   RUN_DATA_MIGRATIONS: RC.MIGRATIONS.RUN_DATA_MIGRATIONS,
@@ -104,5 +125,58 @@ module.exports = {
   API_DOC_ENDPOINTS_ENABLED: RC.API_DOC_ENDPOINTS_ENABLED || false,
   // If this is set to true, payee side currency conversion will not be allowed due to a limitation in the current implementation
   PAYEE_PARTICIPANT_CURRENCY_VALIDATION_ENABLED: (RC.PAYEE_PARTICIPANT_CURRENCY_VALIDATION_ENABLED === true || RC.PAYEE_PARTICIPANT_CURRENCY_VALIDATION_ENABLED === 'true'),
-  SETTLEMENT_MODELS: RC.SETTLEMENT_MODELS
+  SETTLEMENT_MODELS: RC.SETTLEMENT_MODELS,
+
+  /**
+   * 
+   */
+  LEDGER: {
+
+    /**
+     * LEDGER.MODE
+     * Description: Determines which Ledger should be used.
+     *   TIGERBEETLE is currently in preview, and is not production-ready
+     * 
+     * Options: SQL | TIGERBEETLE
+     * Default: SQL
+     */
+    MODE: defaultValue(RC.LEDGER.MODE, 'SQL'),
+    OPTIONS: {
+      /**
+      * TB_ADDRESS
+      * 
+      * Description: Comma a separated list of TigerBeetle nodes
+      * 
+      * Default: 3000
+      */
+      TB_ADDRESS: defaultValue(RC.LEDGER.OPTIONS.DEBUG_SKIP_TIGERBEETLE || '3000'),
+
+      /**
+       * DEBUG_SKIP_TIGERBEETLE
+       * 
+       * Description: When `true`, calls to TigerBeetle will be skipped. This serves as a performance
+       *   double check to find bottlenecks. Will be disabled before Production readyness
+       * 
+       * Default: false
+       */
+      DEBUG_SKIP_TIGERBEETLE: stringToBool(defaultValue(RC.LEDGER.OPTIONS.DEBUG_SKIP_TIGERBEETLE || false)),
+    }
+  },
 }
+
+
+// TODO: implement kafka broker overrides
+
+
+// Validate config
+
+if (['SQL', 'TIGERBEETLE'].indexOf(resolvedConfig.LEDGER.MODE) === -1) {
+  throw new Error(`ConfigError - LEDGER.MODE must be SQL or TIGERBEETLE. Found: ${resolvedConfig.LEDGER.MODE}`)
+}
+
+if (resolvedConfig.LEDGER.MODE === 'SQL' && resolvedConfig.KAFKA.DEBUG_EXTREME_BATCHING) {
+  throw new Error(`ConfigError - 'KAFKA.DEBUG_EXTREME_BATCHING' cannot be enabled when 'LEDGER.MODE' is SQL`)
+}
+
+
+module.exports = resolvedConfig

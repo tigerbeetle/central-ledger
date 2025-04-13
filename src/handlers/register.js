@@ -56,6 +56,7 @@ const AdminHandlers = require('./admin/handler')
 const BulkHandlers = require('./bulk')
 const TransferBatch = require('./transfers/transferBatch')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
+const config = require('#src/lib/config')
 
 const registerAllHandlers = async () => {
   console.log("registerAllHandlers - registering all handlers")
@@ -75,12 +76,14 @@ const registerAllHandlers = async () => {
       }
     }
 
-    // TODO: make tidier, but for now:
-    // I think this is confusing kafka
+    if (config.KAFKA.DEBUG_EXTREME_BATCHING) {
+      Logger.info(`Registering transfer batch handlers`)
+      await TransferBatch.registerHandlePreparesHandler()
+      await TransferBatch.registerHandleFulfilsHandler()
+    } else {
+      Logger.info(`skipping transfer batch handlers`)
+    }
     
-    // await TransferBatch.registerHandlePreparesHandler()
-    // await TransferBatch.registerHandleFulfilsHandler()
-
     return true
   } catch (err) {
     Logger.isErrorEnabled && Logger.error(err)
@@ -118,7 +121,6 @@ module.exports = {
     registerBulkProcessingHandler: BulkHandlers.registerBulkProcessingHandler,
     registerBulkGetHandler: BulkHandlers.registerGetBulkTransferHandler
   },
-  // transferBatch {
-  //   reg
-  // }
+
+  // TODO: add extreme batching handlers
 }

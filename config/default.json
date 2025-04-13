@@ -1,10 +1,9 @@
 {
-  "FAST_MODE_ENABLED": "true",
   "PORT": 3001,
   "HOSTNAME": "http://central-ledger",
   "DATABASE": {
     "DIALECT": "mysql",
-    "HOST": "192.168.100.2",
+    "HOST": "localhost",
     "PORT": 3306,
     "USER": "central_ledger",
     "PASSWORD": "password",
@@ -95,7 +94,15 @@
     }
   },
   "API_DOC_ENDPOINTS_ENABLED": true,
+  "LEDGER": {
+    "MODE": "SQL",
+    "OPTIONS": {
+
+    }
+  },
   "KAFKA": {
+    "DEBUG_EXTREME_BATCHING": false,
+    "DEFAULT_BROKER": "localhost:9192",
     "EVENT_TYPE_ACTION_TOPIC_MAP" : {
       "POSITION":{
         "PREPARE": null,
