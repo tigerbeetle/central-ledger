@@ -26,6 +26,9 @@ const addLimitAndInitialPosition = async (participantName, limitAndInitialPositi
 
     await ledger.onboardDfsp(fspId, currency)
   } catch (err) {
+    // TODO: catch the `UNIQUE constraint failed: accounts.fspId, accounts.currency, accounts.accountType -        {"context":"CSSh"}`
+    // error
+
     log.error('error adding limit and initial position', err)
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }

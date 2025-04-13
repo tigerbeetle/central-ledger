@@ -241,6 +241,7 @@ const addLimitAndInitialPosition = async function (request, h) {
   try {
     // LD - replaced with TigerBeetle here
     if (Config.FAST_MODE_ENABLED) {
+      console.log('Calling FastAdmin.addLimitAndInitialPosition()')
       await FastAdmin.addLimitAndInitialPosition(request.params.name, request.payload)
       return h.response().code(201)
     }

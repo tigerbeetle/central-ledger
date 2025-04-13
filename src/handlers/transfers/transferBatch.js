@@ -8,6 +8,7 @@ const Validator = require('./validator')
 
 const assert = require('assert')
 const { fulfil } = require('./handler')
+const { CreateTransferError } = require('tigerbeetle-node')
 
 
 const _validatePreparesMessage = (message) => {
@@ -48,6 +49,10 @@ const handlePrepares = async (error, messages) => {
   const prepares = message.value.content.batch
   const batch = await ledger.assemblePrepareBatch(prepares)
   const errors = await ledger.createTransfers(batch)
+
+  for (const error of errors) {
+    console.error(`Batch account at ${error.index} failed to create: ${CreateTransferError[error.result]}.`)
+  }
 
   if (errors.length > 0) {
     console.log(`WARN: ${errors.length} unhandled TigerBeetle errors - need to be handled`)
@@ -103,8 +108,6 @@ const handleFulfils = async (error, messages) => {
   assert(messages.length === 1, 'Expected only 1 message from Kafka')
   const message = messages[0]
 
-  
-
   try {
     _validateFulfilsMessage(message)
   } catch (err) {
@@ -112,14 +115,14 @@ const handleFulfils = async (error, messages) => {
     return;
   }
 
+  console.log(`LD handleFulfils, handling batch of`, message.value.content.count)
+
   const batchId = message.value.id
 
 
   const fulfils = message.value.content.batch
   // need a better name than metadata or context
   const metadata = message.value.content.metadata
-  console.log('fulfils', fulfils)
-  console.log('metadata', metadata)
 
   assert.equal(fulfils.length, metadata.length)
 
@@ -167,6 +170,10 @@ const handleFulfils = async (error, messages) => {
 
   const batch = await ledger.assembleFulfilBatch(validFulils, validPrepareContext)
   const errors = await ledger.createTransfers(batch)
+
+  for (const error of errors) {
+    console.error(`Batch account at ${error.index} failed to create: ${CreateTransferError[error.result]}.`)
+  }
 
   if (errors.length > 0) {
     console.log(`WARN: ${errors.length} unhandled TigerBeetle errors - need to be handled`)

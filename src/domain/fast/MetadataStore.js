@@ -43,8 +43,6 @@ class MetadataStore {
       tigerBeetleId: accountDescriptors.tigerBeetleId.toString(),
     }))
 
-    console.log('dehydrated accounts', dehydratedAccounts[0])
-
     const insertStatement = this._client.prepare(`
       INSERT INTO accounts (fspId, currency, accountType, tigerBeetleId)
       VALUES (@fspId, @currency, @accountType, @tigerBeetleId)

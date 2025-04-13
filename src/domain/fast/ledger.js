@@ -206,13 +206,22 @@ class Ledger {
 
       const payerFsp = context.payerFsp
       const payeeFsp = context.payeeFsp
+      assert(payerFsp)
+      assert(payeeFsp)
+      
       const amountStr = context.amount.amount
       const transferId = context.transferId
+      assert(transferId)
+
 
       // TODO: verify that this is accurate, and shouldn't be replaced with BigInt
       // MLNumber is based on BigNumber, which is a 3rd party dependency
       const amount = BigInt((new MLNumber(amountStr)).toNumber())
       const pendingId = Helper.fromMojaloopId(transferId)
+
+      assert(settlementAccountIdMap[payerFsp])
+      assert(settlementAccountIdMap[payeeFsp])
+
 
       batch.push(
         {
@@ -227,7 +236,9 @@ class Ledger {
           timeout: 0,
           ledger: 0,
           code: 0,
-          flags: TransferFlags.post_pending_transfer & TransferFlags.linked,
+          // TODO: something strange with these flags perhaps?
+          // flags: TransferFlags.post_pending_transfer & TransferFlags.linked,
+          flags: TransferFlags.post_pending_transfer,
           timestamp: 0n,
         },
         {
