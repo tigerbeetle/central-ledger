@@ -620,7 +620,7 @@ const _continuePrepare = async (message) => {
 }
 
 module.exports = {
-  prepare: Config.FAST_MODE_ENABLED ? prepareFast : prepare,
+  prepare: Config.LEDGER.MODE === 'TIGERBEETLE' ? prepareFast : prepare,
   forwardPrepare,
   calculateProxyObligation,
   checkDuplication,

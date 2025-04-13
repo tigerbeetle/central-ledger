@@ -384,7 +384,7 @@ const registerPositionHandler = async () => {
   try {
     await SettlementModelCached.initialize()
     const positionHandler = {
-      command: Config.FAST_MODE_ENABLED ? positionsFast : positions,
+      command: Config.LEDGER.MODE === 'TIGERBEETLE' ? positionsFast : positions,
       topicName: Kafka.transformGeneralTopicName(Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, Enum.Events.Event.Type.POSITION, Enum.Events.Event.Action.PREPARE),
       config: Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, Enum.Events.Event.Type.TRANSFER.toUpperCase(), Enum.Events.Event.Action.POSITION.toUpperCase())
     }
@@ -415,5 +415,5 @@ const registerAllHandlers = async () => {
 module.exports = {
   registerPositionHandler,
   registerAllHandlers,
-  positions: Config.FAST_MODE_ENABLED ? positionsFast : positions,
+  positions: Config.LEDGER.MODE === 'TIGERBEETLE' ? positionsFast : positions,
 }

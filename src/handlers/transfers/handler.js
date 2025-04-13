@@ -976,7 +976,7 @@ const registerPrepareHandler = async () => {
 const registerFulfilHandler = async () => {
   try {
     const fulfillHandler = {
-      command: Config.FAST_MODE_ENABLED ? fulfilFast : fulfil,
+      command: Config.LEDGER.MODE === 'TIGERBEETLE' ? fulfilFast : fulfil,
       topicName: Kafka.transformGeneralTopicName(Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, TransferEventType.TRANSFER, TransferEventType.FULFIL),
       config: Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, TransferEventType.TRANSFER.toUpperCase(), TransferEventType.FULFIL.toUpperCase())
     }
@@ -1032,7 +1032,7 @@ const registerAllHandlers = async () => {
 
 module.exports = {
   prepare,
-  fulfil: Config.FAST_MODE_ENABLED ? fulfilFast : fulfil,
+  fulfil: Config.LEDGER.MODE === 'TIGERBEETLE' ? fulfilFast : fulfil,
   getTransfer,
   registerPrepareHandler,
   registerFulfilHandler,

@@ -46,6 +46,15 @@ const LocalEnum = {
   disabled: 'disabled'
 }
 
+
+/**
+ * participants handlers
+ * 
+ * TODO (LD): We should find a way to extend this and reimplement the API with TigerBeetle completely
+ *   for now, I've taken the simple approach of overriding specific handlers which are just used in 
+ *   the performance preview, but a production-ready approach needs to be more robust.
+ */
+
 const entityItem = ({ name, createdDate, isActive, currencyList, isProxy }, ledgerAccountIds) => {
   const link = UrlParser.toParticipantUri(name)
   const accounts = currencyList.map((currentValue) => {
@@ -239,9 +248,10 @@ const getEndpoint = async function (request) {
 
 const addLimitAndInitialPosition = async function (request, h) {
   try {
-    // LD - replaced with TigerBeetle here
-    if (Config.FAST_MODE_ENABLED) {
-      console.log('Calling FastAdmin.addLimitAndInitialPosition()')
+
+    if (Config.LEDGER.MODE === 'TIGERBEETLE') {
+      Logger.warn(`addLimitAndInitialPosition() - LEDGER.MODE is TigerBeetle, shimming this endpoint`)
+
       await FastAdmin.addLimitAndInitialPosition(request.params.name, request.payload)
       return h.response().code(201)
     }
@@ -328,13 +338,13 @@ const getPositions = async function (request) {
 
 const getAccounts = async function (request) {
   try {
-    // shim with TigerBeetle 
-    if (Config.FAST_MODE_ENABLED) {
+    if (Config.LEDGER.MODE === 'TIGERBEETLE') {
+      Logger.warn(`getAccounts() - LEDGER.MODE is TigerBeetle, shimming this endpoint`)
       assert(request.params.name, 'Expected name param to exist')
       return await FastAdmin.getAccounts(request.params.name)
     }
-    return await ParticipantService.getAccounts(request.params.name, request.query)
-    
+
+    return await ParticipantService.getAccounts(request.params.name, request.query)    
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetAccounts' })
   }
@@ -360,11 +370,13 @@ const updateAccount = async function (request, h) {
 const recordFunds = async function (request, h) {
   try {
     const enums = await Enums.getEnums('all')
-
-    if (Config.FAST_MODE_ENABLED) { 
+    
+    if (Config.LEDGER.MODE === 'TIGERBEETLE') {
+      Logger.warn(`recordFunds() - LEDGER.MODE is TigerBeetle, shimming this endpoint`)
       await FastAdmin.recordFundsInOut(request.payload, request.params, enums)
       return h.response().code(202)
     }
+
 
     await ParticipantService.recordFundsInOut(request.payload, request.params, enums)
     return h.response().code(202)
