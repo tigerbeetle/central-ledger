@@ -12,7 +12,6 @@ const PATH_TO_CONFIG_FILE = defaultValue(process.env.PATH_TO_CONFIG_FILE,'../../
 Logger.info(`Config - loading config file from '${PATH_TO_CONFIG_FILE}'`)
 
 const RC = require('rc')('CLEDG', require(PATH_TO_CONFIG_FILE))
-
 const assert = require('assert')
 
 const stringToBool = (input) => {
@@ -67,8 +66,6 @@ const kafkaWithBrokerOverrides = (input, defaultBroker) => {
   return input
 }
 
-
-// need to nested iterate or something
 
 const defaultBroker = defaultValue(RC.KAFKA.DEFAULT_BROKER, 'localhost:9192')
 const kafka = kafkaWithBrokerOverrides(RC.KAFKA, defaultBroker)
