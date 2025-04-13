@@ -77,8 +77,9 @@ const registerAllHandlers = async () => {
 
     // TODO: make tidier, but for now:
     // I think this is confusing kafka
-    await TransferBatch.registerHandlePreparesHandler()
-    await TransferBatch.registerHandleFulfilsHandler()
+    
+    // await TransferBatch.registerHandlePreparesHandler()
+    // await TransferBatch.registerHandleFulfilsHandler()
 
     return true
   } catch (err) {
