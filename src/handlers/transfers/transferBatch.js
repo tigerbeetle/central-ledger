@@ -58,6 +58,8 @@ const handlePrepares = async (error, messages) => {
     content: {
       count: batch.length,
       batch: prepares,
+      // TODO: put in some proper metadata here
+      metadata: prepares,
 
       // map of ids and error codes 
       failed: {},
