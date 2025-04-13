@@ -76,8 +76,7 @@ const registerAllHandlers = async () => {
 
     // TODO: make tidier, but for now:
     await TransferBatch.registerHandlePreparesHandler()
-    // await TransferBatch.registerHandleFulfilsHandler()
-
+    await TransferBatch.registerHandleFulfilsHandler()
 
     return true
   } catch (err) {
