@@ -95,13 +95,13 @@
   },
   "API_DOC_ENDPOINTS_ENABLED": true,
   "LEDGER": {
-    "MODE": "SQL",
+    "MODE": "TIGERBEETLE",
     "OPTIONS": {
       
     }
   },
   "KAFKA": {
-    "DEBUG_EXTREME_BATCHING": false,
+    "DEBUG_EXTREME_BATCHING": true,
     "DEFAULT_BROKER": "localhost:9192",
     "EVENT_TYPE_ACTION_TOPIC_MAP" : {
       "POSITION":{
