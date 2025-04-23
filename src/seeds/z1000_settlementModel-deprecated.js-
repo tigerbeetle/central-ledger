@@ -22,39 +22,44 @@
  * Mojaloop Foundation
  - Name Surname <name.surname@mojaloop.io>
 
- * INFITX
- - Vijay Kumar Guthi <vijaya.guthi@infitx.com>
+ * Georgi Georgiev <georgi.georgiev@modusbox.com>
  --------------
  ******/
 
+ /* Note: this seed script is currently not in use, but will should remain available
+  until it is confirmed no settlement models will be set as default for all schemas.
+  It might be also used for development purposes to easily instantiate settlement
+  models. z filename prefix is used to ensure proper script run order. */
+
 'use strict'
 
-exports.up = async (knex) => {
-  return await knex.schema.hasTable('fxTransferParticipant').then(function (exists) {
-    if (exists) {
-      return knex.schema.alterTable('fxTransferParticipant', (t) => {
-        t.integer('participantId').unsigned().notNullable()
-        // Disabling this as its throwing error while running the migration with existing data in the table
-        // t.foreign('participantId').references('participantId').inTable('participant')
-        t.index('participantId')
-        t.integer('participantCurrencyId').unsigned().nullable().alter()
-      })
-    }
-  })
-}
+const settlementModels = [
+  {
+    name: 'DEFERRED_NET',
+    settlementGranularityId: 2, // NET
+    settlementInterchangeId: 2, // MULTILATERAL
+    settlementDelayId: 2, // DEFERRED
+    ledgerAccountTypeId: 1, // POSITION
+    currencyId: null
+  },
+  {
+    name: 'DEFERRED_NET_USD',
+    settlementGranularityId: 2, // NET
+    settlementInterchangeId: 2, // MULTILATERAL
+    settlementDelayId: 2, // DEFERRED
+    ledgerAccountTypeId: 1, // POSITION
+    currencyId: 'USD'
+  }
+]
 
-exports.down = async (knex) => {
-<<<<<<< HEAD
-  return await knex.schema.hasTable('fxTransferParticipant').then(function (exists) {
-=======
-  return await knex.schema.hasTable('fxTransferParticipant').then(function(exists) {
->>>>>>> 522492f2 (refactor: move seeds, migrations, knexfile.js into src)
-    if (exists) {
-      return knex.schema.alterTable('fxTransferParticipant', (t) => {
-        t.dropIndex('participantId')
-        t.dropColumn('participantId')
-        t.integer('participantCurrencyId').unsigned().notNullable().alter()
-      })
+exports.seed = async function (knex) {
+  try {
+    return await knex('settlementModel').insert(settlementModels)
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') return -1001
+    else {
+      console.log(`Uploading seeds for settlementModel has failed with the following error: ${err}`)
+      return -1000
     }
-  })
+  }
 }

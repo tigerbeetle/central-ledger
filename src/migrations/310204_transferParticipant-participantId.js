@@ -44,7 +44,11 @@ exports.up = async (knex) => {
 }
 
 exports.down = async (knex) => {
+<<<<<<< HEAD
   return await knex.schema.hasTable('transferParticipant').then(function (exists) {
+=======
+  return await knex.schema.hasTable('transferParticipant').then(function(exists) {
+>>>>>>> 522492f2 (refactor: move seeds, migrations, knexfile.js into src)
     if (exists) {
       return knex.schema.alterTable('transferParticipant', (t) => {
         t.dropIndex('participantId')
