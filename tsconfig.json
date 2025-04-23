@@ -10,6 +10,7 @@
     "target": "es2020",
     "allowJs": true,
     "skipLibCheck": true,
+    "baseUrl": "./"
   },
   "include": [
     "src/**/*.ts",

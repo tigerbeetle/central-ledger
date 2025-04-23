@@ -2,12 +2,12 @@
 
 process.env.UV_THREADPOOL_SIZE = 12
 
-const Config = require('../lib/config')
-const Routes = require('./routes')
-const Setup = require('../shared/setup')
-const MetricsPlugin = require('@mojaloop/central-services-metrics').plugin
+import Config from '../shared/config'
+import Routes from './routes'
+import { initialize } from '../shared/setup'
+import { plugin as MetricsPlugin } from '@mojaloop/central-services-metrics'
 
-module.exports = Setup.initialize({
+export default initialize({
   service: 'api',
   port: Config.PORT,
   modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),

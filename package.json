@@ -45,6 +45,7 @@
     "lint": "npx standard",
     "lint:fix": "npx standard --fix",
     "test": "npm run test:unit:spec",
+    "test:tsunit": "npx ts-node test/unit/runner.ts './test/unit/**/*.test.*'",
     "test:unit": "npx tape 'test/unit/**/*.test.js'",
     "test:unit:spec": "npm run test:unit | tap-spec",
     "test:xunit": "npm run test:unit | tap-xunit > ./test/results/xunit.xml",
