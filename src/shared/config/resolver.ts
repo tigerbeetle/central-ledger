@@ -76,6 +76,7 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
       TIGERBEETLE: {
         ADDRESS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.ADDRESS, '3000'),
         UNSAFE_SKIP_TIGERBEETLE: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.UNSAFE_SKIP_TIGERBEETLE, false),
+        CURRENCY_LEDGERS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.CURRENCY_LEDGERS, [])
       },
       EXTREME_BATCHING: defaultTo(rawConfig.EXPERIMENTAL?.EXTREME_BATCHING, false),
     }
@@ -126,6 +127,7 @@ const validateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfi
   console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_LABELS`')
   console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_CONFIG`')
   console.warn('TODO(LD): validateConfig() still need to validate `DATABASE`')
+  console.warn('TODO(LD): validateConfig() still need to coerce values from `EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS`')
   
   // TODO: assert INSTRUMENTATION_METRICS_LABELS
   // TODO: assert INSTRUMENTATION_METRICS_CONFIG
@@ -141,6 +143,12 @@ const validateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfi
   if (unsafeConfig.EXPERIMENTAL.LEDGER.PRIMARY !== 'TIGERBEETLE' 
     && unsafeConfig.EXPERIMENTAL.EXTREME_BATCHING === true ) {
       throw new Error(`EXPERIMENTAL.EXTREME_BATCHING requires EXPERIMENTAL.LEDGER.PRIMARY=TIGERBEETLE`)
+  }
+
+  if (unsafeConfig.EXPERIMENTAL.LEDGER.PRIMARY === 'TIGERBEETLE') {
+    if (unsafeConfig.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS.length === 0) {
+      throw new Error(`EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS must contain at least 1 currency/ledger mapping`)
+    }
   }
 
   return unsafeConfig as ApplicationConfig

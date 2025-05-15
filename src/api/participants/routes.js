@@ -28,13 +28,28 @@
 
 'use strict'
 
-const Handler = require('./handler')
+// const Handler = require('./handler')
 const Joi = require('joi')
 const currencyList = require('../../seeds/currency.js').currencyList
 
 const tags = ['api', 'participants']
 const nameValidator = Joi.string().min(2).max(30).required().description('Name of the participant')
 const currencyValidator = Joi.string().valid(...currencyList).description('Currency code')
+
+// TODO: better name
+const newHandler = require('./newHandler')
+// TODO: use src alias
+import config from '../../shared/config'
+
+const resolveHandler = () => {
+  switch (config.EXPERIMENTAL.LEDGER.PRIMARY) {
+    case 'SQL': return require('./handler')
+    case 'TIGERBEETLE': return newHandler.makeHandlers()
+  }
+
+}
+
+const Handler = resolveHandler(config)
 
 module.exports = [
   {

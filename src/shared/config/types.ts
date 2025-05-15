@@ -317,6 +317,43 @@ export interface ApplicationConfig {
        * @default false
        */
       UNSAFE_SKIP_TIGERBEETLE: boolean,
+
+      /**
+       * CURRENCY_LEDGERS
+       * 
+       * This determines the mapping between the currency + ledgerId in TigerBeetle.
+       * 
+       * IMPORTANT: Once a Currency + LedgerId is defined, it cannot be changed. We run a saftey 
+       *   check upon startup, to detect changes to this option and shut down in case it was
+       *   modified
+       */
+      CURRENCY_LEDGERS: Array<{
+        /**
+         * ISO currency code
+         */
+        currency: string,
+
+        /**
+         * TODO: look up definition of asset scale
+         */
+        assetScale: number,
+
+        /**
+         * The LedgerId to use for the clearing side of the ledger
+         * 
+         * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
+         *   but it can't hurt
+         */
+        clearingLedgerId: bigint,
+
+        /**
+         * The LedgerId to use for the settlement side of the ledger
+         * 
+         * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
+         *   but it can't hurt
+         */
+        settlementLedgerId: bigint
+      }>
     },
     
 
@@ -333,7 +370,10 @@ export interface ApplicationConfig {
      * 
      *  * @default false
      */
-    EXTREME_BATCHING: boolean
+    EXTREME_BATCHING: boolean,
+
+
+
   }
 
 }

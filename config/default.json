@@ -85,18 +85,21 @@
     "EXPIRES_IN_MS": 1000
   },
   "PROXY_CACHE": {
-    "enabled": true,
+    "enabled": false,
     "type": "redis-cluster",
     "proxyConfig": {
       "cluster": [
-        { "host": "localhost", "port": 6379 }
+        {
+          "host": "localhost",
+          "port": 6379
+        }
       ]
     }
   },
   "API_DOC_ENDPOINTS_ENABLED": true,
   "KAFKA": {
-    "EVENT_TYPE_ACTION_TOPIC_MAP" : {
-      "POSITION":{
+    "EVENT_TYPE_ACTION_TOPIC_MAP": {
+      "POSITION": {
         "PREPARE": null,
         "FX_PREPARE": "topic-transfer-position-batch",
         "BULK_PREPARE": null,
@@ -524,8 +527,18 @@
   "SERVER_PRINT_ROUTES_ON_STARTUP": true,
   "EXPERIMENTAL": {
     "LEDGER": {
-      "PRIMARY": "TIGERBEETLE",
-      "SECONDARY": "NONE"
+      "PRIMARY": "SQL",
+      "SECONDARY": "TIGERBEETLE"
+    },
+    "TIGERBEETLE": {
+      "CURRENCY_LEDGERS": [
+        {
+          "currency": "USD",
+          "assetScale": 4,
+          "clearingLedgerId": 10,
+          "settlementLedgerId": 11
+        }
+      ]
     }
   }
 }

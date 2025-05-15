@@ -6,3 +6,4 @@ const config = makeConfig()
  * Make config available as a global, useful for backwards compatibility
  */
 export default config
+export * from './types'
