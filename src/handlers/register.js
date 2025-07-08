@@ -74,7 +74,7 @@ const registerAllHandlers = async () => {
     }
     return true
   } catch (err) {
-    Logger.isErrorEnabled && Logger.error(err)
+    Logger.isErrorEnabled && Logger.error(`registerAllHandlers failed with error: ${err.message}`)
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }
 }
