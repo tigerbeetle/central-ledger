@@ -41,7 +41,7 @@ const Metrics = require('@mojaloop/central-services-metrics')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
 const Migrator = require('../lib/migrator')
-const Config = require('../lib/config')
+const Config = require('./config').default
 const Db = require('../lib/db')
 const ProxyCache = require('../lib/proxyCache')
 const Cache = require('../lib/cache')
@@ -53,6 +53,7 @@ const ParticipantLimitCached = require('../models/participant/participantLimitCa
 const externalParticipantCached = require('../models/participant/externalParticipantCached')
 const BatchPositionModelCached = require('../models/position/batchCached')
 const Plugins = require('./plugins')
+const { default: Provisioner } = require('./provisioner')
 
 const migrate = (runMigrations) => {
   return runMigrations ? Migrator.migrate() : true
@@ -280,6 +281,12 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
         //   await KafkaCron.start('position')
         // }
       }
+    }
+
+    // Provision from scratch on first start, or update provisioning to match static config
+    if (Config.EXPERIMENTAL.PROVISIONING.enabled) {
+      const provisioner = new Provisioner(Config.EXPERIMENTAL.PROVISIONING)
+      await provisioner.run();
     }
 
     return server

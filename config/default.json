@@ -539,6 +539,13 @@
           "settlementLedgerId": 11
         }
       ]
+    },
+    "PROVISIONING": {
+      "enabled": true,
+      "currencies": ["USD", "XXX"],
+      "hubAlertEmailAddress": "example@email.com",
+      "settlementModels": [],
+      "oracles": []
     }
   }
 }

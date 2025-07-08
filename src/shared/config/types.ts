@@ -355,7 +355,45 @@ export interface ApplicationConfig {
         settlementLedgerId: bigint
       }>
     },
-    
+
+
+    /**
+     * When enabled, the switch will automatically provision itself on startup.
+     * When running with TigerBeetle, PROVISIONING MUST be enabled
+     */
+    PROVISIONING: {
+      /**
+       * @default false
+       */
+      enabled: boolean,
+
+      /**
+       * A list of ISO Currency codes that the switch supports.
+       */
+      currencies: Array<string>,
+
+      /**
+       * Which email address to register for the following hub alerts:
+       * - `SETTLEMENT_TRANSFER_POSITION_CHANGE_EMAIL`
+       * - `NET_DEBIT_CAP_ADJUSTMENT_EMAIL`
+       * - `NET_DEBIT_CAP_THRESHOLD_BREACH_EMAIL`
+       */
+      hubAlertEmailAddress: string | undefined,
+
+      /**
+       * TODO(LD): define these settlement models. I think this should be a 1-1 mapping
+       * between currency for now, but we may choose to add some specificity, e.g. a 
+       * mapping between (currency, paymentType) => Settlement Model
+       */
+      settlementModels: [],
+
+      /**
+       * TODO: I'm not sure if oracles should live here, but I did see it in the 
+       * Testing Toolkit Provisioning tests, so let's keep it around until we decide
+       * it may be better off somewhere else.
+       */
+      oracles: []
+    }
 
     /**
      * Extreme Batching joins together multiple ml-api-adapter messages into a single

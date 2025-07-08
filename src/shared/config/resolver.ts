@@ -78,6 +78,13 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
         UNSAFE_SKIP_TIGERBEETLE: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.UNSAFE_SKIP_TIGERBEETLE, false),
         CURRENCY_LEDGERS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.CURRENCY_LEDGERS, [])
       },
+      PROVISIONING: {
+        enabled: defaultTo(rawConfig.EXPERIMENTAL?.PROVISIONING?.enabled, false),
+        currencies: defaultTo(rawConfig.EXPERIMENTAL?.PROVISIONING?.currencies, []),
+        hubAlertEmailAddress: rawConfig.EXPERIMENTAL?.PROVISIONING?.hubAlertEmailAddress,
+        settlementModels: defaultTo(rawConfig.EXPERIMENTAL?.PROVISIONING?.settlementModels, []),
+        oracles: defaultTo(rawConfig.EXPERIMENTAL?.PROVISIONING?.oracles, []),
+      },
       EXTREME_BATCHING: defaultTo(rawConfig.EXPERIMENTAL?.EXTREME_BATCHING, false),
     }
   }
@@ -150,6 +157,8 @@ const validateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfi
       throw new Error(`EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS must contain at least 1 currency/ledger mapping`)
     }
   }
+
+  // TODO(LD): if and TigerBeetle is enabled, then PROVISIONING.enabled == true 
 
   return unsafeConfig as ApplicationConfig
 }
