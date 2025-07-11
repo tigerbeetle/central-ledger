@@ -1,10 +1,13 @@
 
+const Logger = require('../logger').logger
+
 export interface ProvisioningConfig {
   currencies: Array<string>,
   hubAlertEmailAddress: string | undefined,
   settlementModels: Array<unknown>
   oracles: Array<unknown>
 }
+
 
 
 /**
@@ -22,13 +25,16 @@ export interface ProvisioningConfig {
  */
 export default class Provisioner {
   private config: ProvisioningConfig
-
-
-  // TODO(LD): in the future we should use the new Ledger interface, but for now, and to 
-  // make sure we don't get blocked, let's talk directly to the database
+  private participantsHandler: any
+  private participantService: any
+  private settlementModelDomain: any
 
   constructor(config: ProvisioningConfig) {
     this.config = config
+
+    this.participantsHandler = require('../../api/participants/handler')
+    this.participantService = require('../../domain/participant')
+    this.settlementModelDomain = require('../../domain/settlement')
   }
 
   public async run(): Promise<void> {
@@ -47,28 +53,38 @@ export default class Provisioner {
   }
 
   private async isFreshLedger(): Promise<boolean> {
+    const hubParticipant = await this.participantService.getByName('Hub');
 
-    // TODO: look this up
-    return true
+    // TODO(LD): not sure how kosher it is to imply whether or not the hub has been configured based
+    // on the currency list
+    if (hubParticipant.currencyList.length === 0) {
+      return true
+    }
+    return false
   }
 
-  private async findProvisioningDelta(): Promise<{reconcilable: boolean}> {
+  private async findProvisioningDelta(): Promise<{ reconcilable: boolean }> {
+    // TODO(LD): 
     // lookup the difference between what's in the Ledger and what's in the config
     // irreconcilable:
     //   - removing a currency
     //   - changing the settlement model of an existing currency
     //
-    // reconcileable:
+    // reconcilable:
     //   - adding a new currency
     // 
-    return {reconcilable: false}
+    return { reconcilable: true }
   }
 
   private async provisionFromScratch(): Promise<void> {
+    // TODO(LD): in the future we should use the new Ledger interface, but for now, and to 
+    // make sure we don't get blocked, we send a mock http request to the handlers
+
+    Logger.info('Provisioner.provisionFromScratch()')
     // Create hub accounts
-    this.config.currencies.forEach(currency => {
-      // TODO: call api/participants/handler.createHubAccount
-      const requestA = {
+    for await (const currency of this.config.currencies) {
+      Logger.debug(`Provisioner.provisionFromScratch() - creating accounts for currency: ${currency}`)
+      const requestMultilateralSettlement = {
         params: {
           name: 'Hub'
         },
@@ -77,7 +93,17 @@ export default class Provisioner {
           currency,
         }
       }
-      const requestB = {
+      // dummy to suit the `h` object the handlers expect
+      const mockCallback = {
+        response: (body: any) => {
+          return {
+            code: (code: number) => { }
+          }
+        }
+      }
+      await this.participantsHandler.createHubAccount(requestMultilateralSettlement, mockCallback)
+
+      const requestHubReconcilation = {
         params: {
           name: 'Hub'
         },
@@ -86,8 +112,25 @@ export default class Provisioner {
           currency,
         }
       }
-    })
-  }
+      await this.participantsHandler.createHubAccount(requestHubReconcilation, mockCallback)
 
+
+      // settlement models per currency
+      // TODO(LD): add settlement model config to config file
+      const model = {
+        name: `DEFERRED_MULTILATERAL_NET_${currency}`,
+        settlementGranularity: "NET",
+        settlementInterchange: "MULTILATERAL",
+        settlementDelay: "DEFERRED",
+        currency,
+        requireLiquidityCheck: true,
+        ledgerAccountType: "POSITION",
+        settlementAccountType: "SETTLEMENT",
+        autoPositionReset: false
+      }
+
+      await this.settlementModelDomain.createSettlementModel(model)
+    }
+  }
 }
 
