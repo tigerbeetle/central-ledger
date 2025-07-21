@@ -126,7 +126,7 @@ export default class Provisioner {
         requireLiquidityCheck: true,
         ledgerAccountType: "POSITION",
         settlementAccountType: "SETTLEMENT",
-        autoPositionReset: false
+        autoPositionReset: true
       }
 
       await this.settlementModelDomain.createSettlementModel(model)
