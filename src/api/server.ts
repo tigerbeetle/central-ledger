@@ -4,6 +4,7 @@ import Config from '../shared/config'
 import Routes from './routes'
 import { initialize } from '../shared/setup'
 import { plugin as MetricsPlugin } from '@mojaloop/central-services-metrics'
+import Migrator from '../lib/migrator'
 
 
 const server = {
@@ -15,6 +16,11 @@ const server = {
       runMigrations: Config.RUN_MIGRATIONS,
       runHandlers: !Config.HANDLERS_DISABLED,
     });
+  },
+  // run only the migrations
+  migrate: () => {
+    console.log('server - migrator.migrate()')
+    return Migrator.migrate()
   }
 }
 

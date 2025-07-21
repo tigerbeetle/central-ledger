@@ -241,15 +241,39 @@ const initializeCache = async () => {
  * TODO(LD): add back typedefs? They were interfering with Typescript
  */
 const initialize = async function ({ service, port, modules = [], runMigrations = false, runHandlers = false, handlers = [] }) {
+  const measurements = []
+  let step = 0
+  measurements.push(performance.now())
   try {
     initializeInstrumentation()
+
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: initializeInstrumentation: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+
     await migrate(runMigrations)
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: migrate: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+
     await connectDatabase()
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: connectDatabase: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     await connectMongoose()
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: connectMongoose: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     await initializeCache()
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: initializeCache: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     if (Config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.connect()
     }
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: ProxyCache.connect(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     let server
     switch (service) {
@@ -269,11 +293,16 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
         throw ErrorHandler.Factory.createInternalServerFSPIOPError(`No valid service type ${service} found!`)
       }
     }
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: createServer: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     if (runHandlers) {
       if (Array.isArray(handlers) && handlers.length > 0) {
+        console.log('running some handlers')
         await createHandlers(handlers)
       } else {
+        console.log('running all handlers')
         await RegisterHandlers.registerAllHandlers()
         // if (!Config.HANDLERS_CRON_DISABLED) {
         //   Logger.isInfoEnabled && Logger.info('Starting Kafka Cron Jobs...')
@@ -282,12 +311,19 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
         // }
       }
     }
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: handlers: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     // Provision from scratch on first start, or update provisioning to match static config
     if (Config.EXPERIMENTAL.PROVISIONING.enabled) {
       const provisioner = new Provisioner(Config.EXPERIMENTAL.PROVISIONING)
       await provisioner.run();
     }
+
+    measurements.push(performance.now())
+    step += 1
+    console.log(`step: provisioner.run(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     return server
   } catch (err) {
