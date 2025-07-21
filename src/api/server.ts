@@ -15,6 +15,15 @@ const server = {
       modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),
       runMigrations: Config.RUN_MIGRATIONS,
       runHandlers: !Config.HANDLERS_DISABLED,
+      // TODO: specify which handlers to run in config
+      // handlers: [
+      //   { type: 'prepare' },
+      //   { type: 'position' },
+      //   { type: 'fulfil' },
+      //   { type: 'timeout' },
+      //   { type: 'admin' },
+      //   { type: 'get' },
+      // ]
     });
   },
   // run only the migrations
