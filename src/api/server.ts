@@ -16,14 +16,14 @@ const server = {
       runMigrations: Config.RUN_MIGRATIONS,
       runHandlers: !Config.HANDLERS_DISABLED,
       // TODO: specify which handlers to run in config
-      // handlers: [
-      //   { type: 'prepare' },
-      //   { type: 'position' },
-      //   { type: 'fulfil' },
-      //   { type: 'timeout' },
-      //   { type: 'admin' },
-      //   { type: 'get' },
-      // ]
+      handlers: [
+        { enabled: true, type: 'prepare' },
+        { enabled: true, type: 'position' },
+        { enabled: true, type: 'fulfil' },
+        { enabled: true, type: 'timeout' },
+        { enabled: true, type: 'admin' },
+        { enabled: true, type: 'get' },
+      ]
     });
   },
   // run only the migrations

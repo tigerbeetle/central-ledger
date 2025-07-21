@@ -249,31 +249,31 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
 
     measurements.push(performance.now())
     step += 1
-    console.log(`step: initializeInstrumentation: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: initializeInstrumentation: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     await migrate(runMigrations)
     measurements.push(performance.now())
     step += 1
-    console.log(`step: migrate: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: migrate: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     await connectDatabase()
     measurements.push(performance.now())
     step += 1
-    console.log(`step: connectDatabase: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: connectDatabase: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     await connectMongoose()
     measurements.push(performance.now())
     step += 1
-    console.log(`step: connectMongoose: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: connectMongoose: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     await initializeCache()
     measurements.push(performance.now())
     step += 1
-    console.log(`step: initializeCache: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: initializeCache: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     if (Config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.connect()
     }
     measurements.push(performance.now())
     step += 1
-    console.log(`step: ProxyCache.connect(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: ProxyCache.connect(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     let server
     switch (service) {
@@ -295,14 +295,12 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
     }
     measurements.push(performance.now())
     step += 1
-    console.log(`step: createServer: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: createServer: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     if (runHandlers) {
       if (Array.isArray(handlers) && handlers.length > 0) {
-        console.log('running some handlers')
         await createHandlers(handlers)
       } else {
-        console.log('running all handlers')
         await RegisterHandlers.registerAllHandlers()
         // if (!Config.HANDLERS_CRON_DISABLED) {
         //   Logger.isInfoEnabled && Logger.info('Starting Kafka Cron Jobs...')
@@ -313,7 +311,7 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
     }
     measurements.push(performance.now())
     step += 1
-    console.log(`step: handlers: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: handlers: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     // Provision from scratch on first start, or update provisioning to match static config
     if (Config.EXPERIMENTAL.PROVISIONING.enabled) {
@@ -323,7 +321,7 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
 
     measurements.push(performance.now())
     step += 1
-    console.log(`step: provisioner.run(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+    Logger.debug(`step: provisioner.run(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     return server
   } catch (err) {
