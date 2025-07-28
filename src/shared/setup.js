@@ -36,12 +36,12 @@
 const Hapi = require('@hapi/hapi')
 const MongoUriBuilder = require('mongo-uri-builder')
 const ObjStoreDb = require('@mojaloop/object-store-lib').Db
-const Logger = require('@mojaloop/central-services-logger')
+const Logger = require('../shared/logger').logger
 const Metrics = require('@mojaloop/central-services-metrics')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
 const Migrator = require('../lib/migrator')
-const Config = require('../lib/config')
+const Config = require('./config').default
 const Db = require('../lib/db')
 const ProxyCache = require('../lib/proxyCache')
 const Cache = require('../lib/cache')
@@ -53,6 +53,7 @@ const ParticipantLimitCached = require('../models/participant/participantLimitCa
 const externalParticipantCached = require('../models/participant/externalParticipantCached')
 const BatchPositionModelCached = require('../models/position/batchCached')
 const Plugins = require('./plugins')
+const { default: Provisioner } = require('./provisioner')
 
 const migrate = (runMigrations) => {
   return runMigrations ? Migrator.migrate() : true
@@ -237,30 +238,42 @@ const initializeCache = async () => {
  *
  * @description Setup method for API, Admin and Handlers. Note that the Migration scripts are called before connecting to the database to ensure all new tables are loaded properly.
  *
- * @typedef handler
- * @type {Object}
- * @property {string} type The type of Handler to be registered
- * @property {boolean} enabled True|False to indicate if the Handler should be registered
- * @property {string[]} [fspList] List of FSPs to be registered
- *
- * @param {string} service Name of service to start. Available choices are 'api', 'admin', 'handler'
- * @param {number} port Port to start the HTTP Server on
- * @param {object[]} modules List of modules to be loaded by the HTTP Server
- * @param {boolean} runMigrations True to run Migration script, false to ignore them
- * @param {boolean} runHandlers True to start Handlers, false to ignore them, only applicable for service types that are NOT 'handler'
- * @param {handler[]} handlers List of Handlers to be registered
- * @returns {object} Returns HTTP Server object
+ * TODO(LD): add back typedefs? They were interfering with Typescript
  */
 const initialize = async function ({ service, port, modules = [], runMigrations = false, runHandlers = false, handlers = [] }) {
+  const measurements = []
+  let step = 0
+  measurements.push(performance.now())
   try {
     initializeInstrumentation()
+
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: initializeInstrumentation: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+
     await migrate(runMigrations)
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: migrate: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+
     await connectDatabase()
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: connectDatabase: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     await connectMongoose()
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: connectMongoose: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     await initializeCache()
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: initializeCache: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
     if (Config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.connect()
     }
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: ProxyCache.connect(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     let server
     switch (service) {
@@ -280,6 +293,9 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
         throw ErrorHandler.Factory.createInternalServerFSPIOPError(`No valid service type ${service} found!`)
       }
     }
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: createServer: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     if (runHandlers) {
       if (Array.isArray(handlers) && handlers.length > 0) {
@@ -293,6 +309,19 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
         // }
       }
     }
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: handlers: measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
+
+    // Provision from scratch on first start, or update provisioning to match static config
+    if (Config.EXPERIMENTAL.PROVISIONING.enabled) {
+      const provisioner = new Provisioner(Config.EXPERIMENTAL.PROVISIONING)
+      await provisioner.run();
+    }
+
+    measurements.push(performance.now())
+    step += 1
+    Logger.debug(`step: provisioner.run(): measurement: ${(measurements[step] - measurements[step - 1]).toFixed(2)}ms`)
 
     return server
   } catch (err) {

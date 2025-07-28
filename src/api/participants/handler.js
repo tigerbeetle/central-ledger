@@ -32,11 +32,11 @@ const ParticipantService = require('../../domain/participant')
 const UrlParser = require('../../lib/urlParser')
 const Config = require('../../lib/config')
 const Util = require('@mojaloop/central-services-shared').Util
-const Logger = require('@mojaloop/central-services-logger')
+const Logger = require('../../shared/logger').logger
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Enums = require('../../lib/enumCached')
 const SettlementService = require('../../domain/settlement')
-const { rethrow } = Util
+const rethrow = require('../../shared/rethrow')
 
 const LocalEnum = {
   activated: 'activated',
@@ -93,9 +93,7 @@ const create = async function (request, h) {
     }
     const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
     const allSettlementModels = await SettlementService.getAll()
-    console.log('found allSettlementModels models', allSettlementModels)
     let settlementModels = allSettlementModels.filter(model => model.currencyId === request.payload.currency)
-    
     if (settlementModels.length === 0) {
       settlementModels = allSettlementModels.filter(model => model.currencyId === null) // Default settlement model
       if (settlementModels.length === 0) {

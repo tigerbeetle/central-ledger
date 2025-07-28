@@ -31,8 +31,8 @@
 
 const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
-const Logger = require('@mojaloop/central-services-logger')
-const Model = require('../../../seeds/transferParticipantRoleType')
+const Logger = require('../../../src/shared/logger').logger
+const Model = require('../../../src/seeds/transferParticipantRoleType')
 
 Test('Transfer participant role type', async (transferParticipantRoleTypeTest) => {
   let sandbox

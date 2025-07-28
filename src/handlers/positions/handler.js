@@ -38,7 +38,7 @@
  * @module src/handlers/positions
  */
 
-const Logger = require('@mojaloop/central-services-logger')
+const Logger = require('../../shared/logger').logger
 const EventSdk = require('@mojaloop/event-sdk')
 const TransferService = require('../../domain/transfer')
 const TransferObjectTransform = require('../../domain/transfer/transform')
@@ -58,7 +58,7 @@ const decodeMessages = require('@mojaloop/central-services-shared').Util.Streami
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
 const location = { module: 'PositionHandler', method: '', path: '' } // var object used as pointer
-const rethrow = Utility.rethrow
+const rethrow = require('../../shared/rethrow')
 const consumerCommit = true
 const fromSwitch = true
 
@@ -257,7 +257,6 @@ const positions = async (error, messages) => {
       rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'positionsHandler' })
     }
   } catch (err) {
-    console.log("SOMETHING BROKEN HERE LEWIS!!")
     Logger.isErrorEnabled && Logger.error(`${Utility.breadcrumb(location)}::${err.message}--0`)
     histTimerEnd({ success: false, fspId: Config.INSTRUMENTATION_METRICS_LABELS.fspId, action })
     const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err)

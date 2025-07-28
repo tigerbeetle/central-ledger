@@ -45,6 +45,7 @@ const nameFromParticipantUri = (uri, done) => {
   }
 }
 
+// TODO(LD): Code looks unused, can we remove it?
 const participantNameFromTransfersRoute = (url) => {
   return new Promise((resolve, reject) => {
     const matches = url.match(participantTransfersRouteRegex)

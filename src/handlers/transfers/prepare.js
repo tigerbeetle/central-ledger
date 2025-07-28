@@ -50,7 +50,7 @@ const { FSPIOPErrorCodes } = ErrorHandler.Enums
 const { createFSPIOPError, reformatFSPIOPError } = ErrorHandler.Factory
 const { fspId } = Config.INSTRUMENTATION_METRICS_LABELS
 
-const { rethrow } = Util
+const rethrow = require('../../shared/rethrow')
 const consumerCommit = true
 const fromSwitch = true
 const proxyEnabled = Config.PROXY_CACHE_CONFIG.enabled
@@ -489,9 +489,6 @@ const prepare = async (error, messages) => {
       payload, isFx, params, functionality, action
     })
 
-    // LD: I think this is the duplicate check here?
-    // will need to bypass, but also pick up the error from TB regarding duplication
-    
     const duplication = await checkDuplication({ payload, isFx, ID, location })
     if (duplication.hasDuplicateId) {
       const success = await processDuplication({

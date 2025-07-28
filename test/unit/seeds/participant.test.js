@@ -30,8 +30,8 @@
 
 const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
-const Logger = require('@mojaloop/central-services-logger')
-const Model = require('../../../seeds/participant')
+const Logger = require('../../../src/shared/logger').logger
+const Model = require('../../../src/seeds/participant')
 
 Test('Participant ', async (participantTest) => {
   let sandbox

@@ -38,7 +38,7 @@
  * @module src/handlers/transfers
  */
 
-const Logger = require('@mojaloop/central-services-logger')
+const Logger = require('../../shared/logger').logger
 const EventSdk = require('@mojaloop/event-sdk')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Metrics = require('@mojaloop/central-services-metrics')
@@ -65,7 +65,7 @@ const TransferEventType = Enum.Events.Event.Type
 const TransferEventAction = Enum.Events.Event.Action
 const decodePayload = Util.StreamingProtocol.decodePayload
 
-const { rethrow } = Util
+const rethrow = require('../../shared/rethrow')
 const consumerCommit = true
 const fromSwitch = true
 
@@ -873,8 +873,6 @@ const registerPrepareHandler = async () => {
     const topicName = Kafka.transformGeneralTopicName(Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, TRANSFER, PREPARE)
     const consumeConfig = Kafka.getKafkaConfig(Config.KAFKA_CONFIG, Enum.Kafka.Config.CONSUMER, TRANSFER.toUpperCase(), PREPARE.toUpperCase())
     consumeConfig.rdkafkaConf['client.id'] = topicName
-
-    // TODO: how do we get batches off of kafka here? Need to read more about Kafka
 
     await Consumer.createHandler(topicName, consumeConfig, prepare)
     return true

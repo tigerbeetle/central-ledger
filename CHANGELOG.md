@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [19.4.4](https://github.com/mojaloop/central-ledger/compare/v19.4.3...v19.4.4) (2025-04-10)
+
+
+### Bug Fixes
+
+* preserve trace context during batch handling ([#1165](https://github.com/mojaloop/central-ledger/issues/1165)) ([972df11](https://github.com/mojaloop/central-ledger/commit/972df11b7838748ecb362a1d797be601949f762b))
+
+### [19.4.3](https://github.com/mojaloop/central-ledger/compare/v19.4.2...v19.4.3) (2025-04-07)
+
+
+### Bug Fixes
+
+* migration script fix for updating existing databases ([#1163](https://github.com/mojaloop/central-ledger/issues/1163)) ([5f40ad5](https://github.com/mojaloop/central-ledger/commit/5f40ad52e603dd13fcb844568646476bf1adeb3a))
+
+### [19.4.2](https://github.com/mojaloop/central-ledger/compare/v19.4.1...v19.4.2) (2025-04-07)
+
+
+### Bug Fixes
+
+* preserve trace context during batch handling ([#1164](https://github.com/mojaloop/central-ledger/issues/1164)) ([ebfadc7](https://github.com/mojaloop/central-ledger/commit/ebfadc7dc604c5e7da51b0a097e500acf06acf88))
+
+### [19.4.1](https://github.com/mojaloop/central-ledger/compare/v19.4.0...v19.4.1) (2025-04-01)
+
+
+### Bug Fixes
+
+* use context logger ([#1162](https://github.com/mojaloop/central-ledger/issues/1162)) ([6776926](https://github.com/mojaloop/central-ledger/commit/6776926a895294ec310c7b467d14caae635a1bb4))
+
+## [19.4.0](https://github.com/mojaloop/central-ledger/compare/v19.3.0...v19.4.0) (2025-03-26)
+
+
+### Features
+
+* update dependencies to latest versions ([#1161](https://github.com/mojaloop/central-ledger/issues/1161)) ([31d67cf](https://github.com/mojaloop/central-ledger/commit/31d67cfd627dd40da9f21de49ee4e01ae12a46fa))
+
+## [19.3.0](https://github.com/mojaloop/central-ledger/compare/v19.2.0...v19.3.0) (2025-03-18)
+
+
+### Features
+
+* rethrow with context ([#1160](https://github.com/mojaloop/central-ledger/issues/1160)) ([fb20c8f](https://github.com/mojaloop/central-ledger/commit/fb20c8f96a0a15ff3f028af276889ce7d438a178))
+
 ## [19.2.0](https://github.com/mojaloop/central-ledger/compare/v19.1.3...v19.2.0) (2025-03-13)
 
 

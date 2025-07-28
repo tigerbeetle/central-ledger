@@ -37,7 +37,7 @@
  * @module src/handlers/transfers
  */
 
-const Logger = require('@mojaloop/central-services-logger')
+const Logger = require('../../shared/logger').logger
 const Decimal = require('decimal.js')
 const Config = require('../../lib/config')
 const Participant = require('../../domain/participant')
@@ -143,7 +143,6 @@ const fulfilmentToCondition = (fulfilment) => {
 // TODO: The following function should be moved into a re-usable common-shared-service at a later point
 // NOTE: This logic is based on v1.0 of the Mojaloop Specification as described in section 6.5.1.2
 const validateFulfilCondition = (fulfilment, condition) => {
-
   const histTimerValidateTimer = Metrics.getHistogram(
     'handlers_transfer_validator',
     'validateFulfilCondition - Metrics for transfer handler',

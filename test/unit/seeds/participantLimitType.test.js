@@ -31,8 +31,8 @@
 
 const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
-const Logger = require('@mojaloop/central-services-logger')
-const Model = require('../../../seeds/participantLimitType')
+const Logger = require('../../../src/shared/logger').logger
+const Model = require('../../../src/seeds/participantLimitType')
 
 Test('Participant limit type', async (participantLimitTypeTest) => {
   let sandbox
