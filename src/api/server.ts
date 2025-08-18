@@ -2,7 +2,8 @@
 
 import Config from '../shared/config'
 import Routes from './routes'
-import { initialize } from '../shared/setup'
+// import { initialize } from '../shared/setup'
+import { HandlerType, initialize, Service } from '../shared/setup-new'
 import { plugin as MetricsPlugin } from '@mojaloop/central-services-metrics'
 import Migrator from '../lib/migrator'
 
@@ -10,22 +11,38 @@ import Migrator from '../lib/migrator'
 const server = {
   run: () => {
     return initialize({
-      service: 'api',
-      port: Config.PORT,
+      config: Config,
+      service: Service.api,
       modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),
-      runMigrations: Config.RUN_MIGRATIONS,
-      runHandlers: !Config.HANDLERS_DISABLED,
       // TODO: specify which handlers to run in config
       handlers: [
-        { enabled: true, type: 'prepare' },
-        { enabled: true, type: 'position' },
-        { enabled: true, type: 'fulfil' },
-        { enabled: true, type: 'timeout' },
-        { enabled: true, type: 'admin' },
-        { enabled: true, type: 'get' },
+        HandlerType.prepare,
+        HandlerType.position,
+        HandlerType.fulfil,
+        HandlerType.timeout,
+        HandlerType.admin,
+        HandlerType.get,
       ]
     });
   },
+  // run: () => {
+  //   return initialize({
+  //     service: 'api',
+  //     port: Config.PORT,
+  //     modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),
+  //     runMigrations: Config.RUN_MIGRATIONS,
+  //     runHandlers: !Config.HANDLERS_DISABLED,
+  //     // TODO: specify which handlers to run in config
+  //     handlers: [
+  //       { enabled: true, type: 'prepare' },
+  //       { enabled: true, type: 'position' },
+  //       { enabled: true, type: 'fulfil' },
+  //       { enabled: true, type: 'timeout' },
+  //       { enabled: true, type: 'admin' },
+  //       { enabled: true, type: 'get' },
+  //     ]
+  //   });
+  // },
   migrate: () => {
     return Migrator.migrate()
   }
