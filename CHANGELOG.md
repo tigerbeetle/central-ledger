@@ -2,6 +2,159 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [19.8.3](https://github.com/mojaloop/central-ledger/compare/v19.8.2...v19.8.3) (2025-07-27)
+
+
+### Chore
+
+* update orb version ([#1199](https://github.com/mojaloop/central-ledger/issues/1199)) ([1ba6ffd](https://github.com/mojaloop/central-ledger/commit/1ba6ffd2e4e6e373df5333476534e9464c81445b))
+
+### [19.8.2](https://github.com/mojaloop/central-ledger/compare/v19.8.1...v19.8.2) (2025-07-24)
+
+
+### Chore
+
+* fix vuls ([#1198](https://github.com/mojaloop/central-ledger/issues/1198)) ([556290f](https://github.com/mojaloop/central-ledger/commit/556290f9e4a8f1d446333ee25686179625d6f733))
+
+### [19.8.1](https://github.com/mojaloop/central-ledger/compare/v19.8.0...v19.8.1) (2025-07-23)
+
+
+### Chore
+
+* fix vul and update deps ([#1197](https://github.com/mojaloop/central-ledger/issues/1197)) ([b1000a1](https://github.com/mojaloop/central-ledger/commit/b1000a1dc373a81d50d9175577bfd882f2353ef0))
+
+## [19.8.0](https://github.com/mojaloop/central-ledger/compare/v19.7.4...v19.8.0) (2025-07-17)
+
+
+### Features
+
+* additional db options in config ([#1188](https://github.com/mojaloop/central-ledger/issues/1188)) ([ad9909b](https://github.com/mojaloop/central-ledger/commit/ad9909bb9b6c38318ba61b689adcf5356cad1d9a))
+
+### [19.7.4](https://github.com/mojaloop/central-ledger/compare/v19.7.3...v19.7.4) (2025-07-14)
+
+
+### Chore
+
+* use mysql2 dialect ([#1191](https://github.com/mojaloop/central-ledger/issues/1191)) ([4e459e6](https://github.com/mojaloop/central-ledger/commit/4e459e6bf5ad143beeed456ba241a6306d36df07))
+
+### [19.7.3](https://github.com/mojaloop/central-ledger/compare/v19.7.0...v19.7.3) (2025-07-11)
+
+
+### Bug Fixes
+
+* **knex:** switch to mysql2 client and update version for mysql v8 auth compatibility ([#1189](https://github.com/mojaloop/central-ledger/issues/1189)) ([c4ebf7b](https://github.com/mojaloop/central-ledger/commit/c4ebf7b7cbd461e5d1fe7fad39507b00aef8dbeb))
+* revert breaking commit and update dependencies ([#1190](https://github.com/mojaloop/central-ledger/issues/1190)) ([cc28663](https://github.com/mojaloop/central-ledger/commit/cc28663455d096210d79f6519fccdb64fd71b313)), closes [#1189](https://github.com/mojaloop/central-ledger/issues/1189)
+
+
+### Chore
+
+* bump stream for more health check ([#1187](https://github.com/mojaloop/central-ledger/issues/1187)) ([a6b5f16](https://github.com/mojaloop/central-ledger/commit/a6b5f1609ed21331fd94ed7f92e64b5da853f783))
+
+### [19.7.2](https://github.com/mojaloop/central-ledger/compare/v19.7.0...v19.7.2) (2025-07-11)
+
+
+### Chore
+
+* **release:** 19.7.1 [skip ci] ([ea3b0ea](https://github.com/mojaloop/central-ledger/commit/ea3b0ea4be97864645cf6d3aab67ee2aa8a4038d))
+* update deps ([18837ac](https://github.com/mojaloop/central-ledger/commit/18837ac8439c0a422fff8e7cb03c3ff87589b7f9))
+
+### [19.7.1](https://github.com/mojaloop/central-ledger/compare/v19.7.0...v19.7.1) (2025-07-11)
+
+
+### Chore
+
+* update deps ([18837ac](https://github.com/mojaloop/central-ledger/commit/18837ac8439c0a422fff8e7cb03c3ff87589b7f9))
+
+## [19.7.0](https://github.com/mojaloop/central-ledger/compare/v19.6.3...v19.7.0) (2025-07-07)
+
+
+### Features
+
+* **csi-1604:** moved distLock to central-services-shared ([#1185](https://github.com/mojaloop/central-ledger/issues/1185)) ([a715a6a](https://github.com/mojaloop/central-ledger/commit/a715a6a1e5c88e437149718532247706af1ed09a))
+
+### [19.6.3](https://github.com/mojaloop/central-ledger/compare/v19.6.2...v19.6.3) (2025-06-26)
+
+
+### Bug Fixes
+
+* **csi-1510:** fixed misleading log ([#1183](https://github.com/mojaloop/central-ledger/issues/1183)) ([c46d2ec](https://github.com/mojaloop/central-ledger/commit/c46d2ec094b6c2ab0b5a64f5a433fe93c8d572e4))
+
+### [19.6.2](https://github.com/mojaloop/central-ledger/compare/v19.6.1...v19.6.2) (2025-06-25)
+
+
+### Bug Fixes
+
+* **csi-1510:** fixed issue with DIST_LOCK config ([#1182](https://github.com/mojaloop/central-ledger/issues/1182)) ([ed330a7](https://github.com/mojaloop/central-ledger/commit/ed330a74e940935e21582a68188c59f0f97ae54e))
+
+### [19.6.1](https://github.com/mojaloop/central-ledger/compare/v19.6.0...v19.6.1) (2025-06-25)
+
+
+### Bug Fixes
+
+* **csi-1510:** fixed issue with DIST_LOCK config ([#1181](https://github.com/mojaloop/central-ledger/issues/1181)) ([705e169](https://github.com/mojaloop/central-ledger/commit/705e1690b936ce1c5a0dfbfed3de2359e61567a0))
+
+## [19.6.0](https://github.com/mojaloop/central-ledger/compare/v19.5.6...v19.6.0) (2025-06-25)
+
+
+### Features
+
+* **csi-1510:** timeout handler distributed lock ([#1172](https://github.com/mojaloop/central-ledger/issues/1172)) ([747fda1](https://github.com/mojaloop/central-ledger/commit/747fda1ddea6fe91c660b89ace2d5764870b7fe2)), closes [#1180](https://github.com/mojaloop/central-ledger/issues/1180)
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([b57615c](https://github.com/mojaloop/central-ledger/commit/b57615c6bbe773934ff6bcf99bd3b497a7155186))
+
+### [19.5.6](https://github.com/mojaloop/central-ledger/compare/v19.5.5...v19.5.6) (2025-06-19)
+
+
+### Chore
+
+* update orb version ([#1179](https://github.com/mojaloop/central-ledger/issues/1179)) ([30b6c11](https://github.com/mojaloop/central-ledger/commit/30b6c1195918fb7310a3b75a3b54f9be2fa3c1a3))
+
+### [19.5.5](https://github.com/mojaloop/central-ledger/compare/v19.5.4...v19.5.5) (2025-06-13)
+
+
+### Chore
+
+* **sbom:** add initial sbom ([#1177](https://github.com/mojaloop/central-ledger/issues/1177)) ([bac8abb](https://github.com/mojaloop/central-ledger/commit/bac8abb756c9360cac4b371b6e23c68773791cb9))
+* **sbom:** update sbom-v19.5.4.csv [skip ci] ([c70b49b](https://github.com/mojaloop/central-ledger/commit/c70b49b4762296d92821cce99416ab2356e2e446))
+
+### [19.5.4](https://github.com/mojaloop/central-ledger/compare/v19.5.3...v19.5.4) (2025-06-12)
+
+
+### Chore
+
+* bump deps ([#1176](https://github.com/mojaloop/central-ledger/issues/1176)) ([b10d81c](https://github.com/mojaloop/central-ledger/commit/b10d81cfa283dabc5b5824b4bafa6c75fef2aed8))
+
+### [19.5.3](https://github.com/mojaloop/central-ledger/compare/v19.5.2...v19.5.3) (2025-06-11)
+
+
+### Bug Fixes
+
+* **csi-1538:** fix issue with broker reporting OK when kafka is disconnected ([#1173](https://github.com/mojaloop/central-ledger/issues/1173)) ([32c7f7a](https://github.com/mojaloop/central-ledger/commit/32c7f7a7db3ceefce49643ba0847f8063215d9f6))
+
+### [19.5.2](https://github.com/mojaloop/central-ledger/compare/v19.5.1...v19.5.2) (2025-06-02)
+
+
+### Chore
+
+* update check to account for false instead of just errors ([#1171](https://github.com/mojaloop/central-ledger/issues/1171)) ([ae18fcd](https://github.com/mojaloop/central-ledger/commit/ae18fcd6cf7865088a3a5388295a5dfb089d2ad2))
+
+### [19.5.1](https://github.com/mojaloop/central-ledger/compare/v19.5.0...v19.5.1) (2025-05-28)
+
+
+### Bug Fixes
+
+* new orb version to fix docker issue ([#1169](https://github.com/mojaloop/central-ledger/issues/1169)) ([726a4ee](https://github.com/mojaloop/central-ledger/commit/726a4ee68dd7bb328c46dddfbda321b6c6ec3e89))
+
+## [19.5.0](https://github.com/mojaloop/central-ledger/compare/v19.4.4...v19.5.0) (2025-05-27)
+
+
+### Features
+
+* bump up node to v22.15.1 ([#1168](https://github.com/mojaloop/central-ledger/issues/1168)) ([11ba0e0](https://github.com/mojaloop/central-ledger/commit/11ba0e0ee2b98413e13687791321eb9f02ba8a09))
+
 ### [19.4.4](https://github.com/mojaloop/central-ledger/compare/v19.4.3...v19.4.4) (2025-04-10)
 
 

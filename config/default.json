@@ -2,7 +2,7 @@
   "PORT": 3001,
   "HOSTNAME": "http://central-ledger",
   "DATABASE": {
-    "DIALECT": "mysql",
+    "DIALECT": "mysql2",
     "HOST": "localhost",
     "PORT": 3306,
     "USER": "central_ledger",
@@ -16,7 +16,8 @@
     "IDLE_TIMEOUT_MILLIS": 30000,
     "REAP_INTERVAL_MILLIS": 1000,
     "CREATE_RETRY_INTERVAL_MILLIS": 200,
-    "DEBUG": false
+    "DEBUG": false,
+    "ADDITIONAL_CONNECTION_OPTIONS": {}
   },
   "MAX_FULFIL_TIMEOUT_DURATION_SECONDS": 300,
   "MIGRATIONS": {
@@ -48,7 +49,17 @@
     "TIMEOUT": {
       "DISABLED": false,
       "TIMEXP": "*/15 * * * * *",
-      "TIMEZONE": "UTC"
+      "TIMEZONE": "UTC",
+      "DIST_LOCK": {
+        "enabled": false,
+        "lockTimeout": 10000,
+        "acquireTimeout": 5000,
+        "driftFactor": 0.01,
+        "retryCount": 3,
+        "retryDelay": 200,
+        "retryJitter": 100,
+        "redisConfigs": [{ "type": "redis-cluster", "cluster": [{ "host": "localhost", "port": 6379 }] }]
+      }
     }
   },
   "INSTRUMENTATION": {

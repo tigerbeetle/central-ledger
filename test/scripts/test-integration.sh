@@ -9,24 +9,19 @@ source ./docker/env.sh
 MYSQL_VERSION=${MYSQL_VERSION:-"latest"}
 KAFKA_VERSION=${MYSQL_VERSION:-"latest"}
 INT_TEST_SKIP_SHUTDOWN=${INT_TEST_SKIP_SHUTDOWN:-false}
-TEST_INT_RETRY_COUNT=10
+WAIT_FOR_REBALANCE=${WAIT_FOR_REBALANCE:-15}
 
 echo "==> Variables:"
 echo "====> MYSQL_VERSION=$MYSQL_VERSION"
 echo "====> KAFKA_VERSION=$KAFKA_VERSION"
 echo "====> INT_TEST_SKIP_SHUTDOWN=$INT_TEST_SKIP_SHUTDOWN"
-echo "====> TEST_INT_RETRY_COUNT=$TEST_INT_RETRY_COUNT"
-echo "====> REDIS_CLUSTER_ANNOUNCE_IP=$REDIS_CLUSTER_ANNOUNCE_IP"
+echo "====> WAIT_FOR_REBALANCE=$WAIT_FOR_REBALANCE"
 
 ## Set initial exit code value to 1 (i.e. assume error!)
 TTK_FUNC_TEST_EXIT_CODE=1
 
 ## Make reports directory
 mkdir ./test/results
-
-## build typescript
-npm run build
-
 
 ## Start backend services
 echo "==> Starting Docker backend services"
@@ -57,10 +52,15 @@ npm run test:xint
 INTEGRATION_TEST_EXIT_CODE="$?"
 echo "==> integration tests exited with code: $INTEGRATION_TEST_EXIT_CODE"
 
-## Kill service
+## Kill service gracefully, then force if needed
 echo "Stopping Service with Process ID=$PID"
-kill -9 $(cat /tmp/int-test-service.pid)
-kill -9 $(lsof -t -i:3001)
+if [ -f /tmp/int-test-service.pid ]; then
+  kill $(cat /tmp/int-test-service.pid) 2>/dev/null || true
+  sleep 3
+  kill -9 $(cat /tmp/int-test-service.pid) 2>/dev/null || true
+fi
+# Force kill anything on port 3001 as fallback
+kill -9 $(lsof -t -i:3001) 2>/dev/null || true
 
 exit 1
 
@@ -110,12 +110,22 @@ npm run test:xint-override
 OVERRIDE_INTEGRATION_TEST_EXIT_CODE="$?"
 echo "==> override integration tests exited with code: $OVERRIDE_INTEGRATION_TEST_EXIT_CODE"
 
-## Kill service
+## Kill services gracefully, then force if needed
 echo "Stopping Service with Process ID=$PID1"
-kill -9 $(cat /tmp/int-test-service.pid)
-kill -9 $(lsof -t -i:3001)
+if [ -f /tmp/int-test-service.pid ]; then
+  kill $(cat /tmp/int-test-service.pid) 2>/dev/null || true
+  sleep 3
+  kill -9 $(cat /tmp/int-test-service.pid) 2>/dev/null || true
+fi
+# Force kill anything on port 3001 as fallback
+kill -9 $(lsof -t -i:3001) 2>/dev/null || true
+
 echo "Stopping Service with Process ID=$PID2"
-kill -9 $(cat /tmp/int-test-handler.pid)
+if [ -f /tmp/int-test-handler.pid ]; then
+  kill $(cat /tmp/int-test-handler.pid) 2>/dev/null || true
+  sleep 3
+  kill -9 $(cat /tmp/int-test-handler.pid) 2>/dev/null || true
+fi
 
 ## Shutdown the backend services
 if [ $INT_TEST_SKIP_SHUTDOWN == true ]; then
