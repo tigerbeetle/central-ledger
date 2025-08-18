@@ -26,9 +26,7 @@ const server = {
       ]
     });
   },
-  // run only the migrations
   migrate: () => {
-    console.log('server - migrator.migrate()')
     return Migrator.migrate()
   }
 }
