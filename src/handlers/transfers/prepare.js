@@ -444,7 +444,7 @@ const sendPositionPrepareMessage = async ({
  *
  * @returns {object} - Returns a boolean: true if successful, or throws and error if failed
  */
-const prepare = async (error, messages) => {
+const prepare = async (error, messages, proceed) => {
   const location = { module: 'PrepareHandler', method: '', path: '' }
   const input = dto.prepareInputDto(error, messages)
 

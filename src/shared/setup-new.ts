@@ -23,6 +23,9 @@ import ProxyCache from '../lib/proxyCache';
 import Provisioner from './provisioner';
 import handlers from 'src/handlers';
 import Plugins from './plugins';
+import { registerPrepareHandler } from '../handlers/transfers/register';
+import { prepare } from '../handlers/transfers/prepare';
+import { Kafka } from '@mojaloop/central-services-stream';
 
 
 export interface Initialized {
@@ -112,6 +115,20 @@ async function initializeServer(port: number, modules: Array<Plugin<any>>): Prom
   })()
 }
 
+async function initializeHandlersV2(config: ApplicationConfig, handlers: Array<HandlerType>): Promise<Array<Kafka.Consumer>> {
+  
+  // TODO(LD): parse this properly for each handler, just testing this for now
+  const prepareHandler = await registerPrepareHandler(
+    config, 
+    prepare
+
+  )
+
+  return [
+    prepareHandler
+  ]
+}
+
 /**
  * @function initializeHandlers
  * @description Set up all of the kafka handlers
@@ -130,7 +147,7 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
     Logger.isInfoEnabled && Logger.info(`Handler Setup - Registering ${JSON.stringify(handlerType)}!`)
     switch (handlerType) {
       case 'prepare': {
-        await RegisterHandlers.transfers.registerPrepareHandler()
+      //   await RegisterHandlers.transfers.registerPrepareHandler()
         break
       }
       case 'position': {
@@ -196,11 +213,11 @@ export async function initialize({
     }
 
     if (config.RUN_MIGRATIONS) {
-      // WARNING: need to dependency inject
+      // TODO(LD): inject dependency
       await Migrator.migrate()
     }
 
-    // WARNING: need to dependency inject
+    // TODO(LD): inject dependency
     await Db.connect(config.DATABASE)
     const dbLoadedTables = Db._tables ? Db._tables.length : -1
     Logger.debug(`DB.connect loaded '${dbLoadedTables}' tables!`)
@@ -236,7 +253,8 @@ export async function initialize({
       }
     }
 
-    const registeredHandlers = await initializeHandlers(handlers)
+    await initializeHandlers(handlers)
+    const registeredHandlers = await initializeHandlersV2(config, handlers)
 
     // Provision from scratch on first start, or update provisioning to match static config
     if (config.EXPERIMENTAL.PROVISIONING.enabled) {
