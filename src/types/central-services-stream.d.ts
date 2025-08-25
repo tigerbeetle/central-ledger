@@ -50,7 +50,7 @@ declare module '@mojaloop/central-services-stream' {
       
       connect(): Promise<void>;
       disconnect(callback?: () => void): void;
-      consume(handler: MessageHandler): Promise<void>;
+      consume(handler: MessageHandler): Promise<any>;
       commitMessageSync(message: Message): void;
       commitMessage(message: Message): Promise<void>;
       isConnected(): boolean;

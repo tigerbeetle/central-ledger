@@ -203,6 +203,8 @@ const calculateProxyObligation = async ({ payload, isFx, params, functionality, 
         ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
         `Payer proxy or payee proxy not found: initiatingFsp: ${initiatingFsp} counterPartyFsp: ${counterPartyFsp}`
       ).toApiErrorObject(Config.ERROR_HANDLING)
+      
+      // TODO(LD): remove this Kafka.proceed!
       await Kafka.proceed(Config.KAFKA_CONFIG, params, {
         consumerCommit,
         fspiopError,
@@ -225,6 +227,7 @@ const checkDuplication = async ({ payload, isFx, ID, location }) => {
       ['success', 'funcName']
   ).startTimer()
 
+  // TODO(LD): why is this here? Doesn't reall make sense to me
   const remittance = createRemittanceEntity(isFx)
   const { hasDuplicateId, hasDuplicateHash } = await Comparators.duplicateCheckComparator(
     ID,
@@ -412,13 +415,13 @@ const sendPositionPrepareMessage = async ({
   } else if (action === Action.FX_PREPARE) {
     topicNameOverride = Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.FX_PREPARE
   }
-  await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-    consumerCommit,
-    eventDetail,
-    messageKey,
-    topicNameOverride,
-    hubName: Config.HUB_NAME
-  })
+  // await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+  //   consumerCommit,
+  //   eventDetail,
+  //   messageKey,
+  //   topicNameOverride,
+  //   hubName: Config.HUB_NAME
+  // })
 
   return true
 }
@@ -444,7 +447,7 @@ const sendPositionPrepareMessage = async ({
  *
  * @returns {object} - Returns a boolean: true if successful, or throws and error if failed
  */
-const prepare = async (error, messages, proceed) => {
+const prepare = async (error, messages, consumer) => {
   const location = { module: 'PrepareHandler', method: '', path: '' }
   const input = dto.prepareInputDto(error, messages)
 
@@ -479,11 +482,11 @@ const prepare = async (error, messages, proceed) => {
       producer: Producer
     }
 
-    if (proxyEnabled && isForwarded) {
-      const isOk = await forwardPrepare({ isFx, params, ID })
-      logger.info('forwardPrepare message is processed', { isOk, isFx, ID })
-      return isOk
-    }
+    // if (proxyEnabled && isForwarded) {
+    //   const isOk = await forwardPrepare({ isFx, params, ID })
+    //   logger.info('forwardPrepare message is processed', { isOk, isFx, ID })
+    //   return isOk
+    // }
 
     const proxyObligation = await calculateProxyObligation({
       payload, isFx, params, functionality, action
@@ -526,26 +529,36 @@ const prepare = async (error, messages, proceed) => {
       const fspiopError = createFSPIOPError(FSPIOPErrorCodes.VALIDATION_ERROR, reasons.toString())
       await createRemittanceEntity(isFx)
         .logTransferError(ID, FSPIOPErrorCodes.VALIDATION_ERROR.code, reasons.toString())
+
+
+      // TODO: no idea
+      await consumer.commitMessageSync(message)
+
       /**
        * TODO: BULK-Handle at BulkProcessingHandler (not in scope of #967)
        * HOWTO: For regular transfers this branch may be triggered by sending
        * a transfer in a currency not supported by either dfsp. Not sure if it
        * will be triggered for bulk, because of the BulkPrepareHandler.
        */
-      await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-        consumerCommit,
-        fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING),
-        eventDetail: { functionality, action },
-        fromSwitch,
-        hubName: Config.HUB_NAME
-      })
+      // await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+      //   consumerCommit,
+      //   fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING),
+      //   eventDetail: { functionality, action },
+      //   fromSwitch,
+      //   hubName: Config.HUB_NAME
+      // })
       rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'transferPrepare' })
+
+      return
     }
 
     logger.info(Util.breadcrumb(location, `positionTopic1--${actionLetter}7`))
     const success = await sendPositionPrepareMessage({
       isFx, action, params, determiningTransferCheckResult, proxyObligation
     })
+
+    // my goal is to have all commits easily readable inside the message itself!
+    await consumer.commitMessageSync(message)
 
     histTimerEnd({ success, fspId })
     return success
