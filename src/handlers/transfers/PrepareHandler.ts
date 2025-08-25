@@ -3,10 +3,30 @@ import { Enum, Util } from '@mojaloop/central-services-shared';
 import { logger } from '../../shared/logger';
 import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
+import assert from 'assert';
+import createRemittanceEntity from './createRemittanceEntity';
+
+const { decodePayload } = Util.StreamingProtocol
+
 
 const rethrow = Util.rethrow;
 const { createFSPIOPError } = ErrorHandler.Factory;
 const { FSPIOPErrorCodes } = ErrorHandler.Enums;
+
+
+// TODO(LD): move to common types
+export interface CreateTransferDto {
+  amount: {
+    amount: string,
+    currency: string
+  },
+  condition: string,
+  expiration: string,
+  ilpPacket: string,
+  payeeFsp: string,
+  payerFsp: string,
+  transferId: string,
+}
 
 export interface PrepareHandlerDependencies {
   positionProducer: IPositionProducer;
@@ -14,6 +34,7 @@ export interface PrepareHandlerDependencies {
   committer: IMessageCommitter;
   config: any;
   
+  // TODO(LD): remove these I think, but interesting to keep a track of them!
   // Business logic dependencies - these will come from existing modules
   validator: any;
   transferService: any;
@@ -26,13 +47,16 @@ export interface PrepareHandlerDependencies {
 export class PrepareHandler {
   constructor(private deps: PrepareHandlerDependencies) {}
 
-  async handle(error: any, message: any): Promise<void> {
+  // TODO(LD): add some typing
+  async handle(error: any, messages: any): Promise<void> {
     if (error) {
       rethrow.rethrowAndCountFspiopError(error, { operation: 'PrepareHandler.handle' });
     }
 
-    // Convert single message to array format for compatibility with existing logic
-    const messages = [message];
+    // TODO(LD): how should we deal with errors related to message validation?
+    assert(Array.isArray(messages))
+    assert.equal(messages.length, 1, 'Expected exactly only 1 message from consumers')
+    const message = messages[0]
     const input = this.extractMessageData(message);
     
     const histTimerEnd = Metrics.getHistogram(
@@ -44,8 +68,6 @@ export class PrepareHandler {
     try {
       // Process the transfer business logic
       const result = await this.processTransfer(input, message);
-      
-      // Commit the incoming message
       await this.deps.committer.commit(message);
       
       // Handle the result - send downstream messages
@@ -56,22 +78,35 @@ export class PrepareHandler {
     } catch (err) {
       histTimerEnd({ success: false, fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId });
       
-      // Even on error, commit the message so we don't reprocess it
       await this.deps.committer.commit(message);
-      
-      // Send error notification
+    
       await this.handleError(err, input, message);
       return
     }
   }
 
+  // TODO(LD): add types here
   private extractMessageData(message: any) {
-    const { payload } = message.value.content;
-    const headers = message.value.content.headers || {};
-    const transferId = payload.transferId;
+    assert(message)
+    assert(message.value)
+    assert(message.value.content)
+    assert(message.value.content.headers)
+    assert(message.value.metadata)
+    assert(message.value.metadata.event)
+    assert(message.value.metadata.event.action)
+    const payloadEncoded  = message.value.content.payload
+    const payload = decodePayload(payloadEncoded, {}) as unknown as CreateTransferDto
+    const headers = message.value.content.headers
+
+    const transferId = payload.transferId
+
+
+    // TODO(LD): copied from dto.js but it's a bad idea
+    // const isFx = !payload.transferId
     const action = message.value.metadata?.event?.action || 'prepare';
-    
-    // Determine if this is an FX transfer or bulk transfer
+  
+    // TODO(LD): I really don't like passing around booleans like this
+    // copied from other parts of the code but this really needs a refactor
     const isFx = action.toLowerCase().includes('fx');
     const isBulk = action.toLowerCase().includes('bulk');
     const isForwarded = action.toLowerCase().includes('forward');
@@ -99,17 +134,31 @@ export class PrepareHandler {
   private async processTransfer(input: any, message: any): Promise<ProcessResult> {
     const { payload, transferId, isFx, action, functionality } = input;
 
-    // 1. Calculate proxy obligations
+
+    // Proxy obligations, copied from original prepare.js, not sure I understand why we have it
+
     const proxyObligation = await this.calculateProxyObligation(payload, isFx, input);
 
     // 2. Check for duplicates
+    // TODO(LD): refactor this - needs to be moved to a different place to line up with TigerBeetle flow
     const duplication = await this.checkDuplication(payload, transferId, isFx);
     if (duplication.hasDuplicateId) {
       return await this.processDuplication(duplication, input);
     }
 
+    // `determiningTransferCheckResult`, copied from original prepare.js, not sure I understand why we have it
+    const determiningTransferCheckResult = await createRemittanceEntity(isFx)
+      .checkIfDeterminingTransferExists(proxyObligation.payloadClone, proxyObligation)
+
     // 3. Validate the transfer
-    const validation = await this.validateTransfer(payload, input.headers, isFx, proxyObligation);
+    // TODO(LD): Validation should be before we process I think
+    const validation = await this.validateTransfer(
+      payload, 
+      input.headers, 
+      isFx, 
+      determiningTransferCheckResult,
+      proxyObligation,
+    );
     if (!validation.validationPassed) {
       throw createFSPIOPError(FSPIOPErrorCodes.VALIDATION_ERROR, validation.reasons.join(', '));
     }
@@ -264,9 +313,9 @@ export class PrepareHandler {
     };
   }
 
-  private async validateTransfer(payload: any, headers: any, isFx: boolean, proxyObligation: any) {
+  private async validateTransfer(payload: any, headers: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
     // Delegate to existing validator
-    return await this.deps.validator.validatePrepare(payload, headers, isFx, null, proxyObligation);
+    return await this.deps.validator.validatePrepare(payload, headers, isFx, determiningTransferCheckResult, proxyObligation);
   }
 
   private async saveTransfer(payload: any, validation: any, isFx: boolean, proxyObligation: any) {

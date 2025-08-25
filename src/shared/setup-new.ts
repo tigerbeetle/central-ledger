@@ -32,9 +32,11 @@ import { Enum, Util } from '@mojaloop/central-services-shared';
 export interface Initialized {
   server: undefined | Hapi.Server<Hapi.ServerApplicationState>,
   handlers: undefined | Array<unknown>,
-  handlersV2: undefined | HandlerClients,
+  // handlersV2: undefined | HandlerClients,
   proxyCache: undefined | unknown,
-  mongoClient: undefined | unknown
+  mongoClient: undefined | unknown,
+  consumers: undefined | Consumers,
+  producers: undefined | Producers,
 }
 
 export interface Consumers {
@@ -185,8 +187,10 @@ async function createProducers(config: ApplicationConfig): Promise<Producers> {
   const positionProducerConfig = KafkaUtil.getKafkaConfig(
     config.KAFKA_CONFIG,
     Enum.Kafka.Config.PRODUCER,
+    Enum.Events.Event.Type.TRANSFER.toUpperCase(),
+    // Enum.Events.Event.Type.POSITION.toUpperCase(),
     Enum.Events.Event.Type.POSITION.toUpperCase(),
-    PREPARE.toUpperCase()
+    // PREPARE.toUpperCase()
   );
   const positionProducer = new Kafka.Producer(positionProducerConfig);
 
@@ -212,19 +216,22 @@ async function createProducers(config: ApplicationConfig): Promise<Producers> {
 
 async function initializeHandlersV2(
   config: ApplicationConfig, 
-  handlers: Array<HandlerType>, 
+  handlerTypes: Array<HandlerType>, 
   consumers: Consumers,
   producers: Producers
 ): Promise<void> {
 
-  for (const handlerType of handlers) {
+  for (const handlerType of handlerTypes) {
     Logger.isInfoEnabled && Logger.info(`HandlerV2 Setup - Registering ${JSON.stringify(handlerType)}!`)
     
     switch (handlerType) {
       case HandlerType.prepare: {
         Logger.isInfoEnabled && Logger.info('Setting up prepare handler...')
-                
-        await registerPrepareHandlerNew(clients.prepare, config);
+
+        assert(consumers.prepare)
+        assert(producers.position)
+        assert(producers.notification)
+        await registerPrepareHandlerNew(config, consumers.prepare, producers.position, producers.notification)
         
         Logger.isInfoEnabled && Logger.info('Prepare handler registered successfully with new architecture')
         break;
@@ -243,24 +250,6 @@ async function initializeHandlersV2(
       }
     }
   }
-
-  return clients;
-}
-
-async function shutdownHandlersV2(clients: HandlerClients): Promise<void> {
-  Logger.isInfoEnabled && Logger.info('Shutting down V2 handlers...')
-  
-  if (clients.prepare) {
-    Logger.isInfoEnabled && Logger.info('Disconnecting prepare handler clients...')
-    await clients.prepare.consumer.disconnect()
-    await clients.prepare.positionProducer.disconnect()
-    await clients.prepare.notificationProducer.disconnect()
-  }
-  
-  // TODO: Add shutdown for other handlers as we implement them
-  // if (clients.position) { ... }
-  
-  Logger.isInfoEnabled && Logger.info('V2 handlers shutdown complete')
 }
 
 /**
@@ -281,7 +270,7 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
     Logger.isInfoEnabled && Logger.info(`Handler Setup - Registering ${JSON.stringify(handlerType)}!`)
     switch (handlerType) {
       case 'prepare': {
-      //   await RegisterHandlers.transfers.registerPrepareHandler()
+        // await RegisterHandlers.transfers.registerPrepareHandler()
         break
       }
       case 'position': {
@@ -335,7 +324,6 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
   return registeredHandlers
 }
 
-export { shutdownHandlersV2 };
 
 export async function initialize({
   config,
@@ -343,6 +331,10 @@ export async function initialize({
   modules,
   handlers
 }: { config: ApplicationConfig, service: Service, modules: Array<Plugin<any>>, handlers: Array<HandlerType> }): Promise<Initialized> {
+
+  let consumers: Consumers
+  let producers: Producers
+
   try {
     if (!config.INSTRUMENTATION_METRICS_DISABLED) {
       Metrics.setup(config.INSTRUMENTATION_METRICS_CONFIG)
@@ -395,8 +387,8 @@ export async function initialize({
     const legacyHandlers = await initializeHandlers(handlers)
     
     // Initialize new V2 handlers with dependency injection
-    const consumers = await createConsumers(config)
-    const producers = await createProducers(config)
+    consumers = await createConsumers(config)
+    producers = await createProducers(config)
     // TODO: rename handlers here to handlerTypes or something
     const handlerClientsV2 = await initializeHandlersV2(config, handlers, consumers, producers)
 
@@ -409,7 +401,8 @@ export async function initialize({
     return {
       server,
       handlers: [legacyHandlers],
-      handlersV2: handlerClientsV2,
+      consumers: consumers,
+      producers: producers,
       proxyCache,
       mongoClient,
     }
@@ -417,13 +410,24 @@ export async function initialize({
     Logger.isErrorEnabled && Logger.error(`setup.initialize() - error while initializing ${err}`)
 
     await Db.disconnect()
+
+    // TODO(LD): Improve the cleanup and disconnection of kafka consumers/handlers
+    if (consumers) {
+      if (consumers.prepare) {
+        consumers.prepare.disconnect()
+      }
+    }
+
+    if (producers) {
+      if (producers.position) {
+        producers.position.disconnect()
+      }
+      
+      if (producers.notification) {
+        producers.notification.disconnect()
+      }
+    }
     
-    // TODO: Add cleanup for V2 handlers
-    // if (handlerClientsV2?.prepare) {
-    //   await handlerClientsV2.prepare.consumer.disconnect()
-    //   await handlerClientsV2.prepare.positionProducer.disconnect()
-    //   await handlerClientsV2.prepare.notificationProducer.disconnect()
-    // }
     
     if (config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.disconnect()

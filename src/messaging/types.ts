@@ -8,9 +8,19 @@ export interface PositionMessage {
   messageKey?: string;
 }
 
-export interface NotificationMessage {
+export type NotificationMessage = NotificationProceedMessage | NotificationErrorMessage
+
+export interface NotificationProceedMessage {
   transferId: string;
-  fspiopError?: any;
+  action: string;
+  to: string;
+  from: string;
+  payload?: any;
+}
+
+export interface NotificationErrorMessage {
+  transferId: string;
+  fspiopError: any;
   action: string;
   to: string;
   from: string;

@@ -1,86 +1,103 @@
 import { Kafka } from '@mojaloop/central-services-stream';
-import { INotificationProducer, NotificationMessage } from '../types';
+import { INotificationProducer, NotificationErrorMessage, NotificationMessage } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { Enum } from '@mojaloop/central-services-shared';
+
+const KafkaUtil = require('@mojaloop/central-services-shared').Util.Kafka
+
 
 export class NotificationProducer implements INotificationProducer {
   constructor(
     private producer: Kafka.Producer,
     private config: any
-  ) {}
+  ) { }
 
-  async sendError(message: NotificationMessage): Promise<void> {
+  async sendError(message: NotificationErrorMessage): Promise<void> {
     const kafkaMessage = this.buildErrorMessage(message);
     const topic = this.getNotificationTopic();
-    
-    await this.producer.sendMessage({
-      topic,
-      key: message.transferId,
-      value: kafkaMessage
-    });
+
+    await this.producer.sendMessage(
+      kafkaMessage,
+      {
+        opaqueKey: '12345',
+        topicName: topic,
+        key: message.transferId,
+      })
+
+    // await this.producer.sendMessage(message, {
+    //   topic,
+    //   key: message.transferId,
+    //   value: kafkaMessage
+    // },);
   }
 
   async sendSuccess(message: NotificationMessage): Promise<void> {
-    const kafkaMessage = this.buildSuccessMessage(message);
-    const topic = this.getNotificationTopic();
-    
-    await this.producer.sendMessage({
-      topic,
-      key: message.transferId,
-      value: kafkaMessage
-    });
+    throw new Error('not implemented')
+    // const kafkaMessage = this.buildSuccessMessage(message);
+    // const topic = this.getNotificationTopic();
+
+    // await this.producer.sendMessage({
+    //   topic,
+    //   key: message.transferId,
+    //   value: kafkaMessage
+    // });
   }
 
   async sendForwarded(message: NotificationMessage): Promise<void> {
-    const kafkaMessage = this.buildForwardedMessage(message);
-    const topic = this.getNotificationTopic();
-    
-    await this.producer.sendMessage({
-      topic,
-      key: message.transferId,
-      value: kafkaMessage
-    });
+    throw new Error('not implemented')
+    // const kafkaMessage = this.buildForwardedMessage(message);
+    // const topic = this.getNotificationTopic();
+
+    // await this.producer.sendMessage({
+    //   topic,
+    //   key: message.transferId,
+    //   value: kafkaMessage
+    // });
   }
 
   async sendDuplicate(message: NotificationMessage): Promise<void> {
-    const kafkaMessage = this.buildDuplicateMessage(message);
-    const topic = this.getNotificationTopic();
-    
-    await this.producer.sendMessage({
-      topic,
-      key: message.transferId,
-      value: kafkaMessage
-    });
+    throw new Error('not implemented')
+    // const kafkaMessage = this.buildDuplicateMessage(message);
+    // const topic = this.getNotificationTopic();
+
+    // await this.producer.sendMessage({
+    //   topic,
+    //   key: message.transferId,
+    //   value: kafkaMessage
+    // });
   }
 
-  private buildErrorMessage(message: NotificationMessage): any {
+  private buildErrorMessage(message: NotificationErrorMessage): Kafka.MessageProtocol {
+    // TODO(LD): check what this is meant to be based on real examples
     return {
+      content: {
+        uriParams: {
+          id: message.transferId
+        },
+        headers: {
+          // TODO: we need to get headers somehow
+        },
+        payload: message.fspiopError,
+        context: {}
+      },
       id: message.transferId,
       from: message.from,
       to: message.to,
       type: 'application/json',
-      content: {
-        headers: {
-          [Enum.Http.Headers.FSPIOP.SOURCE]: message.from,
-          [Enum.Http.Headers.FSPIOP.DESTINATION]: message.to
-        },
-        payload: message.fspiopError,
-        uriParams: { id: message.transferId }
-      },
       metadata: {
+        correlationId: message.transferId,
         event: {
-          id: uuidv4(),
           type: 'notification',
-          action: message.action.toLowerCase().replace('_', '-'),
-          createdAt: new Date().toISOString(),
+          action: message.action,
+          createdAt: (new Date).toISOString(),
           state: {
-            status: 'failure',
-            code: message.fspiopError?.errorInformation?.errorCode || 500,
-            description: message.fspiopError?.errorInformation?.errorDescription
+            status: 'error',
+            code: message.fspiopError.errorInformation.errorCode,
+            description: message.fspiopError.errorInformation.errorDescription,
           }
         }
-      }
-    };
+      },
+    }
   }
 
   private buildSuccessMessage(message: NotificationMessage): any {

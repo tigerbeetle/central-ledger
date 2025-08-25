@@ -41,8 +41,25 @@ declare module '@mojaloop/central-services-stream' {
       headers?: Record<string, string | Buffer>;
     }
 
+    interface MessageProtocol {
+      content: any,
+      id: string,
+      from: string,
+      to: string,
+      metadata: any,
+      type: string,
+      pp?: string
+    }
+
     interface MessageHandler {
       (error: Error | null, message: Message): Promise<void> | void;
+    }
+
+    interface TopicConfiguration {
+      opaqueKey: any
+      topicName: string,
+      key?: string
+      partition?: number
     }
 
     class Consumer extends EventEmitter {
@@ -82,7 +99,11 @@ declare module '@mojaloop/central-services-stream' {
       
       connect(): Promise<void>;
       disconnect(callback?: () => void): void;
-      sendMessage(message: Message, callback?: (error: Error | null) => void): Promise<void>;
+      sendMessage(
+        message: MessageProtocol, 
+        topicConf: TopicConfiguration, 
+        customHeaders?: Array<{ [key: string]: string | Buffer }>
+      ): Promise<void>;
       isConnected(): boolean;
       
       on(event: 'error', listener: (error: Error) => void): this;

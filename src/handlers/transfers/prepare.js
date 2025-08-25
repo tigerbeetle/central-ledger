@@ -447,7 +447,7 @@ const sendPositionPrepareMessage = async ({
  *
  * @returns {object} - Returns a boolean: true if successful, or throws and error if failed
  */
-const prepare = async (error, messages, consumer) => {
+const prepare = async (error, messages) => {
   const location = { module: 'PrepareHandler', method: '', path: '' }
   const input = dto.prepareInputDto(error, messages)
 
@@ -482,11 +482,11 @@ const prepare = async (error, messages, consumer) => {
       producer: Producer
     }
 
-    // if (proxyEnabled && isForwarded) {
-    //   const isOk = await forwardPrepare({ isFx, params, ID })
-    //   logger.info('forwardPrepare message is processed', { isOk, isFx, ID })
-    //   return isOk
-    // }
+    if (proxyEnabled && isForwarded) {
+      const isOk = await forwardPrepare({ isFx, params, ID })
+      logger.info('forwardPrepare message is processed', { isOk, isFx, ID })
+      return isOk
+    }
 
     const proxyObligation = await calculateProxyObligation({
       payload, isFx, params, functionality, action
@@ -531,22 +531,19 @@ const prepare = async (error, messages, consumer) => {
         .logTransferError(ID, FSPIOPErrorCodes.VALIDATION_ERROR.code, reasons.toString())
 
 
-      // TODO: no idea
-      await consumer.commitMessageSync(message)
-
       /**
        * TODO: BULK-Handle at BulkProcessingHandler (not in scope of #967)
        * HOWTO: For regular transfers this branch may be triggered by sending
        * a transfer in a currency not supported by either dfsp. Not sure if it
        * will be triggered for bulk, because of the BulkPrepareHandler.
        */
-      // await Kafka.proceed(Config.KAFKA_CONFIG, params, {
-      //   consumerCommit,
-      //   fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING),
-      //   eventDetail: { functionality, action },
-      //   fromSwitch,
-      //   hubName: Config.HUB_NAME
-      // })
+      await Kafka.proceed(Config.KAFKA_CONFIG, params, {
+        consumerCommit,
+        fspiopError: fspiopError.toApiErrorObject(Config.ERROR_HANDLING),
+        eventDetail: { functionality, action },
+        fromSwitch,
+        hubName: Config.HUB_NAME
+      })
       rethrow.rethrowAndCountFspiopError(fspiopError, { operation: 'transferPrepare' })
 
       return
@@ -556,9 +553,6 @@ const prepare = async (error, messages, consumer) => {
     const success = await sendPositionPrepareMessage({
       isFx, action, params, determiningTransferCheckResult, proxyObligation
     })
-
-    // my goal is to have all commits easily readable inside the message itself!
-    await consumer.commitMessageSync(message)
 
     histTimerEnd({ success, fspId })
     return success
