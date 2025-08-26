@@ -125,7 +125,7 @@ export class PositionHandler {
       transferId = payload.transferId
     }
 
-    assert(transferId)
+    assert(transferId, 'could not parse transferId')
 
     const isBulk = action && (
       action.toLowerCase().includes('bulk') ||

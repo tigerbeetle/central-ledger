@@ -219,7 +219,9 @@ export class PrepareHandler {
         action: input.action + '_DUPLICATE',
         to: input.payload.payerFsp,
         from: this.deps.config.HUB_NAME,
-        payload: result.data.transformedPayload
+        payload: result.data.transformedPayload,
+        headers: undefined,
+        metadata: undefined
       });
     }
     

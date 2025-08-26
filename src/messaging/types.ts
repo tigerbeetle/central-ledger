@@ -21,6 +21,8 @@ export interface NotificationProceedMessage {
   to: string;
   from: string;
   payload?: any;
+  headers: Record<string, any>;
+  metadata: any;
 }
 
 export interface NotificationErrorMessage {
