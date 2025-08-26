@@ -68,15 +68,34 @@ export class NotificationProducer implements INotificationProducer {
   }
 
   private buildErrorMessage(message: NotificationErrorMessage): Kafka.MessageProtocol {
-    // TODO(LD): check what this is meant to be based on real examples
+    // Clone headers and update FSPIOP headers like the original system
+    const updatedHeaders = { ...message.headers };
+    updatedHeaders[Enum.Http.Headers.FSPIOP.SOURCE] = message.from;
+    updatedHeaders[Enum.Http.Headers.FSPIOP.DESTINATION] = message.to;
+
+    // Preserve the original metadata but update the event portion like the original system
+    const updatedMetadata = { ...message.metadata };
+    const originalEventId = updatedMetadata?.event?.id;
+    
+    updatedMetadata.event = {
+      id: message.transferId,
+      type: 'notification',
+      action: message.action,
+      createdAt: (new Date).toISOString(),
+      state: {
+        status: 'error',
+        code: message.fspiopError.errorInformation.errorCode,
+        description: message.fspiopError.errorInformation.errorDescription,
+      },
+      ...(originalEventId && { responseTo: originalEventId })
+    };
+
     return {
       content: {
         uriParams: {
           id: message.transferId
         },
-        headers: {
-          // TODO: we need to get headers somehow
-        },
+        headers: updatedHeaders,
         payload: message.fspiopError,
         context: {}
       },
@@ -84,19 +103,7 @@ export class NotificationProducer implements INotificationProducer {
       from: message.from,
       to: message.to,
       type: 'application/json',
-      metadata: {
-        correlationId: message.transferId,
-        event: {
-          type: 'notification',
-          action: message.action,
-          createdAt: (new Date).toISOString(),
-          state: {
-            status: 'error',
-            code: message.fspiopError.errorInformation.errorCode,
-            description: message.fspiopError.errorInformation.errorDescription,
-          }
-        }
-      },
+      metadata: updatedMetadata
     }
   }
 

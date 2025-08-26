@@ -338,6 +338,27 @@ const stop = async () => {
   }
 }
 
+const setupSignalHandlers = () => {
+  const gracefulShutdown = async (signal) => {
+    log.info(`Received ${signal}, stopping timeout handler gracefully...`)
+    try {
+      await stop()
+      log.info('Timeout handler stopped successfully')
+    } catch (err) {
+      log.error('Error stopping timeout handler during shutdown:', err)
+    }
+  }
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+}
+
+// Setup signal handlers when the module is loaded
+if (!process.env.NODE_ENV || process.env.NODE_ENV !== 'test') {
+  setupSignalHandlers()
+}
+
+
 /* istanbul ignore next */
 const initLock = async () => {
   if (distLockEnabled) {

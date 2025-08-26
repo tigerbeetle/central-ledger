@@ -13,15 +13,14 @@ export class PositionProducer implements IPositionProducer {
     const kafkaMessage = this.buildKafkaMessage(message, 'PREPARE');
     const topic = this.getTopicName('PREPARE');
 
-    
-    throw new Error('not implemented')
-
-
-    // await this.producer.sendMessage({
-    //   topic,
-    //   key: message.messageKey || message.participantCurrencyId,
-    //   value: kafkaMessage
-    // });
+    await this.producer.sendMessage(
+      kafkaMessage,
+      {
+        topicName: topic,
+        key: message.messageKey || message.participantCurrencyId,
+        opaqueKey: message.transferId
+      }
+    );
   }
 
   async sendCommit(message: PositionMessage): Promise<void> {
@@ -81,31 +80,29 @@ export class PositionProducer implements IPositionProducer {
   private buildKafkaMessage(message: PositionMessage, action: string): any {
     return {
       id: message.transferId,
-      from: this.config.HUB_NAME,
-      to: null, // Will be set by position handler
+      from: message.from,
+      to: message.to,
       type: 'application/json',
       content: {
-        headers: {},
-        payload: {
-          transferId: message.transferId,
-          participantCurrencyId: message.participantCurrencyId,
-          amount: message.amount,
-          currency: message.currency
-        },
         uriParams: { id: message.transferId },
+        headers: message.headers,
+        payload: message.payload,
         context: message.cyrilResult ? { cyrilResult: message.cyrilResult } : undefined
       },
       metadata: {
+        correlationId: message.transferId,
         event: {
-          id: uuidv4(),
           type: 'position',
           action: action.toLowerCase().replace('_', '-'),
           createdAt: new Date().toISOString(),
           state: {
             status: 'success',
-            code: 0
-          }
-        }
+            code: 0,
+            description: 'action successful'
+          },
+          id: message.transferId
+        },
+        trace: message.metadata?.trace
       }
     };
   }

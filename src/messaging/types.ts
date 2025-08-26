@@ -6,6 +6,11 @@ export interface PositionMessage {
   action: 'PREPARE' | 'COMMIT' | 'ABORT' | 'FX_PREPARE' | 'FX_COMMIT' | 'FX_ABORT' | 'BULK_PREPARE';
   cyrilResult?: any;
   messageKey?: string;
+  from: string;
+  to: string;
+  headers: Record<string, any>;
+  payload: string; // base64 encoded payload
+  metadata: any;
 }
 
 export type NotificationMessage = NotificationProceedMessage | NotificationErrorMessage
@@ -25,6 +30,8 @@ export interface NotificationErrorMessage {
   to: string;
   from: string;
   payload?: any;
+  headers: Record<string, any>;
+  metadata: any;
 }
 
 export interface IPositionProducer {

@@ -201,7 +201,12 @@ export class PrepareHandler {
       currency: result.positionData.currency,
       action: this.getPositionAction(input.action),
       cyrilResult: result.positionData.cyrilResult,
-      messageKey: result.positionData.messageKey
+      messageKey: result.positionData.messageKey,
+      from: input.message.value.from,
+      to: input.message.value.to,
+      headers: input.headers,
+      payload: input.message.value.content.payload, // base64 encoded payload from original message
+      metadata: input.message.value.metadata
     };
 
     // Send to position handler depending on message type
@@ -246,7 +251,9 @@ export class PrepareHandler {
       fspiopError: fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),
       action: input.action,
       to: message.value.from,
-      from: this.deps.config.HUB_NAME
+      from: this.deps.config.HUB_NAME,
+      headers: input.headers,
+      metadata: message.value.metadata
     });
 
     logger.error('Handled transfer error', {
