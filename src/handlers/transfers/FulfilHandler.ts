@@ -3,7 +3,7 @@ import * as Metrics from '@mojaloop/central-services-metrics';
 import { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
 import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
-import { IMessageCommitter, INotificationProducer, ProcessResult } from '../../messaging/types';
+import { IMessageCommitter, INotificationProducer, IPositionProducer, ProcessResult } from '../../messaging/types';
 import { logger } from '../../shared/logger';
 import { CommitTransferDto, CreateTransferDto } from '../types';
 
@@ -11,6 +11,7 @@ const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;
 
 export interface FulfilHandlerDependencies {
+  positionProducer: IPositionProducer;
   notificationProducer: INotificationProducer;
   committer: IMessageCommitter;
   config: any;
@@ -21,6 +22,7 @@ export interface FulfilHandlerDependencies {
   comparators: any;
   fxService: any;
   transferObjectTransform: any;
+  participantFacade: any;
 }
 
 export interface FulfilMessageInput {
@@ -329,20 +331,66 @@ export class FulfilHandler {
   }
 
   private async sendToPositionTopic(input: FulfilMessageInput, message: any, transfer: any, cyrilResult?: any): Promise<void> {
-    // This would send the message to the position topic for position processing
-    // Implementation would depend on the position producer setup
     logger.debug(`Sending to position topic for transfer: ${input.transferId}`, { action: input.action });
 
-    // Add cyril result to message context if available
-    if (cyrilResult && cyrilResult.isFx) {
-      message.value.content.context = {
-        ...message.value.content.context,
-        cyrilResult
-      };
+    // Determine participant currency ID and message key
+    let participantCurrencyId: string;
+    let messageKey: string;
+
+    if (cyrilResult && cyrilResult.positionChanges && cyrilResult.positionChanges.length > 0) {
+      // Use participantCurrencyId from FX cyril result
+      participantCurrencyId = cyrilResult.positionChanges[0].participantCurrencyId.toString();
+      messageKey = participantCurrencyId;
+    } else {
+      // For regular transfers, use payee account
+      const payeeAccount = await this.deps.participantFacade.getByNameAndCurrency(
+        transfer.payeeFsp, 
+        transfer.currency, 
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+      participantCurrencyId = payeeAccount.participantCurrencyId.toString();
+      messageKey = participantCurrencyId;
     }
 
-    // The actual sending to position topic would happen here
-    // This is typically handled by the Kafka.proceed function in the original implementation
+    // Build position message
+    const positionMessage = {
+      transferId: input.transferId,
+      participantCurrencyId,
+      amount: transfer.amount,
+      currency: transfer.currency,
+      action: this.getPositionAction(input.action),
+      cyrilResult,
+      messageKey,
+      from: message.value.from,
+      to: message.value.to,
+      headers: input.headers,
+      payload: message.value.content.payload, // base64 encoded payload
+      metadata: message.value.metadata
+    };
+
+    // Send to position handler
+    if (input.action === Enum.Events.Event.Action.COMMIT || input.action === Enum.Events.Event.Action.BULK_COMMIT) {
+      await this.deps.positionProducer.sendCommit(positionMessage);
+    } else if (input.action === Enum.Events.Event.Action.ABORT || input.action === Enum.Events.Event.Action.BULK_ABORT) {
+      await this.deps.positionProducer.sendAbort(positionMessage);
+    } else {
+      throw new Error(`Unsupported position action: ${input.action}`);
+    }
+
+    logger.info('Successfully sent message to position handler', {
+      transferId: input.transferId,
+      action: positionMessage.action,
+      participantCurrencyId
+    });
+  }
+
+  private getPositionAction(action: string): 'COMMIT' | 'ABORT' | 'BULK_COMMIT' | 'BULK_ABORT' {
+    const actionUpper = action.toUpperCase();
+    if (actionUpper.includes('BULK_COMMIT') || actionUpper === 'BULK_COMMIT') return 'BULK_COMMIT';
+    if (actionUpper.includes('BULK_ABORT') || actionUpper === 'BULK_ABORT') return 'BULK_ABORT';
+    if (actionUpper.includes('COMMIT') || actionUpper === 'COMMIT') return 'COMMIT';
+    if (actionUpper.includes('ABORT') || actionUpper === 'ABORT') return 'ABORT';
+    throw new Error(`Unsupported action for position: ${action}`);
   }
 
   private async sendDuplicateNotification(input: FulfilMessageInput, message: any, transfer: any): Promise<void> {

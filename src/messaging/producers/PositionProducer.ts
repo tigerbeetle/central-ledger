@@ -27,28 +27,28 @@ export class PositionProducer implements IPositionProducer {
     const kafkaMessage = this.buildKafkaMessage(message, 'COMMIT');
     const topic = this.getTopicName('COMMIT');
 
-    throw new Error('not implemented')
-
-
-    // await this.producer.sendMessage({
-    //   topic,
-    //   key: message.messageKey || message.participantCurrencyId,
-    //   value: kafkaMessage
-    // });
+    await this.producer.sendMessage(
+      kafkaMessage,
+      {
+        topicName: topic,
+        key: message.messageKey || message.participantCurrencyId,
+        opaqueKey: message.transferId
+      }
+    );
   }
 
   async sendAbort(message: PositionMessage): Promise<void> {
     const kafkaMessage = this.buildKafkaMessage(message, 'ABORT');
     const topic = this.getTopicName('ABORT');
 
-    throw new Error('not implemented')
-
-
-    // await this.producer.sendMessage({
-    //   topic,
-    //   key: message.messageKey || message.participantCurrencyId,
-    //   value: kafkaMessage
-    // });
+    await this.producer.sendMessage(
+      kafkaMessage,
+      {
+        topicName: topic,
+        key: message.messageKey || message.participantCurrencyId,
+        opaqueKey: message.transferId
+      }
+    );
   }
 
   async sendFxPrepare(message: PositionMessage): Promise<void> {

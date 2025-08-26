@@ -254,8 +254,9 @@ async function initializeHandlersV2(
       }
       case HandlerType.fulfil: {
         assert(consumers.fulfil)
+        assert(producers.position)
         assert(producers.notification)
-        await registerFulfilHandler_new(config, consumers.fulfil, producers.notification)
+        await registerFulfilHandler_new(config, consumers.fulfil, producers.position, producers.notification)
         break;
       }
 

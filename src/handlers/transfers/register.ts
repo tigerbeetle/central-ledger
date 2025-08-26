@@ -48,6 +48,7 @@ export const createPrepareHandler = (
 export const createFulfilHandler = (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
+  positionProducer: Kafka.Producer,
   notificationProducer: Kafka.Producer,
 ) => {
   // Import existing business logic modules
@@ -56,8 +57,10 @@ export const createFulfilHandler = (
   const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
   const FxService = require('../../domain/fx')
   const TransferObjectTransform = require('../../domain/transfer/transform')
+  const ParticipantFacade = require('../../models/participant/facade')
 
   const dependencies: FulfilHandlerDependencies = {
+    positionProducer: new PositionProducer(positionProducer, config),
     notificationProducer: new NotificationProducer(notificationProducer, config),
     committer: new MessageCommitter(consumer),
     config,
@@ -65,7 +68,8 @@ export const createFulfilHandler = (
     validator: Validator,
     comparators: Comparators,
     fxService: FxService,
-    transferObjectTransform: TransferObjectTransform
+    transferObjectTransform: TransferObjectTransform,
+    participantFacade: ParticipantFacade
   }
 
   const handler = new FulfilHandler(dependencies)
@@ -94,12 +98,13 @@ export const registerPrepareHandler_new = async (
 export const registerFulfilHandler_new = async (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
+  positionProducer: Kafka.Producer,
   notificationProducer: Kafka.Producer,
 ): Promise<void> => {
   try {
     logger.debug(`registerFulfilHandler_new registering`)
 
-    const handleMessage = createFulfilHandler(config, consumer, notificationProducer)
+    const handleMessage = createFulfilHandler(config, consumer, positionProducer, notificationProducer)
     consumer.consume(handleMessage)
 
   } catch (err) {

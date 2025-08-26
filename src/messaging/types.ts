@@ -3,7 +3,7 @@ export interface PositionMessage {
   participantCurrencyId: string;
   amount: string;
   currency: string;
-  action: 'PREPARE' | 'COMMIT' | 'ABORT' | 'FX_PREPARE' | 'FX_COMMIT' | 'FX_ABORT' | 'BULK_PREPARE';
+  action: 'PREPARE' | 'COMMIT' | 'ABORT' | 'FX_PREPARE' | 'FX_COMMIT' | 'FX_ABORT' | 'BULK_PREPARE' | 'BULK_COMMIT' | 'BULK_ABORT';
   cyrilResult?: any;
   messageKey?: string;
   from: string;

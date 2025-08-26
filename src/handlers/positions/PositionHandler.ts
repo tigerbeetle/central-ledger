@@ -252,11 +252,82 @@ export class PositionHandler {
   }
 
   private async handlePositionCommit(input: PositionMessageInput, message: any): Promise<any> {
-    // Implement position commit logic here
-    logger.info(`Processing position commit for transfer: ${input.transferId}`);
+    const { transferId, action, payload } = input;
 
-    // Placeholder - implement actual business logic
-    return { status: 'committed', transferId: input.transferId };
+    logger.info(`Processing position commit for transfer: ${transferId}`);
+
+    try {
+      // Get transfer info to change position for PAYEE
+      const transferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
+        transferId, 
+        Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP, 
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      // Get participant currency info
+      const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
+        transferInfo.participantId, 
+        transferInfo.currencyId, 
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // Validate transfer state - must be RECEIVED_FULFIL
+      if (transferInfo.transferStateId !== Enum.Transfers.TransferInternalState.RECEIVED_FULFIL) {
+        const expectedState = Enum.Transfers.TransferInternalState.RECEIVED_FULFIL;
+        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Invalid State: ${transferInfo.transferStateId} - expected: ${expectedState}`
+        );
+        
+        logger.error(`Position commit validation failed - invalid state for transfer: ${transferId}`, {
+          currentState: transferInfo.transferStateId,
+          expectedState
+        });
+
+        await this.sendErrorNotification(input, message, fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING));
+        throw fspiopError;
+      }
+
+      logger.info(`Position commit validation passed for transfer: ${transferId}`);
+
+      // Change participant position (not a reversal for commit)
+      const isReversal = false;
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferState.COMMITTED
+      };
+
+      await this.deps.positionService.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      // For RESERVE action, transform the payload
+      if (action === Enum.Events.Event.Action.RESERVE) {
+        const transfer = await this.deps.transferService.getById(transferInfo.transferId);
+        message.value.content.payload = this.deps.transferObjectTransform.toFulfil(transfer);
+      }
+
+      // Send success notification
+      await this.sendSuccessNotification(input, message);
+
+      logger.info(`Position commit processed successfully for transfer: ${transferId}`, { 
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount 
+      });
+
+      return {
+        status: 'committed',
+        transferId,
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount
+      };
+
+    } catch (error) {
+      logger.error(`Position commit failed for transfer: ${transferId}`, { error: error.message });
+      throw error;
+    }
   }
 
   private async sendSuccessNotification(input: PositionMessageInput, message: any): Promise<void> {
