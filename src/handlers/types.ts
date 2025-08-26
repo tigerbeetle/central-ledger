@@ -14,7 +14,7 @@ export interface CreateTransferDto {
 }
 
 export interface CommitTransferDto {
-  transferState: 'COMMITTED' | 'ABORTED',
+  transferState: 'COMMITTED' | 'RESERVED',
   fulfilment?: string,
   completedTimestamp: string,
 }

@@ -6,6 +6,7 @@ import { NotificationProducer } from '../../messaging/producers/NotificationProd
 import { PositionProducer } from '../../messaging/producers/PositionProducer'
 import { logger } from '../../shared/logger'
 import { PrepareHandler, PrepareHandlerDependencies } from './PrepareHandler'
+import { FulfilHandler, FulfilHandlerDependencies } from './FulfilHandler'
 
 const rethrow = Util.rethrow
 const KafkaUtil = Util.Kafka
@@ -44,6 +45,33 @@ export const createPrepareHandler = (
 }
 
 
+export const createFulfilHandler = (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  notificationProducer: Kafka.Producer,
+) => {
+  // Import existing business logic modules
+  const TransferService = require('../../domain/transfer/index')
+  const Validator = require('./validator')
+  const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
+  const FxService = require('../../domain/fx')
+  const TransferObjectTransform = require('../../domain/transfer/transform')
+
+  const dependencies: FulfilHandlerDependencies = {
+    notificationProducer: new NotificationProducer(notificationProducer, config),
+    committer: new MessageCommitter(consumer),
+    config,
+    transferService: TransferService,
+    validator: Validator,
+    comparators: Comparators,
+    fxService: FxService,
+    transferObjectTransform: TransferObjectTransform
+  }
+
+  const handler = new FulfilHandler(dependencies)
+  return (error: any, message: any) => handler.handle(error, message)
+}
+
 export const registerPrepareHandler_new = async (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
@@ -53,7 +81,6 @@ export const registerPrepareHandler_new = async (
   try {
     logger.debug(`registerPrepareHandlerNew registering`)
 
-    // Create and register handler with injected consumers/producers
     const handleMessage = createPrepareHandler(
       config, consumer, positionProduer, notificationProducer
     )
@@ -61,5 +88,21 @@ export const registerPrepareHandler_new = async (
     consumer.consume(handleMessage)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'registerPrepareHandlerNew' })
+  }
+}
+
+export const registerFulfilHandler_new = async (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  notificationProducer: Kafka.Producer,
+): Promise<void> => {
+  try {
+    logger.debug(`registerFulfilHandler_new registering`)
+
+    const handleMessage = createFulfilHandler(config, consumer, notificationProducer)
+    consumer.consume(handleMessage)
+
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'registerFulfilHandler_new' })
   }
 }

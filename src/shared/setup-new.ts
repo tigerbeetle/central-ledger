@@ -13,7 +13,7 @@ const Logger = require('../shared/logger').logger
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
 import RegisterHandlers from '../handlers/register';
-import { registerPrepareHandler_new } from '../handlers/transfers/register';
+import { registerFulfilHandler_new, registerPrepareHandler_new } from '../handlers/transfers/register';
 import { registerPositionHandler_new } from '../handlers/positions/register';
 import Db from '../lib/db';
 import EnumCached from '../lib/enumCached';
@@ -43,12 +43,12 @@ export interface Initialized {
 export interface Consumers {
   prepare: Kafka.Consumer
   position: Kafka.Consumer
+  fulfil: Kafka.Consumer
+
   // add other consumers here
-  // fulfil
   // timeout
   // get
   // admin
-
 }
 
 export interface Producers {
@@ -140,23 +140,14 @@ async function initializeServer(port: number, modules: Array<Plugin<any>>): Prom
 
 async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
   const KafkaUtil = Util.Kafka;
-  const { TRANSFER, POSITION } = Enum.Events.Event.Type;
+  const TEMPLATE = config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE
+  const { TRANSFER, POSITION, FULFIL } = Enum.Events.Event.Type;
   const { PREPARE } = Enum.Events.Event.Action;
 
   // Build topic names
-  const topicNamePrepare = KafkaUtil.transformGeneralTopicName(
-    config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE,
-    TRANSFER,
-    PREPARE
-  );
-
-  const topicNamePosition = KafkaUtil.transformGeneralTopicName(
-    config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE,
-    POSITION,
-    PREPARE
-  );
-
-  Logger.isInfoEnabled && Logger.info(`Creating prepare handler consumer for topic: ${topicNamePrepare}`);
+  const topicNamePrepare = KafkaUtil.transformGeneralTopicName(TEMPLATE, TRANSFER, PREPARE);
+  const topicNamePosition = KafkaUtil.transformGeneralTopicName(TEMPLATE, POSITION, PREPARE);
+  const topicNameFulfil = KafkaUtil.transformGeneralTopicName(TEMPLATE, TRANSFER, FULFIL);
 
   // Get Config
   const configPrepare = KafkaUtil.getKafkaConfig(
@@ -166,7 +157,6 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
     PREPARE.toUpperCase()
   );
   (configPrepare as any).rdkafkaConf['client.id'] = topicNamePrepare;
-  const prepareConsumer = new Kafka.Consumer([topicNamePrepare], configPrepare);
 
   const configPosition = KafkaUtil.getKafkaConfig(
     config.KAFKA_CONFIG,
@@ -175,16 +165,28 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
     Enum.Events.Event.Action.POSITION.toUpperCase(),
   );
   (configPosition as any).rdkafkaConf['client.id'] = topicNamePosition;
-  const positionConsumer = new Kafka.Consumer([topicNamePosition], configPosition);
+  
+  const configFulfil = KafkaUtil.getKafkaConfig(
+    config.KAFKA_CONFIG,
+    Enum.Kafka.Config.CONSUMER,
+    TRANSFER.toUpperCase(),
+    FULFIL.toUpperCase(),
+  );
+  (configFulfil as any).rdkafkaConf['client.id'] = topicNamePosition;
+
+  const consumerPrepare = new Kafka.Consumer([topicNamePrepare], configPrepare);
+  const consumerPosition = new Kafka.Consumer([topicNamePosition], configPosition);
+  const consumerFulfil = new Kafka.Consumer([topicNameFulfil], configFulfil);
 
   // Connect consumers
-  await prepareConsumer.connect()
-  await positionConsumer.connect()
-
+  await consumerPrepare.connect()
+  await consumerPosition.connect()
+  await consumerFulfil.connect()
 
   return {
-    prepare: prepareConsumer,
-    position: positionConsumer,
+    prepare: consumerPrepare,
+    position: consumerPosition,
+    fulfil: consumerFulfil,
   }
 }
 
@@ -242,14 +244,18 @@ async function initializeHandlersV2(
         assert(producers.position)
         assert(producers.notification)
         await registerPrepareHandler_new(config, consumers.prepare, producers.position, producers.notification)
-
         break;
       }
       case HandlerType.position: {
         assert(consumers.position)
         assert(producers.notification)
         await registerPositionHandler_new(config, consumers.position, producers.notification)
-
+        break;
+      }
+      case HandlerType.fulfil: {
+        assert(consumers.fulfil)
+        assert(producers.notification)
+        await registerFulfilHandler_new(config, consumers.fulfil, producers.notification)
         break;
       }
 
@@ -302,7 +308,9 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
         break
       }
       case 'fulfil': {
-        await RegisterHandlers.transfers.registerFulfilHandler()
+        if (!USE_NEW_HANDLERS) {
+          await RegisterHandlers.transfers.registerFulfilHandler()
+        }
         break
       }
       case 'timeout': {
@@ -349,8 +357,8 @@ export async function initialize({
   config,
   service,
   modules,
-  handlers
-}: { config: ApplicationConfig, service: Service, modules: Array<Plugin<any>>, handlers: Array<HandlerType> }): Promise<Initialized> {
+  handlerTypes
+}: { config: ApplicationConfig, service: Service, modules: Array<Plugin<any>>, handlerTypes: Array<HandlerType> }): Promise<Initialized> {
 
   let consumers: Consumers
   let producers: Producers
@@ -404,14 +412,14 @@ export async function initialize({
     // TODO: we need to be able to initialize the message handlers and api separately
 
     // Initialize legacy handlers
-    const legacyHandlers = await initializeHandlers(handlers)
+    const legacyHandlers = await initializeHandlers(handlerTypes)
 
     // Initialize new V2 handlers with dependency injection
     consumers = await createConsumers(config)
     producers = await createProducers(config)
     // TODO: rename handlers here to handlerTypes or something
     if (USE_NEW_HANDLERS) {
-      await initializeHandlersV2(config, handlers, consumers, producers)
+      await initializeHandlersV2(config, handlerTypes, consumers, producers)
     }
 
     // Provision from scratch on first start, or update provisioning to match static config

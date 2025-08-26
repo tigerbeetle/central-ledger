@@ -15,7 +15,7 @@ const server = {
       service: Service.api,
       modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),
       // TODO: specify which handlers to run in config
-      handlers: [
+      handlerTypes: [
         HandlerType.prepare,
         HandlerType.position,
         HandlerType.fulfil,
@@ -25,24 +25,6 @@ const server = {
       ]
     });
   },
-  // run: () => {
-  //   return initialize({
-  //     service: 'api',
-  //     port: Config.PORT,
-  //     modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),
-  //     runMigrations: Config.RUN_MIGRATIONS,
-  //     runHandlers: !Config.HANDLERS_DISABLED,
-  //     // TODO: specify which handlers to run in config
-  //     handlers: [
-  //       { enabled: true, type: 'prepare' },
-  //       { enabled: true, type: 'position' },
-  //       { enabled: true, type: 'fulfil' },
-  //       { enabled: true, type: 'timeout' },
-  //       { enabled: true, type: 'admin' },
-  //       { enabled: true, type: 'get' },
-  //     ]
-  //   });
-  // },
   migrate: () => {
     return Migrator.migrate()
   }
