@@ -5,6 +5,7 @@ import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import assert from 'assert';
 import createRemittanceEntity from './createRemittanceEntity';
+import { CreateTransferDto } from '../types';
 
 const { decodePayload } = Util.StreamingProtocol
 
@@ -12,21 +13,6 @@ const { decodePayload } = Util.StreamingProtocol
 const rethrow = Util.rethrow;
 const { createFSPIOPError } = ErrorHandler.Factory;
 const { FSPIOPErrorCodes } = ErrorHandler.Enums;
-
-
-// TODO(LD): move to common types
-export interface CreateTransferDto {
-  amount: {
-    amount: string,
-    currency: string
-  },
-  condition: string,
-  expiration: string,
-  ilpPacket: string,
-  payeeFsp: string,
-  payerFsp: string,
-  transferId: string,
-}
 
 export interface PrepareHandlerDependencies {
   positionProducer: IPositionProducer;

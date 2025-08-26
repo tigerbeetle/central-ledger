@@ -1,32 +1,31 @@
-import Metrics from '@mojaloop/central-services-metrics';
 import Hapi, { Plugin } from '@hapi/hapi';
+import ErrorHandler from '@mojaloop/central-services-error-handling';
+import Metrics from '@mojaloop/central-services-metrics';
+import assert from 'assert';
+import MongoUriBuilder from 'mongo-uri-builder';
+import Cache from '../lib/cache';
+import { ApplicationConfig } from "./config";
 
 const ObjStoreDb = require('@mojaloop/object-store-lib').Db
-import MongoUriBuilder from 'mongo-uri-builder';
-import ErrorHandler from '@mojaloop/central-services-error-handling';
 
 const Logger = require('../shared/logger').logger
-import { ApplicationConfig } from "./config";
-import assert from 'assert';
-import Cache from '../lib/cache';
 
-import Migrator from '../lib/migrator';
+import { Enum, Util } from '@mojaloop/central-services-shared';
+import { Kafka } from '@mojaloop/central-services-stream';
+import RegisterHandlers from '../handlers/register';
+import { registerPrepareHandler_new } from '../handlers/transfers/register';
+import { registerPositionHandler_new } from '../handlers/positions/register';
 import Db from '../lib/db';
 import EnumCached from '../lib/enumCached';
-import RegisterHandlers from '../handlers/register';
+import Migrator from '../lib/migrator';
+import ProxyCache from '../lib/proxyCache';
+import externalParticipantCached from '../models/participant/externalParticipantCached';
 import ParticipantCached from '../models/participant/participantCached';
 import ParticipantCurrencyCached from '../models/participant/participantCurrencyCached';
 import ParticipantLimitCached from '../models/participant/participantLimitCached';
-import externalParticipantCached from '../models/participant/externalParticipantCached';
 import BatchPositionModelCached from '../models/position/batchCached';
-import ProxyCache from '../lib/proxyCache';
-import Provisioner from './provisioner';
-import handlers from 'src/handlers';
 import Plugins from './plugins';
-import { registerPrepareHandler, registerPrepareHandlerNew, PrepareHandlerClients } from '../handlers/transfers/register';
-import { prepare } from '../handlers/transfers/prepare';
-import { Kafka } from '@mojaloop/central-services-stream';
-import { Enum, Util } from '@mojaloop/central-services-shared';
+import Provisioner from './provisioner';
 
 
 const USE_NEW_HANDLERS = true
@@ -43,6 +42,7 @@ export interface Initialized {
 
 export interface Consumers {
   prepare: Kafka.Consumer
+  position: Kafka.Consumer
   // add other consumers here
   // fulfil
   // timeout
@@ -138,48 +138,58 @@ async function initializeServer(port: number, modules: Array<Plugin<any>>): Prom
   })()
 }
 
-
-interface HandlerClients {
-  prepare?: PrepareHandlerClients;
-  // Add more handler clients here as we refactor them
-  // position?: PositionHandlerClients;
-  // fulfil?: FulfilHandlerClients;
-}
-
-
 async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
   const KafkaUtil = Util.Kafka;
-  const { TRANSFER } = Enum.Events.Event.Type;
+  const { TRANSFER, POSITION } = Enum.Events.Event.Type;
   const { PREPARE } = Enum.Events.Event.Action;
 
+  // Build topic names
   const topicNamePrepare = KafkaUtil.transformGeneralTopicName(
-    config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, 
-    TRANSFER, 
+    config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE,
+    TRANSFER,
+    PREPARE
+  );
+
+  const topicNamePosition = KafkaUtil.transformGeneralTopicName(
+    config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE,
+    POSITION,
     PREPARE
   );
 
   Logger.isInfoEnabled && Logger.info(`Creating prepare handler consumer for topic: ${topicNamePrepare}`);
 
-  // Create consumer
-  const consumerConfig = KafkaUtil.getKafkaConfig(
-    config.KAFKA_CONFIG, 
-    Enum.Kafka.Config.CONSUMER, 
-    TRANSFER.toUpperCase(), 
+  // Get Config
+  const configPrepare = KafkaUtil.getKafkaConfig(
+    config.KAFKA_CONFIG,
+    Enum.Kafka.Config.CONSUMER,
+    TRANSFER.toUpperCase(),
     PREPARE.toUpperCase()
   );
-  (consumerConfig as any).rdkafkaConf['client.id'] = topicNamePrepare;
-  const prepareConsumer = new Kafka.Consumer([topicNamePrepare], consumerConfig);
+  (configPrepare as any).rdkafkaConf['client.id'] = topicNamePrepare;
+  const prepareConsumer = new Kafka.Consumer([topicNamePrepare], configPrepare);
 
+  const configPosition = KafkaUtil.getKafkaConfig(
+    config.KAFKA_CONFIG,
+    Enum.Kafka.Config.CONSUMER,
+    TRANSFER.toUpperCase(),
+    Enum.Events.Event.Action.POSITION.toUpperCase(),
+  );
+  (configPosition as any).rdkafkaConf['client.id'] = topicNamePosition;
+  const positionConsumer = new Kafka.Consumer([topicNamePosition], configPosition);
+
+  // Connect consumers
   await prepareConsumer.connect()
+  await positionConsumer.connect()
 
 
   return {
-    prepare: prepareConsumer
+    prepare: prepareConsumer,
+    position: positionConsumer,
   }
 }
 
 async function createProducers(config: ApplicationConfig): Promise<Producers> {
-  
+
   const KafkaUtil = Util.Kafka;
   const { PREPARE } = Enum.Events.Event.Action;
 
@@ -217,35 +227,39 @@ async function createProducers(config: ApplicationConfig): Promise<Producers> {
 }
 
 async function initializeHandlersV2(
-  config: ApplicationConfig, 
-  handlerTypes: Array<HandlerType>, 
+  config: ApplicationConfig,
+  handlerTypes: Array<HandlerType>,
   consumers: Consumers,
   producers: Producers
 ): Promise<void> {
 
   for (const handlerType of handlerTypes) {
-    Logger.isInfoEnabled && Logger.info(`HandlerV2 Setup - Registering ${JSON.stringify(handlerType)}!`)
-    
+    Logger.info(`HandlerV2 Setup - Registering ${handlerType}`)
+
     switch (handlerType) {
       case HandlerType.prepare: {
-        Logger.isInfoEnabled && Logger.info('Setting up prepare handler...')
-
         assert(consumers.prepare)
         assert(producers.position)
         assert(producers.notification)
-        await registerPrepareHandlerNew(config, consumers.prepare, producers.position, producers.notification)
-        
-        Logger.isInfoEnabled && Logger.info('Prepare handler registered successfully with new architecture')
+        await registerPrepareHandler_new(config, consumers.prepare, producers.position, producers.notification)
+
         break;
       }
-      
+      case HandlerType.position: {
+        assert(consumers.position)
+        assert(producers.notification)
+        await registerPositionHandler_new(config, consumers.position, producers.notification)
+
+        break;
+      }
+
       // TODO: Add other handlers as we refactor them
       // case HandlerType.position: {
       //   clients.position = await createPositionHandlerClients(config);
       //   await registerPositionHandlerNew(clients.position, config);
       //   break;
       // }
-      
+
       default: {
         Logger.isWarnEnabled && Logger.warn(`HandlerV2 Setup - ${JSON.stringify(handlerType)} not yet implemented in V2, skipping...`)
         break;
@@ -278,7 +292,9 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
         break
       }
       case 'position': {
-        await RegisterHandlers.positions.registerPositionHandler()
+        if (!USE_NEW_HANDLERS) {
+          await RegisterHandlers.positions.registerPositionHandler()
+        }
         break
       }
       case 'positionbatch': {
@@ -389,7 +405,7 @@ export async function initialize({
 
     // Initialize legacy handlers
     const legacyHandlers = await initializeHandlers(handlers)
-    
+
     // Initialize new V2 handlers with dependency injection
     consumers = await createConsumers(config)
     producers = await createProducers(config)
@@ -428,13 +444,13 @@ export async function initialize({
       if (producers.position) {
         producers.position.disconnect()
       }
-      
+
       if (producers.notification) {
         producers.notification.disconnect()
       }
     }
-    
-    
+
+
     if (config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.disconnect()
     }

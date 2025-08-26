@@ -5,61 +5,58 @@ import { MessageCommitter } from '../../messaging/MessageCommitter'
 import { NotificationProducer } from '../../messaging/producers/NotificationProducer'
 import { PositionProducer } from '../../messaging/producers/PositionProducer'
 import { logger } from '../../shared/logger'
-import { PrepareHandler, PrepareHandlerDependencies } from './PrepareHandler'
+import { PositionHandler, PositionHandlerDependencies } from './PositionHandler'
 
 const rethrow = Util.rethrow
-const KafkaUtil = Util.Kafka
-const TransferEventType = Enum.Events.Event.Type
-const TransferEventAction = Enum.Events.Event.Action
 
-export const createPrepareHandler = (
+export const createPositionHandler = (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
-  positionProducer: Kafka.Producer,
   notificationProducer: Kafka.Producer,
 ) => {
   // Import existing business logic modules
-  const Validator = require('./validator')
   const TransferService = require('../../domain/transfer/index')
-  const ProxyCache = require('../../lib/proxyCache')
-  const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
-  const createRemittanceEntity = require('./createRemittanceEntity')
+  const PositionService = require('../../domain/position')
+  const participantFacade = require('../../models/participant/facade')
+  const SettlementModelCached = require('../../models/settlement/settlementModelCached')
   const TransferObjectTransform = require('../../domain/transfer/transform')
 
-  const dependencies: PrepareHandlerDependencies = {
-    positionProducer: new PositionProducer(positionProducer, config),
+  const dependencies: PositionHandlerDependencies = {
     notificationProducer: new NotificationProducer(notificationProducer, config),
     committer: new MessageCommitter(consumer),
     config,
-    validator: Validator,
     transferService: TransferService,
-    proxyCache: ProxyCache,
-    comparators: Comparators,
-    createRemittanceEntity,
+    positionService: PositionService,
+    participantFacade,
+    settlementModelCached: SettlementModelCached,
     transferObjectTransform: TransferObjectTransform
   }
 
-  const handler = new PrepareHandler(dependencies)
+  const handler = new PositionHandler(dependencies)
   return (error: any, message: any) => handler.handle(error, message)
 }
 
-
-export const registerPrepareHandler_new = async (
+export const registerPositionHandler_new = async (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
-  positionProduer: Kafka.Producer,
-  notificationProducer: Kafka.Producer
+  notificationProducer: Kafka.Producer,
 ): Promise<void> => {
   try {
-    logger.debug(`registerPrepareHandlerNew registering`)
+    logger.debug(`registerPositionHandler_new registering`)
 
-    // Create and register handler with injected consumers/producers
-    const handleMessage = createPrepareHandler(
-      config, consumer, positionProduer, notificationProducer
+    // Initialize settlement model cache (required by position handler)
+    const SettlementModelCached = require('../../models/settlement/settlementModelCached')
+    await SettlementModelCached.initialize()
+
+    // Create the position handler function
+    const handleMessage = createPositionHandler(
+      config, consumer, notificationProducer
     )
-    
     consumer.consume(handleMessage)
+
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'registerPrepareHandlerNew' })
+
+    
   }
 }
