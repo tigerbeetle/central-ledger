@@ -29,6 +29,8 @@ import { Kafka } from '@mojaloop/central-services-stream';
 import { Enum, Util } from '@mojaloop/central-services-shared';
 
 
+const USE_NEW_HANDLERS = true
+
 export interface Initialized {
   server: undefined | Hapi.Server<Hapi.ServerApplicationState>,
   handlers: undefined | Array<unknown>,
@@ -267,10 +269,12 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
   }
 
   for (const handlerType of handlers) {
-    Logger.isInfoEnabled && Logger.info(`Handler Setup - Registering ${JSON.stringify(handlerType)}!`)
+    Logger.isInfoEnabled && Logger.info(`Handler Setup - Registering ${handlerType}`)
     switch (handlerType) {
       case 'prepare': {
-        // await RegisterHandlers.transfers.registerPrepareHandler()
+        if (!USE_NEW_HANDLERS) {
+          await RegisterHandlers.transfers.registerPrepareHandler()
+        }
         break
       }
       case 'position': {
@@ -390,7 +394,9 @@ export async function initialize({
     consumers = await createConsumers(config)
     producers = await createProducers(config)
     // TODO: rename handlers here to handlerTypes or something
-    const handlerClientsV2 = await initializeHandlersV2(config, handlers, consumers, producers)
+    if (USE_NEW_HANDLERS) {
+      await initializeHandlersV2(config, handlers, consumers, producers)
+    }
 
     // Provision from scratch on first start, or update provisioning to match static config
     if (config.EXPERIMENTAL.PROVISIONING.enabled) {

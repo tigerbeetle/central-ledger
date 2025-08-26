@@ -207,10 +207,10 @@ const destroyByName = async (name) => {
 const addEndpoint = async (name, payload) => {
   const log = logger.child({ name, payload })
   try {
-    log.info('adding endpoint')
+    log.debug('adding endpoint')
     const participant = await ParticipantModel.getByName(name)
     participantExists(participant)
-    log.info('adding endpoint for participant', { participant })
+    log.debug('adding endpoint for participant', { participant })
     return ParticipantFacade.addEndpoint(participant.participantId, payload)
   } catch (err) {
     log.error('error adding endpoint', err)

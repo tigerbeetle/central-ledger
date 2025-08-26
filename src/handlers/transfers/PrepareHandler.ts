@@ -134,7 +134,6 @@ export class PrepareHandler {
   private async processTransfer(input: any, message: any): Promise<ProcessResult> {
     const { payload, transferId, isFx, action, functionality } = input;
 
-
     // Proxy obligations, copied from original prepare.js, not sure I understand why we have it
 
     const proxyObligation = await this.calculateProxyObligation(payload, isFx, input);
@@ -159,15 +158,15 @@ export class PrepareHandler {
       determiningTransferCheckResult,
       proxyObligation,
     );
-    if (!validation.validationPassed) {
+    if (validation.validationPassed === false) {
       throw createFSPIOPError(FSPIOPErrorCodes.VALIDATION_ERROR, validation.reasons.join(', '));
     }
 
     // 4. Save the transfer
-    await this.saveTransfer(payload, validation, isFx, proxyObligation);
+    await this.saveTransfer(payload, validation, isFx, determiningTransferCheckResult, proxyObligation);
 
     // 5. Calculate position data
-    const positionData = await this.calculatePositionData(payload, isFx, proxyObligation);
+    const positionData = await this.calculatePositionData(payload, isFx, determiningTransferCheckResult, proxyObligation);
 
     return {
       type: 'success',
@@ -192,12 +191,11 @@ export class PrepareHandler {
 
   private async handleSuccess(result: ProcessResult, input: any): Promise<void> {
     if (!result.positionData) {
-      logger.warn('No position data for successful transfer', { transferId: result.transferId });
-      return;
+      throw new Error(`No position data for successful transfer: ${result.transferId}`)
     }
 
     const positionMessage = {
-      transferId: result.transferId!,
+      transferId: result.transferId,
       participantCurrencyId: result.positionData.participantCurrencyId,
       amount: result.positionData.amount,
       currency: result.positionData.currency,
@@ -318,7 +316,7 @@ export class PrepareHandler {
     return await this.deps.validator.validatePrepare(payload, headers, isFx, determiningTransferCheckResult, proxyObligation);
   }
 
-  private async saveTransfer(payload: any, validation: any, isFx: boolean, proxyObligation: any) {
+  private async saveTransfer(payload: any, validation: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
     // Delegate to existing implementation
     const { savePreparedRequest } = require('./prepare');
     return await savePreparedRequest({
@@ -329,18 +327,18 @@ export class PrepareHandler {
       functionality: Enum.Events.Event.Type.TRANSFER,
       params: { message: null }, // Not used in current implementation
       location: { module: 'PrepareHandler', method: 'saveTransfer', path: '' },
-      determiningTransferCheckResult: null,
+      determiningTransferCheckResult,
       proxyObligation
     });
   }
 
-  private async calculatePositionData(payload: any, isFx: boolean, proxyObligation: any) {
+  private async calculatePositionData(payload: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
     // Delegate to existing implementation
     const { definePositionParticipant } = require('./prepare');
     const result = await definePositionParticipant({
       payload: proxyObligation.payloadClone,
       isFx,
-      determiningTransferCheckResult: null,
+      determiningTransferCheckResult,
       proxyObligation
     });
 

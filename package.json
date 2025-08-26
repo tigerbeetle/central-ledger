@@ -40,6 +40,7 @@
     "start:api": "node dist/api/index.js",
     "start:handlers": "node dist/handlers/index.js",
     "start:debug": "npm start --node-options --inspect=0.0.0.0",
+    "start:tsnode": "ts-node ./src/api/index.ts",
     "watch:api": "nodemon --exec ts-node ./src/api/index.ts",
     "dev": "npm run docker:stop && docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build -d",
     "lint": "npx standard",

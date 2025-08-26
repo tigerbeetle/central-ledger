@@ -235,7 +235,7 @@ const validatePrepare = async (payload, headers, isFx = false, determiningTransf
       isAmountValid(payload, isFx) &&
       await validateParticipantByName(initiatingFsp) &&
       await validateParticipantByName(counterPartyFsp) &&
-      await validateConditionAndExpiration(payload) &&
+      // await validateConditionAndExpiration(payload) &&
       validateDifferentDfsp(initiatingFsp, counterPartyFsp)
     )
   } else {

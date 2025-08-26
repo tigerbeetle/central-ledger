@@ -59,7 +59,7 @@ export const registerPrepareHandlerNew = async (
   try {
     logger.debug(`registerPrepareHandlerNew registering`)
 
-    // Create and register handler with injected clients
+    // Create and register handler with injected consumers/producers
     const handleMessage = createPrepareHandler(
       config, consumer, positionProduer, notificationProducer
     )

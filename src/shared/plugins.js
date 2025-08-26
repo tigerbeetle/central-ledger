@@ -77,10 +77,10 @@ const registerPlugins = async (server) => {
     plugin: require('hapi-auth-bearer-token')
   })
 
-  await server.register({
-    plugin: loggingPlugin,
-    options: { log: logger }
-  })
+  // await server.register({
+  //   plugin: loggingPlugin,
+  //   options: { log: logger }
+  // })
 
   if (Config.SERVER_PRINT_ROUTES_ON_STARTUP) {
     // await server.register([Blipp])

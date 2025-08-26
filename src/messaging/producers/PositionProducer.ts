@@ -12,6 +12,8 @@ export class PositionProducer implements IPositionProducer {
   async sendPrepare(message: PositionMessage): Promise<void> {
     const kafkaMessage = this.buildKafkaMessage(message, 'PREPARE');
     const topic = this.getTopicName('PREPARE');
+
+    
     throw new Error('not implemented')
 
 
