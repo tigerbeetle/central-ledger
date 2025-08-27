@@ -15,6 +15,8 @@ import { Kafka } from '@mojaloop/central-services-stream';
 import RegisterHandlers from '../handlers/register';
 import { registerFulfilHandler_new, registerPrepareHandler_new } from '../handlers/transfers/register';
 import { registerPositionHandler_new } from '../handlers/positions/register';
+import { registerTimeoutHandler_new } from '../handlers/timeouts/register';
+import { TimeoutScheduler } from '../messaging/jobs/TimeoutScheduler';
 import Db from '../lib/db';
 import EnumCached from '../lib/enumCached';
 import Migrator from '../lib/migrator';
@@ -38,6 +40,7 @@ export interface Initialized {
   mongoClient: undefined | unknown,
   consumers: undefined | Consumers,
   producers: undefined | Producers,
+  timeoutScheduler: undefined | TimeoutScheduler,
 }
 
 export interface Consumers {
@@ -233,7 +236,8 @@ async function initializeHandlersV2(
   handlerTypes: Array<HandlerType>,
   consumers: Consumers,
   producers: Producers
-): Promise<void> {
+): Promise<{ timeoutScheduler?: TimeoutScheduler }> {
+  let timeoutScheduler: TimeoutScheduler | undefined;
 
   for (const handlerType of handlerTypes) {
     Logger.info(`HandlerV2 Setup - Registering ${handlerType}`)
@@ -259,6 +263,12 @@ async function initializeHandlersV2(
         await registerFulfilHandler_new(config, consumers.fulfil, producers.position, producers.notification)
         break;
       }
+      case HandlerType.timeout: {
+        assert(producers.position)
+        assert(producers.notification)
+        timeoutScheduler = await registerTimeoutHandler_new(config, producers.notification, producers.position)
+        break;
+      }
 
       // TODO: Add other handlers as we refactor them
       // case HandlerType.position: {
@@ -273,6 +283,8 @@ async function initializeHandlersV2(
       }
     }
   }
+
+  return { timeoutScheduler };
 }
 
 /**
@@ -315,7 +327,9 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
         break
       }
       case 'timeout': {
-        await RegisterHandlers.timeouts.registerTimeoutHandler()
+        if (!USE_NEW_HANDLERS) {
+          await RegisterHandlers.timeouts.registerTimeoutHandler()
+        }
         break
       }
       case 'admin': {
@@ -418,9 +432,11 @@ export async function initialize({
     // Initialize new V2 handlers with dependency injection
     consumers = await createConsumers(config)
     producers = await createProducers(config)
+    let timeoutScheduler: TimeoutScheduler | undefined
     // TODO: rename handlers here to handlerTypes or something
     if (USE_NEW_HANDLERS) {
-      await initializeHandlersV2(config, handlerTypes, consumers, producers)
+      const v2Handlers = await initializeHandlersV2(config, handlerTypes, consumers, producers)
+      timeoutScheduler = v2Handlers.timeoutScheduler
     }
 
     // Provision from scratch on first start, or update provisioning to match static config
@@ -436,6 +452,7 @@ export async function initialize({
       producers: producers,
       proxyCache,
       mongoClient,
+      timeoutScheduler,
     }
   } catch (err) {
     Logger.isErrorEnabled && Logger.error(`setup.initialize() - error while initializing ${err}`)
@@ -458,6 +475,11 @@ export async function initialize({
         producers.notification.disconnect()
       }
     }
+
+    // timeoutScheduler is scoped to the main try block
+    // if (timeoutScheduler) {
+    //   await timeoutScheduler.stop()
+    // }
 
 
     if (config.PROXY_CACHE_CONFIG?.enabled) {

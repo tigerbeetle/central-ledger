@@ -122,10 +122,21 @@ export class PositionHandler {
       assert(message.value.content.uriParams)
       assert(message.value.content.uriParams.id)
       transferId = message.value.content.uriParams.id
-    } else {
+    } else if (action === Enum.Events.Event.Action.ABORT) {
+      assert(message.value.content.uriParams)
+      assert(message.value.content.uriParams.id)
+      transferId = message.value.content.uriParams.id
+      // TODO: not sure about this payload here
+      payload = undefined
+    }
+      else {
       // Default to CreateTransferDto for PREPARE and other actions
-      payload = decodePayload(payloadEncoded, {}) as CreateTransferDto;
-      transferId = payload.transferId
+      try {
+        payload = decodePayload(payloadEncoded, {}) as CreateTransferDto;
+        transferId = payload.transferId
+      } catch (err) {
+        logger.error(`decode payload failed - action is: ${action}`)
+      }
     }
 
     assert(transferId, 'could not parse transferId')
@@ -190,6 +201,14 @@ export class PositionHandler {
       (action === Enum.Events.Event.Action.COMMIT || action === Enum.Events.Event.Action.BULK_COMMIT || action === Enum.Events.Event.Action.RESERVE)) {
 
       return await this.handlePositionCommit(input, message);
+    }
+
+    if (eventType === Enum.Events.Event.Type.POSITION &&
+      (action === Enum.Events.Event.Action.TIMEOUT_RESERVED || 
+       action === Enum.Events.Event.Action.FX_TIMEOUT_RESERVED ||
+       action === Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED)) {
+
+      return await this.handlePositionTimeout(input, message);
     }
 
     throw new Error(`Unsupported position action: ${action} for eventType: ${eventType}`);
@@ -350,6 +369,9 @@ export class PositionHandler {
         metadata: message.value.metadata
       });
 
+      
+      
+      
       logger.debug(`Success notification sent for transfer: ${input.transferId}`);
 
     } catch (error) {
@@ -406,6 +428,130 @@ export class PositionHandler {
 
   private async handleErrorResult(result: ProcessResult, input: PositionMessageInput): Promise<void> {
     await this.handleError(result.error, input, input.message);
+  }
+
+  private async handlePositionTimeout(input: PositionMessageInput, message: any): Promise<any> {
+    const { transferId, action } = input;
+    
+    logger.info(`Processing position timeout for transfer: ${transferId}`, { action });
+
+    try {
+      // Get transfer info to reverse the position for PAYER (who had funds reserved)
+      const transferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
+        transferId, 
+        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP, 
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      // Get participant currency info
+      const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
+        transferInfo.participantId, 
+        transferInfo.currencyId, 
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // Reverse the position change (abort the reserved amounts)
+      const isReversal = true;  // This is a reversal/abort
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferState.ABORTED
+      };
+
+      await this.deps.positionService.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      // Create timeout error for notification (preserve extensionList from original payload)
+      const extensionList = (input.payload as any)?.extensionList || null;
+      const timeoutError = ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED,
+        null, null, null,
+        extensionList
+      );
+      const fspiopApiError = timeoutError.toApiErrorObject(this.deps.config.ERROR_HANDLING);
+
+      // Determine the notification action based on the original timeout action
+      let notificationAction: string;
+      if (action === Enum.Events.Event.Action.FX_TIMEOUT_RESERVED) {
+        notificationAction = Enum.Events.Event.Action.FX_TIMEOUT_RECEIVED;
+      } else if (action === Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED) {
+        notificationAction = Enum.Events.Event.Action.BULK_TIMEOUT_RECEIVED;
+      } else {
+        notificationAction = Enum.Events.Event.Action.TIMEOUT_RECEIVED;
+      }
+
+      // Send timeout error notification to the originating DFSP
+      await this.sendTimeoutErrorNotification(input, message, fspiopApiError, notificationAction);
+
+      logger.info(`Position timeout processed successfully for transfer: ${transferId}`, { 
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount,
+        isReversal: true
+      });
+
+      return {
+        status: 'aborted',
+        transferId,
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount,
+        reason: 'timeout'
+      };
+
+    } catch (error) {
+      logger.error(`Position timeout processing failed for transfer: ${transferId}`, { error: error.message });
+      throw error;
+    }
+  }
+
+  private async sendTimeoutErrorNotification(
+    input: PositionMessageInput, 
+    message: any, 
+    fspiopApiError: any, 
+    notificationAction: string
+  ): Promise<void> {
+    logger.debug(`Sending timeout error notification for transfer: ${input.transferId}`, {
+      errorCode: fspiopApiError.errorInformation.errorCode,
+      notificationAction
+    });
+
+    try {
+      // Create timeout error notification message
+      // The message structure should match what the timeout handler would send
+      const timeoutMessage = { ...message };
+      
+      // Add context for timeout notification (payer/payee info)
+      if (!timeoutMessage.value.content.context) {
+        timeoutMessage.value.content.context = {};
+      }
+      
+      // For timeout notifications, we need to identify the participants
+      // The 'to' should be the payer FSP (who initiated the transfer and will get the timeout notification)
+      const payerFsp = message.value.from || message.value.content.headers[Enum.Http.Headers.FSPIOP.SOURCE];
+      const payeeFsp = message.value.to || message.value.content.headers[Enum.Http.Headers.FSPIOP.DESTINATION];
+      
+      timeoutMessage.value.content.context.payer = payerFsp;
+      timeoutMessage.value.content.context.payee = payeeFsp;
+
+      await this.deps.notificationProducer.sendError({
+        transferId: input.transferId,
+        fspiopError: fspiopApiError,
+        action: notificationAction,
+        to: payerFsp,  // Timeout error goes back to the payer FSP
+        from: this.deps.config.HUB_NAME,
+        headers: input.headers,
+        metadata: timeoutMessage.value.metadata,
+        payload: timeoutMessage.value.content.payload  // Use original timeout message payload
+      });
+
+      logger.debug(`Timeout error notification sent for transfer: ${input.transferId}`);
+
+    } catch (error) {
+      logger.error(`Failed to send timeout error notification for transfer: ${input.transferId}`, { error });
+      // Don't throw here as the position reversal was successful
+    }
   }
 
   private async handleError(error: any, input: PositionMessageInput, message: any): Promise<void> {

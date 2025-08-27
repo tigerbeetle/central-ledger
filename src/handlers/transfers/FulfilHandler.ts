@@ -441,7 +441,7 @@ export class FulfilHandler {
     } else if (input.action === Enum.Events.Event.Action.ABORT || input.action === Enum.Events.Event.Action.BULK_ABORT) {
       await this.deps.positionProducer.sendAbort(positionMessage);
     } else {
-      throw new Error(`Unsupported position action: ${input.action}`);
+      throw new Error(`Unsupported fulfil action: ${input.action}`);
     }
 
     logger.info('Successfully sent message to position handler', {
