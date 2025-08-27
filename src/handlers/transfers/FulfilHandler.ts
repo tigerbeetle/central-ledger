@@ -60,6 +60,7 @@ export class FulfilHandler {
     let span: any;
 
     try {
+      assert.equal(input.eventType, Enum.Events.Event.Type.FULFIL, 'Expected event type to be `FULFIL`')
       const contextFromMessage = EventSdk.Tracer.extractContextFromMessage(message.value);
       span = EventSdk.Tracer.createChildSpanFromContext('cl_transfer_fulfil', contextFromMessage);
       await span.audit(message, EventSdk.AuditEventAction.start);
@@ -142,7 +143,7 @@ export class FulfilHandler {
   }
 
   private async processFulfil(input: FulfilMessageInput, message: any): Promise<ProcessResult> {
-    const { payload, transferId, action, eventType, isBulk } = input;
+    const { transferId } = input;
 
     try {
       const result = await this.executeFulfilLogic(input, message);
@@ -162,27 +163,24 @@ export class FulfilHandler {
   }
 
   private async executeFulfilLogic(input: FulfilMessageInput, message: any): Promise<any> {
-    const { payload, transferId, action, eventType, isBulk, kafkaTopic } = input;
+    const { action, eventType } = input;
+      assert.equal(input.eventType, Enum.Events.Event.Type.FULFIL, 'Expected event type to be `FULFIL`')
 
-    if (eventType === Enum.Events.Event.Type.FULFIL &&
-      (action === Enum.Events.Event.Action.COMMIT || action === Enum.Events.Event.Action.BULK_COMMIT)) {
-
-      return await this.handleFulfilCommit(input, message);
-    }
-
-    if (eventType === Enum.Events.Event.Type.FULFIL &&
-      (action === Enum.Events.Event.Action.ABORT || action === Enum.Events.Event.Action.BULK_ABORT)) {
-
-      return await this.handleFulfilAbort(input, message);
-    }
-
-    if (eventType === Enum.Events.Event.Type.FULFIL &&
-      action === Enum.Events.Event.Action.RESERVE) {
-
-      return await this.handleFulfilReserve(input, message);
-    }
-
-    throw new Error(`Unsupported fulfil action: ${action} for eventType: ${eventType}`);
+      switch (action) {
+        case Enum.Events.Event.Action.ABORT:
+        case Enum.Events.Event.Action.BULK_ABORT: {
+          return await this.handleFulfilAbort(input, message);
+        }
+        case Enum.Events.Event.Action.BULK_COMMIT:
+        case Enum.Events.Event.Action.COMMIT: {
+          return await this.handleFulfilCommit(input, message)
+        }
+        case Enum.Events.Event.Action.RESERVE: {
+          return await this.handleFulfilReserve(input, message);
+        }
+        default:
+          throw new Error(`Unsupported fulfil action: ${action} for eventType: ${eventType}`);
+      }
   }
 
   private async handleFulfilCommit(input: FulfilMessageInput, message: any): Promise<any> {
@@ -305,29 +303,96 @@ export class FulfilHandler {
   private async handleFulfilReserve(input: FulfilMessageInput, message: any): Promise<any> {
     const { transferId, payload, headers } = input;
 
-    // Check for v1.0 content-type with RESERVED state - fail silently
-    if (headers['content-type'] && headers['content-type'].split('=')[1] === '1.0' &&
-      payload.transferState === 'RESERVED') {
-
-      logger.info(`Ignoring RESERVE action for v1.0 client: ${transferId}`);
-      return { status: 'ignored', transferId, reason: 'v1.0 RESERVE not allowed' };
-    }
-
-    // Process similar to commit but for reserve
     logger.info(`Processing fulfil reserve for transfer: ${transferId}`);
 
-    const transfer = await this.deps.transferService.getByIdLight(transferId);
-    if (!transfer) {
-      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND, 'Transfer ID not found');
+    try {
+      // Check for v1.0 content-type with RESERVED state - fail silently
+      if (headers['content-type'] && headers['content-type'].split('=')[1] === '1.0' &&
+        payload.transferState === 'RESERVED') {
+
+        logger.info(`Ignoring RESERVE action for v1.0 client: ${transferId}`);
+        return { status: 'ignored', transferId, reason: 'v1.0 RESERVE not allowed' };
+      }
+
+      // Validate participant
+      if (!await this.deps.validator.validateParticipantByName(message.value.from)) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND, 'Participant not found');
+      }
+
+      // Get transfer details
+      const transfer = await this.deps.transferService.getById(transferId);
+      if (!transfer) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND, 'Transfer ID not found');
+      }
+
+      // Validate transfer participant
+      if (!await this.deps.validator.validateParticipantTransferId(message.value.from, transferId)) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant not associated with transfer');
+      }
+
+      // Validate headers (FSPIOP source/destination)
+      if (headers[Enum.Http.Headers.FSPIOP.SOURCE] && !transfer.payeeIsProxy &&
+        (headers[Enum.Http.Headers.FSPIOP.SOURCE].toLowerCase() !== transfer.payeeFsp.toLowerCase())) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'FSPIOP-Source header does not match transfer payee');
+      }
+
+      if (headers[Enum.Http.Headers.FSPIOP.DESTINATION] && !transfer.payerIsProxy &&
+        (headers[Enum.Http.Headers.FSPIOP.DESTINATION].toLowerCase() !== transfer.payerFsp.toLowerCase())) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'FSPIOP-Destination header does not match transfer payer');
+      }
+
+      // Check for duplicates
+      const dupCheckResult = await this.deps.comparators.duplicateCheckComparator(
+        transferId,
+        payload,
+        this.deps.transferService.getTransferFulfilmentDuplicateCheck,
+        this.deps.transferService.saveTransferFulfilmentDuplicateCheck
+      )
+
+      if (dupCheckResult.hasDuplicateId && dupCheckResult.hasDuplicateHash) {
+        // Handle duplicate fulfil
+        logger.info(`Duplicate fulfil detected for transfer: ${transferId}`);
+        await this.sendDuplicateNotification(input, message, transfer);
+        return { status: 'duplicate', transferId };
+      }
+
+      if (dupCheckResult.hasDuplicateId && !dupCheckResult.hasDuplicateHash) {
+        // Different fulfil for same transfer
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST, 'Transfer fulfil has been modified');
+      }
+
+      // Validate fulfilment condition (same logic as commit)
+      if (payload.fulfilment && !this.deps.validator.validateFulfilCondition(payload.fulfilment, transfer.condition)) {
+        const fspiopError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'Invalid fulfilment');
+        const apiError = fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING);
+
+        await this.deps.transferService.handlePayeeResponse(transferId, payload, Enum.Events.Event.Action.ABORT_VALIDATION, apiError);
+        await this.sendErrorNotification(input, message, apiError);
+
+        throw fspiopError;
+      }
+
+      // Process the fulfil reserve
+      await this.deps.transferService.handlePayeeResponse(transferId, payload, input.action);
+
+      // Handle FX processing (same as commit)
+      const cyrilResult = await this.deps.fxService.Cyril.processFulfilMessage(transferId, payload, transfer);
+
+      // Send to position topic with RESERVE action 
+      await this.sendToPositionTopic(input, message, transfer, cyrilResult);
+
+      logger.info(`Fulfil reserve processed successfully for transfer: ${transferId}`);
+
+      return {
+        status: 'reserved',
+        transferId,
+        cyrilResult
+      };
+
+    } catch (error) {
+      logger.error(`Fulfil reserve failed for transfer: ${transferId}`, { error: error.message });
+      throw error;
     }
-
-    await this.deps.transferService.handlePayeeResponse(transferId, payload, input.action);
-    await this.sendToPositionTopic(input, message, transfer);
-
-    return {
-      status: 'reserved',
-      transferId
-    };
   }
 
   private async sendToPositionTopic(input: FulfilMessageInput, message: any, transfer: any, cyrilResult?: any): Promise<void> {
@@ -371,6 +436,8 @@ export class FulfilHandler {
     // Send to position handler
     if (input.action === Enum.Events.Event.Action.COMMIT || input.action === Enum.Events.Event.Action.BULK_COMMIT) {
       await this.deps.positionProducer.sendCommit(positionMessage);
+    } else if (input.action === Enum.Events.Event.Action.RESERVE) {
+      await this.deps.positionProducer.sendReserve(positionMessage);
     } else if (input.action === Enum.Events.Event.Action.ABORT || input.action === Enum.Events.Event.Action.BULK_ABORT) {
       await this.deps.positionProducer.sendAbort(positionMessage);
     } else {
@@ -384,11 +451,12 @@ export class FulfilHandler {
     });
   }
 
-  private getPositionAction(action: string): 'COMMIT' | 'ABORT' | 'BULK_COMMIT' | 'BULK_ABORT' {
+  private getPositionAction(action: string): 'COMMIT' | 'RESERVE' | 'ABORT' | 'BULK_COMMIT' | 'BULK_ABORT' {
     const actionUpper = action.toUpperCase();
     if (actionUpper.includes('BULK_COMMIT') || actionUpper === 'BULK_COMMIT') return 'BULK_COMMIT';
     if (actionUpper.includes('BULK_ABORT') || actionUpper === 'BULK_ABORT') return 'BULK_ABORT';
     if (actionUpper.includes('COMMIT') || actionUpper === 'COMMIT') return 'COMMIT';
+    if (actionUpper.includes('RESERVE') || actionUpper === 'RESERVE') return 'RESERVE';
     if (actionUpper.includes('ABORT') || actionUpper === 'ABORT') return 'ABORT';
     throw new Error(`Unsupported action for position: ${action}`);
   }
@@ -463,11 +531,15 @@ export class FulfilHandler {
 
   private async handleError(error: any, input: FulfilMessageInput, message: any): Promise<void> {
     const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(error);
+    
+    if (error.stack) {
+      logger.error(error.stack)
+    }
 
     logger.error('Fulfil processing error', {
       transferId: input.transferId,
       error: fspiopError.message,
-      action: input.action
+      action: input.action,
     });
 
     // Send error notification

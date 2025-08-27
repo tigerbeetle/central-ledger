@@ -1,5 +1,3 @@
-// Common types for handlers
-
 export interface CreateTransferDto {
   amount: {
     amount: string,
@@ -15,11 +13,10 @@ export interface CreateTransferDto {
 
 export interface CommitTransferDto {
   transferState: 'COMMITTED' | 'RESERVED',
-  fulfilment?: string,
+  fulfilment: string,
   completedTimestamp: string,
 }
 
-// Additional types can be added here as needed
 export interface AbortTransferDto {
   transferState: 'ABORTED',
   completedTimestamp: string,

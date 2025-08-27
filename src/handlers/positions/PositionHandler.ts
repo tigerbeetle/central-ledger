@@ -114,7 +114,10 @@ export class PositionHandler {
     let payload: CreateTransferDto | CommitTransferDto;
     let transferId: string
 
-    if (action === Enum.Events.Event.Action.COMMIT || action === Enum.Events.Event.Action.BULK_COMMIT) {
+    if (action === Enum.Events.Event.Action.COMMIT || 
+        action === Enum.Events.Event.Action.BULK_COMMIT ||
+        action === Enum.Events.Event.Action.RESERVE
+      ) {
       payload = decodePayload(payloadEncoded, {}) as CommitTransferDto;
       assert(message.value.content.uriParams)
       assert(message.value.content.uriParams.id)
@@ -184,7 +187,7 @@ export class PositionHandler {
     } 
 
     if (eventType === Enum.Events.Event.Type.POSITION &&
-      (action === Enum.Events.Event.Action.COMMIT || action === Enum.Events.Event.Action.BULK_COMMIT)) {
+      (action === Enum.Events.Event.Action.COMMIT || action === Enum.Events.Event.Action.BULK_COMMIT || action === Enum.Events.Event.Action.RESERVE)) {
 
       return await this.handlePositionCommit(input, message);
     }

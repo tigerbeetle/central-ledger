@@ -3,7 +3,7 @@ export interface PositionMessage {
   participantCurrencyId: string;
   amount: string;
   currency: string;
-  action: 'PREPARE' | 'COMMIT' | 'ABORT' | 'FX_PREPARE' | 'FX_COMMIT' | 'FX_ABORT' | 'BULK_PREPARE' | 'BULK_COMMIT' | 'BULK_ABORT';
+  action: 'PREPARE' | 'COMMIT' | 'RESERVE' | 'ABORT' | 'FX_PREPARE' | 'FX_COMMIT' | 'FX_ABORT' | 'BULK_PREPARE' | 'BULK_COMMIT' | 'BULK_ABORT';
   cyrilResult?: any;
   messageKey?: string;
   from: string;
@@ -39,6 +39,7 @@ export interface NotificationErrorMessage {
 export interface IPositionProducer {
   sendPrepare(message: PositionMessage): Promise<void>;
   sendCommit(message: PositionMessage): Promise<void>;
+  sendReserve(message: PositionMessage): Promise<void>;
   sendAbort(message: PositionMessage): Promise<void>;
   sendFxPrepare(message: PositionMessage): Promise<void>;
   sendBulkPrepare(message: PositionMessage): Promise<void>;

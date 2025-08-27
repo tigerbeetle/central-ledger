@@ -37,6 +37,20 @@ export class PositionProducer implements IPositionProducer {
     );
   }
 
+  async sendReserve(message: PositionMessage): Promise<void> {
+    const kafkaMessage = this.buildKafkaMessage(message, 'RESERVE');
+    const topic = this.getTopicName('RESERVE');
+
+    await this.producer.sendMessage(
+      kafkaMessage,
+      {
+        topicName: topic,
+        key: message.messageKey || message.participantCurrencyId,
+        opaqueKey: message.transferId
+      }
+    );
+  }
+
   async sendAbort(message: PositionMessage): Promise<void> {
     const kafkaMessage = this.buildKafkaMessage(message, 'ABORT');
     const topic = this.getTopicName('ABORT');
