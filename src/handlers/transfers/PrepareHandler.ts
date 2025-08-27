@@ -212,19 +212,8 @@ export class PrepareHandler {
   }
 
   private async handleDuplicate(result: ProcessResult, input: any): Promise<void> {
-    // Handle duplicate transfer notifications
-    if (result.data?.isFinalized) {
-      await this.deps.notificationProducer.sendDuplicate({
-        transferId: result.transferId!,
-        action: input.action + '_DUPLICATE',
-        to: input.payload.payerFsp,
-        from: this.deps.config.HUB_NAME,
-        payload: result.data.transformedPayload,
-        headers: undefined,
-        metadata: undefined
-      });
-    }
-    
+    // Duplicate handling is already done in processDuplication method
+    // This method is called when the result type is 'duplicate'
     logger.info('Handled duplicate transfer', {
       transferId: result.transferId,
       isFinalized: result.data?.isFinalized
@@ -232,6 +221,9 @@ export class PrepareHandler {
   }
 
   private async handleError(error: any, input: any, message: any): Promise<void> {
+    // if (error.stack) {
+    //   logger.error
+    // }
     const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(error);
     
     await this.deps.notificationProducer.sendError({
@@ -246,7 +238,8 @@ export class PrepareHandler {
 
     logger.error('Handled transfer error', {
       transferId: input.transferId,
-      error: fspiopError.message
+      error: fspiopError.message,
+      stack: error.stack
     });
   }
 
@@ -286,23 +279,135 @@ export class PrepareHandler {
   }
 
   private async processDuplication(duplication: any, input: any): Promise<ProcessResult> {
-    // Delegate to existing implementation for now
-    const { processDuplication } = require('./prepare');
-    const result = await processDuplication({
-      duplication,
-      isFx: input.isFx,
-      ID: input.transferId,
-      functionality: input.functionality,
-      action: input.actionEnum,
-      actionLetter: input.action[0].toUpperCase(),
-      params: { message: input.message },
-      location: { module: 'PrepareHandler', method: 'processDuplication', path: '' }
-    });
+    if (!duplication.hasDuplicateId) {
+      return {
+        type: 'duplicate',
+        transferId: input.transferId,
+        data: { isFinalized: false }
+      };
+    }
+
+    const { action, actionEnum, isFx, transferId, payload } = input;
+    const actionLetter = action[0].toUpperCase();
+
+    // Handle hash mismatch or bulk prepare duplicates with errors
+    let error;
+    if (!duplication.hasDuplicateHash) {
+      logger.warn(`callbackErrorModified1--${actionLetter}5 for transfer ${transferId}`);
+      error = createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST);
+    } else if (actionEnum === Enum.Events.Event.Action.BULK_PREPARE) {
+      logger.info(`validationError1--${actionLetter}2 for transfer ${transferId}`);
+      error = createFSPIOPError('Individual transfer prepare duplicate');
+    }
+
+    if (error) {
+      await this.deps.notificationProducer.sendError({
+        transferId,
+        fspiopError: error.toApiErrorObject(this.deps.config.ERROR_HANDLING),
+        action: actionEnum,
+        to: input.message.value.from,
+        from: this.deps.config.HUB_NAME,
+        headers: input.headers,
+        metadata: input.message.value.metadata
+      });
+      throw error;
+    }
+
+    logger.info('handleResend for transfer', { transferId });
+
+    // Get transfer state to determine if it's finalized
+    const transfer = await createRemittanceEntity(isFx).getByIdLight(transferId);
+    const finalizedState = [
+      Enum.Transfers.TransferState.COMMITTED,
+      Enum.Transfers.TransferState.ABORTED,
+      Enum.Transfers.TransferState.RESERVED
+    ];
+    
+    const isFinalized = 
+      finalizedState.includes(transfer?.transferStateEnumeration) ||
+      finalizedState.includes(transfer?.fxTransferStateEnumeration);
+    
+    const isPrepare = [
+      Enum.Events.Event.Action.PREPARE,
+      Enum.Events.Event.Action.FX_PREPARE,
+      Enum.Events.Event.Action.FORWARDED,
+      Enum.Events.Event.Action.FX_FORWARDED
+    ].includes(actionEnum);
+
+    if (isFinalized) {
+      if (isPrepare) {
+        logger.info(`finalized callback--${actionLetter}1 for transfer ${transferId}`);
+        
+        // Transform payload for duplicate response  
+        const transformedPayload = this.deps.transferObjectTransform.toFulfil(transfer, isFx);
+        const duplicateAction = isFx ? 
+          Enum.Events.Event.Action.FX_PREPARE_DUPLICATE : 
+          Enum.Events.Event.Action.PREPARE_DUPLICATE;
+
+        await this.deps.notificationProducer.sendDuplicate({
+          transferId,
+          action: duplicateAction,
+          to: input.message.value.from,
+          from: this.deps.config.HUB_NAME,
+          payload: transformedPayload,
+          headers: input.headers,
+          metadata: input.message.value.metadata
+        });
+
+        return {
+          type: 'duplicate',
+          transferId,
+          data: { 
+            isFinalized: true,
+            transformedPayload
+          }
+        };
+      } else if (actionEnum === Enum.Events.Event.Action.BULK_PREPARE) {
+        logger.info(`validationError1--${actionLetter}2 for transfer ${transferId}`);
+        const fspiopError = createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST, 'Individual transfer prepare duplicate');
+        
+        await this.deps.notificationProducer.sendError({
+          transferId,
+          fspiopError: fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),
+          action: Enum.Events.Event.Action.PREPARE_DUPLICATE,
+          to: input.message.value.from,
+          from: this.deps.config.HUB_NAME,
+          headers: input.headers,
+          metadata: input.message.value.metadata
+        });
+        throw fspiopError;
+      }
+    } else {
+      logger.info('inProgress for transfer', { transferId });
+      if (actionEnum === Enum.Events.Event.Action.BULK_PREPARE) {
+        logger.info(`validationError2--${actionLetter}4 for transfer ${transferId}`);
+        const fspiopError = createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST, 'Individual transfer prepare duplicate');
+        
+        await this.deps.notificationProducer.sendError({
+          transferId,
+          fspiopError: fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),
+          action: Enum.Events.Event.Action.PREPARE_DUPLICATE,
+          to: input.message.value.from,
+          from: this.deps.config.HUB_NAME,
+          headers: input.headers,
+          metadata: input.message.value.metadata
+        });
+        throw fspiopError;
+      } else {
+        // For regular prepare duplicates that are in progress, just ignore
+        logger.info(`ignore--${actionLetter}3 for transfer ${transferId}`);
+        return {
+          type: 'duplicate',
+          transferId,
+          data: { isFinalized: false }
+        };
+      }
+    }
 
     return {
       type: 'duplicate',
-      transferId: input.transferId,
-      data: { isFinalized: result }
+      transferId,
+      data: { isFinalized: true }
     };
   }
 
