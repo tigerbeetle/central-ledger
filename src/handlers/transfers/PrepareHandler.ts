@@ -213,7 +213,6 @@ export class PrepareHandler {
 
   private async handleDuplicate(result: ProcessResult, input: any): Promise<void> {
     // Duplicate handling is already done in processDuplication method
-    // This method is called when the result type is 'duplicate'
     logger.info('Handled duplicate transfer', {
       transferId: result.transferId,
       isFinalized: result.data?.isFinalized

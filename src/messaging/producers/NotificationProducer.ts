@@ -59,15 +59,16 @@ export class NotificationProducer implements INotificationProducer {
   }
 
   async sendDuplicate(message: NotificationMessage): Promise<void> {
-    throw new Error('not implemented')
-    // const kafkaMessage = this.buildDuplicateMessage(message);
-    // const topic = this.getNotificationTopic();
+    const kafkaMessage = this.buildDuplicateMessage(message);
 
-    // await this.producer.sendMessage({
-    //   topic,
-    //   key: message.transferId,
-    //   value: kafkaMessage
-    // });
+    await this.producer.sendMessage(
+      kafkaMessage,
+      {
+        opaqueKey: '12345',
+        topicName: this.notificationTopic,
+        key: message.transferId,
+      }
+    );
   }
 
   private buildErrorMessage(message: NotificationErrorMessage): Kafka.MessageProtocol {
@@ -183,32 +184,46 @@ export class NotificationProducer implements INotificationProducer {
     };
   }
 
-  private buildDuplicateMessage(message: NotificationMessage): any {
+  private buildDuplicateMessage(message: NotificationMessage): Kafka.MessageProtocol {
+    // Clone headers and update FSPIOP headers like the original system
+    const updatedHeaders = { ...message.headers };
+    updatedHeaders[Enum.Http.Headers.FSPIOP.SOURCE] = message.from;
+    updatedHeaders[Enum.Http.Headers.FSPIOP.DESTINATION] = message.to;
+
+    // Preserve the original metadata but update the event portion like the original system
+    const updatedMetadata = { ...message.metadata };
+    const originalEventId = updatedMetadata?.event?.id;
+
+    // Convert action to duplicate format (e.g., "PREPARE_DUPLICATE" -> "prepare-duplicate")
+    const duplicateAction = message.action.toLowerCase().replace('_', '-');
+
+    updatedMetadata.event = {
+      id: uuidv4(),
+      type: 'notification', 
+      action: duplicateAction,
+      createdAt: new Date().toISOString(),
+      state: {
+        status: 'success',
+        code: 0,
+        description: 'action successful'
+      },
+      ...(originalEventId && { responseTo: originalEventId })
+    };
+
     return {
+      content: {
+        uriParams: {
+          id: message.transferId
+        },
+        headers: updatedHeaders,
+        payload: message.payload,
+        context: {}
+      },
       id: message.transferId,
       from: message.from,
       to: message.to,
       type: 'application/json',
-      content: {
-        headers: {
-          [Enum.Http.Headers.FSPIOP.SOURCE]: message.from,
-          [Enum.Http.Headers.FSPIOP.DESTINATION]: message.to
-        },
-        payload: message.payload || {},
-        uriParams: { id: message.transferId }
-      },
-      metadata: {
-        event: {
-          id: uuidv4(),
-          type: 'notification',
-          action: message.action.toLowerCase().replace('_', '-') + '-duplicate',
-          createdAt: new Date().toISOString(),
-          state: {
-            status: 'success',
-            code: 0
-          }
-        }
-      }
+      metadata: updatedMetadata
     };
   }
 }
