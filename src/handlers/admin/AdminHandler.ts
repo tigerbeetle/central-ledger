@@ -125,7 +125,7 @@ export class AdminHandler {
     // Add participant currency ID from metadata
     payload.participantCurrencyId = metadata.request?.params?.id;
     const enums = metadata.request?.enums;
-    const transactionTimestamp = new Date().toISOString();
+    const transactionTimestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
     return {
       message,
