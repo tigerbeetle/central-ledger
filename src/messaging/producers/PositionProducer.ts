@@ -52,7 +52,7 @@ export class PositionProducer implements IPositionProducer {
   }
 
   async sendAbort(message: PositionMessage): Promise<void> {
-    const kafkaMessage = this.buildKafkaMessage(message, 'ABORT');
+    const kafkaMessage = this.buildKafkaMessageAbort(message);
     const topic = this.getTopicName('ABORT');
 
     await this.producer.sendMessage(
@@ -69,26 +69,12 @@ export class PositionProducer implements IPositionProducer {
     const kafkaMessage = this.buildKafkaMessage(message, 'FX_PREPARE');
     const topic = this.getTopicName('FX_PREPARE');
     throw new Error('not implemented')
-
-
-    // await this.producer.sendMessage({
-    //   topic,
-    //   key: message.messageKey || message.participantCurrencyId,
-    //   value: kafkaMessage
-    // });
   }
 
   async sendBulkPrepare(message: PositionMessage): Promise<void> {
     const kafkaMessage = this.buildKafkaMessage(message, 'BULK_PREPARE');
     const topic = this.getTopicName('BULK_PREPARE');
     throw new Error('not implemented')
-
-
-    // await this.producer.sendMessage({
-    //   topic,
-    //   key: message.messageKey || message.participantCurrencyId,
-    //   value: kafkaMessage
-    // });
   }
 
   private buildKafkaMessage(message: PositionMessage, action: string): any {
@@ -117,6 +103,43 @@ export class PositionProducer implements IPositionProducer {
           id: message.transferId
         },
         trace: message.metadata?.trace
+      }
+    };
+  }
+
+  private buildKafkaMessageAbort(message: PositionMessage): any {
+    return {
+      from: "Hub",
+      to: message.to,
+      id: message.transferId,
+      content: {
+        uriParams: {
+          id: message.transferId
+        },
+        headers: {
+          accept: "application/vnd.interoperability.transfers+json;version=1.0",
+          "FSPIOP-Destination": message.to,
+          "Content-Type": "application/vnd.interoperability.transfers+json;version=1.0",
+          date: new Date().toUTCString(),
+          "FSPIOP-Source": "Hub"
+        },
+        payload: message.payload,
+        context: message.cyrilResult ? { cyrilResult: message.cyrilResult } : undefined
+      },
+      type: "application/vnd.interoperability.transfers+json;version=1.0",
+      metadata: {
+        correlationId: message.transferId,
+        event: {
+          type: "position",
+          action: "timeout-reserved",
+          createdAt: new Date().toISOString(),
+          state: {
+            status: "error",
+            code: "3303",
+            description: "Transfer expired"
+          },
+          id: uuidv4()
+        },
       }
     };
   }

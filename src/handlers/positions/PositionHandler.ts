@@ -5,7 +5,7 @@ import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
 import { IMessageCommitter, INotificationProducer, ProcessResult } from '../../messaging/types';
 import { logger } from '../../shared/logger';
-import { CommitTransferDto, CreateTransferDto } from '../types';
+import { AbortTransferDto, CommitTransferDto, CreateTransferDto } from '../types';
 
 const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;
@@ -25,7 +25,7 @@ export interface PositionHandlerDependencies {
 
 export interface PositionMessageInput {
   message: any;
-  payload: CreateTransferDto | CommitTransferDto;
+  payload: CreateTransferDto | CommitTransferDto | AbortTransferDto
   headers: Record<string, any>;
   transferId: string;
   action: EventActionEnum
@@ -111,25 +111,24 @@ export class PositionHandler {
     const eventType = message.value.metadata.event.type;
 
     // Decode and type the payload based on action
-    let payload: CreateTransferDto | CommitTransferDto;
+    let payload: CreateTransferDto | CommitTransferDto | AbortTransferDto
     let transferId: string
 
-    if (action === Enum.Events.Event.Action.COMMIT || 
-        action === Enum.Events.Event.Action.BULK_COMMIT ||
-        action === Enum.Events.Event.Action.RESERVE
-      ) {
+    if (action === Enum.Events.Event.Action.COMMIT ||
+      action === Enum.Events.Event.Action.BULK_COMMIT ||
+      action === Enum.Events.Event.Action.RESERVE
+    ) {
       payload = decodePayload(payloadEncoded, {}) as CommitTransferDto;
       assert(message.value.content.uriParams)
       assert(message.value.content.uriParams.id)
       transferId = message.value.content.uriParams.id
-    } else if (action === Enum.Events.Event.Action.ABORT) {
+    } else if (action === Enum.Events.Event.Action.TIMEOUT_RESERVED) {
       assert(message.value.content.uriParams)
       assert(message.value.content.uriParams.id)
       transferId = message.value.content.uriParams.id
-      // TODO: not sure about this payload here
-      payload = undefined
+      payload = decodePayload(payloadEncoded, {}) as AbortTransferDto
     }
-      else {
+    else {
       // Default to CreateTransferDto for PREPARE and other actions
       try {
         payload = decodePayload(payloadEncoded, {}) as CreateTransferDto;
@@ -195,7 +194,7 @@ export class PositionHandler {
       (action === Enum.Events.Event.Action.PREPARE || action === Enum.Events.Event.Action.BULK_PREPARE)) {
 
       return await this.handlePositionPrepare(input, message);
-    } 
+    }
 
     if (eventType === Enum.Events.Event.Type.POSITION &&
       (action === Enum.Events.Event.Action.COMMIT || action === Enum.Events.Event.Action.BULK_COMMIT || action === Enum.Events.Event.Action.RESERVE)) {
@@ -204,9 +203,9 @@ export class PositionHandler {
     }
 
     if (eventType === Enum.Events.Event.Type.POSITION &&
-      (action === Enum.Events.Event.Action.TIMEOUT_RESERVED || 
-       action === Enum.Events.Event.Action.FX_TIMEOUT_RESERVED ||
-       action === Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED)) {
+      (action === Enum.Events.Event.Action.TIMEOUT_RESERVED ||
+        action === Enum.Events.Event.Action.FX_TIMEOUT_RESERVED ||
+        action === Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED)) {
 
       return await this.handlePositionTimeout(input, message);
     }
@@ -281,15 +280,15 @@ export class PositionHandler {
     try {
       // Get transfer info to change position for PAYEE
       const transferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
-        transferId, 
-        Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP, 
+        transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
         Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
       );
 
       // Get participant currency info
       const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
-        transferInfo.participantId, 
-        transferInfo.currencyId, 
+        transferInfo.participantId,
+        transferInfo.currencyId,
         Enum.Accounts.LedgerAccountType.POSITION
       );
 
@@ -299,7 +298,7 @@ export class PositionHandler {
         const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
           `Invalid State: ${transferInfo.transferStateId} - expected: ${expectedState}`
         );
-        
+
         logger.error(`Position commit validation failed - invalid state for transfer: ${transferId}`, {
           currentState: transferInfo.transferStateId,
           expectedState
@@ -334,9 +333,9 @@ export class PositionHandler {
       // Send success notification
       await this.sendSuccessNotification(input, message);
 
-      logger.info(`Position commit processed successfully for transfer: ${transferId}`, { 
+      logger.info(`Position commit processed successfully for transfer: ${transferId}`, {
         participantCurrencyId: participantCurrency.participantCurrencyId,
-        amount: transferInfo.amount 
+        amount: transferInfo.amount
       });
 
       return {
@@ -369,9 +368,9 @@ export class PositionHandler {
         metadata: message.value.metadata
       });
 
-      
-      
-      
+
+
+
       logger.debug(`Success notification sent for transfer: ${input.transferId}`);
 
     } catch (error) {
@@ -432,30 +431,34 @@ export class PositionHandler {
 
   private async handlePositionTimeout(input: PositionMessageInput, message: any): Promise<any> {
     const { transferId, action } = input;
-    
+
     logger.info(`Processing position timeout for transfer: ${transferId}`, { action });
 
     try {
+      // lookup the participants to notify
+      const { payeeFsp, payerFsp } = await this.deps.transferService.getById(transferId)
+
       // Get transfer info to reverse the position for PAYER (who had funds reserved)
       const transferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
-        transferId, 
-        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP, 
+        transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
         Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
       );
 
       // Get participant currency info
       const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
-        transferInfo.participantId, 
-        transferInfo.currencyId, 
+        transferInfo.participantId,
+        transferInfo.currencyId,
         Enum.Accounts.LedgerAccountType.POSITION
       );
 
       // Reverse the position change (abort the reserved amounts)
-      const isReversal = true;  // This is a reversal/abort
+      const isReversal = true;
       const transferStateChange = {
         transferId: transferInfo.transferId,
-        transferStateId: Enum.Transfers.TransferState.ABORTED
-      };
+        transferStateId: Enum.Transfers.TransferInternalState.EXPIRED_RESERVED,
+        reason: ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED.message
+      }
 
       await this.deps.positionService.changeParticipantPosition(
         participantCurrency.participantCurrencyId,
@@ -484,9 +487,11 @@ export class PositionHandler {
       }
 
       // Send timeout error notification to the originating DFSP
-      await this.sendTimeoutErrorNotification(input, message, fspiopApiError, notificationAction);
+      await this.sendTimeoutErrorNotifications(
+        input, message, fspiopApiError, notificationAction, payerFsp, payeeFsp
+      );
 
-      logger.info(`Position timeout processed successfully for transfer: ${transferId}`, { 
+      logger.info(`Position timeout processed successfully for transfer: ${transferId}`, {
         participantCurrencyId: participantCurrency.participantCurrencyId,
         amount: transferInfo.amount,
         isReversal: true
@@ -506,11 +511,13 @@ export class PositionHandler {
     }
   }
 
-  private async sendTimeoutErrorNotification(
-    input: PositionMessageInput, 
-    message: any, 
-    fspiopApiError: any, 
-    notificationAction: string
+  private async sendTimeoutErrorNotifications(
+    input: PositionMessageInput,
+    message: any,
+    fspiopApiError: any,
+    notificationAction: string,
+    payerFsp: string,
+    payeeFsp: string,
   ): Promise<void> {
     logger.debug(`Sending timeout error notification for transfer: ${input.transferId}`, {
       errorCode: fspiopApiError.errorInformation.errorCode,
@@ -521,17 +528,12 @@ export class PositionHandler {
       // Create timeout error notification message
       // The message structure should match what the timeout handler would send
       const timeoutMessage = { ...message };
-      
+
       // Add context for timeout notification (payer/payee info)
       if (!timeoutMessage.value.content.context) {
         timeoutMessage.value.content.context = {};
       }
-      
-      // For timeout notifications, we need to identify the participants
-      // The 'to' should be the payer FSP (who initiated the transfer and will get the timeout notification)
-      const payerFsp = message.value.from || message.value.content.headers[Enum.Http.Headers.FSPIOP.SOURCE];
-      const payeeFsp = message.value.to || message.value.content.headers[Enum.Http.Headers.FSPIOP.DESTINATION];
-      
+
       timeoutMessage.value.content.context.payer = payerFsp;
       timeoutMessage.value.content.context.payee = payeeFsp;
 
@@ -546,7 +548,19 @@ export class PositionHandler {
         payload: timeoutMessage.value.content.payload  // Use original timeout message payload
       });
 
-      logger.debug(`Timeout error notification sent for transfer: ${input.transferId}`);
+      await this.deps.notificationProducer.sendError({
+        transferId: input.transferId,
+        fspiopError: fspiopApiError,
+        action: notificationAction,
+        to: payeeFsp,  // Timeout error goes back to the payer FSP
+        from: this.deps.config.HUB_NAME,
+        headers: input.headers,
+        metadata: timeoutMessage.value.metadata,
+        payload: timeoutMessage.value.content.payload  // Use original timeout message payload
+      });
+
+
+      logger.debug(`Timeout error notifications sent for transfer: ${input.transferId}`);
 
     } catch (error) {
       logger.error(`Failed to send timeout error notification for transfer: ${input.transferId}`, { error });

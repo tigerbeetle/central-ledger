@@ -74,8 +74,8 @@ export class NotificationProducer implements INotificationProducer {
   private buildErrorMessage(message: NotificationErrorMessage): Kafka.MessageProtocol {
     // Clone headers and update FSPIOP headers like the original system
     const updatedHeaders = { ...message.headers };
-    updatedHeaders[Enum.Http.Headers.FSPIOP.SOURCE] = message.from;
-    updatedHeaders[Enum.Http.Headers.FSPIOP.DESTINATION] = message.to;
+    updatedHeaders['FSPIOP-Source'] = message.from;
+    updatedHeaders['FSPIOP-Destination'] = message.to;
 
     // Preserve the original metadata but update the event portion like the original system
     const updatedMetadata = { ...message.metadata };

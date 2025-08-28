@@ -3,6 +3,7 @@ import { Enum, Util } from '@mojaloop/central-services-shared';
 import { logger } from '../../shared/logger';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as EventSdk from '@mojaloop/event-sdk';
+import fspiopErrorFactory from 'src/shared/fspiopErrorFactory';
 
 const { resourceVersions } = Util;
 
@@ -138,6 +139,7 @@ export class TimeoutHandler {
         };
 
         if (TT.bulkTransferId === null) { // regular transfer
+          // Transfer expired before funds were reserved
           if (TT.transferStateId === Enum.Transfers.TransferInternalState.EXPIRED_PREPARED) {
             message.from = this.deps.config.HUB_NAME;
             await this.deps.notificationProducer.sendError({
@@ -151,11 +153,14 @@ export class TimeoutHandler {
               payload: message.content.payload
             });
           } else if (TT.transferStateId === Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT) {
+            // Transfer expired after funds were reserved - need to rollback
+
             // Create position message for reserved timeouts
             message.from = this.deps.config.HUB_NAME;
             message.metadata.event.type = Enum.Events.Event.Type.POSITION;
             message.metadata.event.action = Enum.Events.Event.Action.TIMEOUT_RESERVED;
-            
+            const error = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED);
+
             await this.deps.positionProducer.sendAbort({
               transferId: TT.transferId,
               participantCurrencyId: TT.effectedParticipantCurrencyId?.toString() || '',
@@ -165,7 +170,7 @@ export class TimeoutHandler {
               from: this.deps.config.HUB_NAME,
               to: destination,
               headers,
-              payload: '',
+              payload: error,
               metadata: message.metadata
             });
           }
@@ -179,16 +184,17 @@ export class TimeoutHandler {
             message.metadata.event.type = Enum.Events.Event.Type.POSITION;
             message.metadata.event.action = Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED;
 
+            const error = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED);
             await this.deps.positionProducer.sendAbort({
               transferId: TT.transferId,
               participantCurrencyId: TT.payerParticipantCurrencyId?.toString() || '',
               amount: '0',
               currency: '',
-              action: 'ABORT',
+              action: 'TIMEOUT_RESERVED',
               from: this.deps.config.HUB_NAME,
               to: destination,
               headers,
-              payload: '',
+              payload: error,
               metadata: message.metadata
             });
           }

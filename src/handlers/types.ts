@@ -18,12 +18,16 @@ export interface CommitTransferDto {
 }
 
 export interface AbortTransferDto {
-  transferState: 'ABORTED',
-  completedTimestamp: string,
-  errorInformation?: {
+  errorInformation: {
     errorCode: string,
     errorDescription: string,
-  },
+    extensionList?: {
+      extension: Array<{
+        key: string,
+        value: string
+      }>
+    }
+  }
 }
 
 export interface TimeoutTransferDto {
