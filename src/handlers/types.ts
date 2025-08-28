@@ -34,3 +34,13 @@ export interface TimeoutTransferDto {
   transferState: 'EXPIRED',
   completedTimestamp: string,
 }
+
+export interface AdminTransferDto {
+  action: string;
+  amount?: {
+    amount: string;
+    currency: string;
+  };
+  participantCurrencyId?: string;
+  reason?: string;
+}

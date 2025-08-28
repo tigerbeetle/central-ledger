@@ -14,6 +14,7 @@ import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
 import RegisterHandlers from '../handlers/register';
 import { registerFulfilHandler_new, registerPrepareHandler_new, registerGetHandler_new } from '../handlers/transfers/register';
+import { registerAdminHandler_new } from '../handlers/admin/register';
 import { registerPositionHandler_new } from '../handlers/positions/register';
 import { registerTimeoutHandler_new } from '../handlers/timeouts/register';
 import { TimeoutScheduler } from '../messaging/jobs/TimeoutScheduler';
@@ -48,9 +49,7 @@ export interface Consumers {
   position: Kafka.Consumer
   fulfil: Kafka.Consumer
   get: Kafka.Consumer
-
-  // add other consumers here
-  // admin
+  admin: Kafka.Consumer
 }
 
 export interface Producers {
@@ -141,7 +140,7 @@ async function initializeServer(port: number, modules: Array<Plugin<any>>): Prom
 async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
   const KafkaUtil = Util.Kafka;
   const TEMPLATE = config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE
-  const { TRANSFER, POSITION, FULFIL } = Enum.Events.Event.Type;
+  const { TRANSFER, POSITION, FULFIL, ADMIN } = Enum.Events.Event.Type;
   const { PREPARE, GET } = Enum.Events.Event.Action;
 
   // Build topic names
@@ -149,6 +148,7 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
   const topicNamePosition = KafkaUtil.transformGeneralTopicName(TEMPLATE, POSITION, PREPARE);
   const topicNameFulfil = KafkaUtil.transformGeneralTopicName(TEMPLATE, TRANSFER, FULFIL);
   const topicNameGet = KafkaUtil.transformGeneralTopicName(TEMPLATE, TRANSFER, GET);
+  const topicNameAdmin = KafkaUtil.transformGeneralTopicName(TEMPLATE, ADMIN, Enum.Events.Event.Action.TRANSFER);
 
   // Resolve Config
   const configPrepare = KafkaUtil.getKafkaConfig(
@@ -183,16 +183,26 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
   );
   (configGet as any).rdkafkaConf['client.id'] = topicNameGet;
 
+  const configAdmin = KafkaUtil.getKafkaConfig(
+    config.KAFKA_CONFIG,
+    Enum.Kafka.Config.CONSUMER,
+    ADMIN.toUpperCase(),
+    Enum.Events.Event.Action.TRANSFER.toUpperCase(),
+  );
+  (configAdmin as any).rdkafkaConf['client.id'] = topicNameAdmin;
+
   const consumerPrepare = new Kafka.Consumer([topicNamePrepare], configPrepare);
   const consumerPosition = new Kafka.Consumer([topicNamePosition], configPosition);
   const consumerFulfil = new Kafka.Consumer([topicNameFulfil], configFulfil);
   const consumerGet = new Kafka.Consumer([topicNameGet], configGet);
+  const consumerAdmin = new Kafka.Consumer([topicNameAdmin], configAdmin);
 
   // Connect consumers
   await consumerPrepare.connect()
   await consumerPosition.connect()
   await consumerFulfil.connect()
   await consumerGet.connect()
+  await consumerAdmin.connect()
 
   Logger.info('createConsumers() - created and connected');
   return {
@@ -200,6 +210,7 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
     position: consumerPosition,
     fulfil: consumerFulfil,
     get: consumerGet,
+    admin: consumerAdmin,
   }
 }
 
@@ -282,7 +293,8 @@ async function initializeHandlersV2(
         break;
       }
       case HandlerType.admin: {
-        
+        assert(consumers.admin)
+        await registerAdminHandler_new(config, consumers.admin)
         break;
       }
       default: {
@@ -341,11 +353,15 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
         break
       }
       case 'admin': {
-        await RegisterHandlers.admin.registerAdminHandlers()
+        if (!USE_NEW_HANDLERS) {
+          await RegisterHandlers.admin.registerAdminHandlers()
+        }
         break
       }
       case 'get': {
-        await RegisterHandlers.transfers.registerGetHandler()
+        if (!USE_NEW_HANDLERS) {
+          await RegisterHandlers.transfers.registerGetHandler()
+        }
         break
       }
       case 'bulkprepare': {
@@ -480,6 +496,9 @@ export async function initialize({
       }
       if (consumers.get) {
         consumers.get.disconnect()
+      }
+      if (consumers.admin) {
+        consumers.admin.disconnect()
       }
     }
 
