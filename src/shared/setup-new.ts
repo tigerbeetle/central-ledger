@@ -13,7 +13,7 @@ const Logger = require('../shared/logger').logger
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
 import RegisterHandlers from '../handlers/register';
-import { registerFulfilHandler_new, registerPrepareHandler_new } from '../handlers/transfers/register';
+import { registerFulfilHandler_new, registerPrepareHandler_new, registerGetHandler_new } from '../handlers/transfers/register';
 import { registerPositionHandler_new } from '../handlers/positions/register';
 import { registerTimeoutHandler_new } from '../handlers/timeouts/register';
 import { TimeoutScheduler } from '../messaging/jobs/TimeoutScheduler';
@@ -47,18 +47,15 @@ export interface Consumers {
   prepare: Kafka.Consumer
   position: Kafka.Consumer
   fulfil: Kafka.Consumer
+  get: Kafka.Consumer
 
   // add other consumers here
-  // timeout
-  // get
   // admin
 }
 
 export interface Producers {
   notification: Kafka.Producer
-  // TODO(LD): remove the position, we don't need it
   position: Kafka.Producer
-  // add other producers here
 }
 
 export enum Service {
@@ -145,14 +142,15 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
   const KafkaUtil = Util.Kafka;
   const TEMPLATE = config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE
   const { TRANSFER, POSITION, FULFIL } = Enum.Events.Event.Type;
-  const { PREPARE } = Enum.Events.Event.Action;
+  const { PREPARE, GET } = Enum.Events.Event.Action;
 
   // Build topic names
   const topicNamePrepare = KafkaUtil.transformGeneralTopicName(TEMPLATE, TRANSFER, PREPARE);
   const topicNamePosition = KafkaUtil.transformGeneralTopicName(TEMPLATE, POSITION, PREPARE);
   const topicNameFulfil = KafkaUtil.transformGeneralTopicName(TEMPLATE, TRANSFER, FULFIL);
+  const topicNameGet = KafkaUtil.transformGeneralTopicName(TEMPLATE, TRANSFER, GET);
 
-  // Get Config
+  // Resolve Config
   const configPrepare = KafkaUtil.getKafkaConfig(
     config.KAFKA_CONFIG,
     Enum.Kafka.Config.CONSUMER,
@@ -175,28 +173,38 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
     TRANSFER.toUpperCase(),
     FULFIL.toUpperCase(),
   );
-  (configFulfil as any).rdkafkaConf['client.id'] = topicNamePosition;
+  (configFulfil as any).rdkafkaConf['client.id'] = topicNameFulfil;
+
+  const configGet = KafkaUtil.getKafkaConfig(
+    config.KAFKA_CONFIG,
+    Enum.Kafka.Config.CONSUMER,
+    TRANSFER.toUpperCase(),
+    GET.toUpperCase(),
+  );
+  (configGet as any).rdkafkaConf['client.id'] = topicNameGet;
 
   const consumerPrepare = new Kafka.Consumer([topicNamePrepare], configPrepare);
   const consumerPosition = new Kafka.Consumer([topicNamePosition], configPosition);
   const consumerFulfil = new Kafka.Consumer([topicNameFulfil], configFulfil);
+  const consumerGet = new Kafka.Consumer([topicNameGet], configGet);
 
   // Connect consumers
   await consumerPrepare.connect()
   await consumerPosition.connect()
   await consumerFulfil.connect()
+  await consumerGet.connect()
 
+  Logger.info('createConsumers() - created and connected');
   return {
     prepare: consumerPrepare,
     position: consumerPosition,
     fulfil: consumerFulfil,
+    get: consumerGet,
   }
 }
 
 async function createProducers(config: ApplicationConfig): Promise<Producers> {
-
   const KafkaUtil = Util.Kafka;
-  const { PREPARE } = Enum.Events.Event.Action;
 
   Logger.isInfoEnabled && Logger.info('Creating shared Kafka producers...');
 
@@ -205,9 +213,7 @@ async function createProducers(config: ApplicationConfig): Promise<Producers> {
     config.KAFKA_CONFIG,
     Enum.Kafka.Config.PRODUCER,
     Enum.Events.Event.Type.TRANSFER.toUpperCase(),
-    // Enum.Events.Event.Type.POSITION.toUpperCase(),
     Enum.Events.Event.Type.POSITION.toUpperCase(),
-    // PREPARE.toUpperCase()
   );
   const positionProducer = new Kafka.Producer(positionProducerConfig);
 
@@ -220,11 +226,11 @@ async function createProducers(config: ApplicationConfig): Promise<Producers> {
   );
   const notificationProducer = new Kafka.Producer(notificationProducerConfig);
 
-  // Connect all producers
+  // Connect producers
   await positionProducer.connect();
   await notificationProducer.connect();
 
-  Logger.isInfoEnabled && Logger.info('Shared Kafka producers created and connected');
+  Logger.info('createProducers() - created and connected');
   return {
     position: positionProducer,
     notification: notificationProducer
@@ -269,17 +275,19 @@ async function initializeHandlersV2(
         timeoutScheduler = await registerTimeoutHandler_new(config, producers.notification, producers.position)
         break;
       }
-
-      // TODO: Add other handlers as we refactor them
-      // case HandlerType.position: {
-      //   clients.position = await createPositionHandlerClients(config);
-      //   await registerPositionHandlerNew(clients.position, config);
-      //   break;
-      // }
-
-      default: {
-        Logger.isWarnEnabled && Logger.warn(`HandlerV2 Setup - ${JSON.stringify(handlerType)} not yet implemented in V2, skipping...`)
+      case HandlerType.get: {
+        assert(consumers.get)
+        assert(producers.notification)
+        await registerGetHandler_new(config, consumers.get, producers.notification)
         break;
+      }
+      case HandlerType.admin: {
+        
+        break;
+      }
+      default: {
+        Logger.error(`initializeHandlersV2 - unsupported v2 handler: ${handlerType}. Please check your config and restart the service.`)
+        throw new Error(`initializeHandlersV2 - unsupported v2 handler: ${handlerType}`)
       }
     }
   }
@@ -463,6 +471,15 @@ export async function initialize({
     if (consumers) {
       if (consumers.prepare) {
         consumers.prepare.disconnect()
+      }
+      if (consumers.position) {
+        consumers.position.disconnect()
+      }
+      if (consumers.fulfil) {
+        consumers.fulfil.disconnect()
+      }
+      if (consumers.get) {
+        consumers.get.disconnect()
       }
     }
 

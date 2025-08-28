@@ -7,6 +7,7 @@ import { PositionProducer } from '../../messaging/producers/PositionProducer'
 import { logger } from '../../shared/logger'
 import { PrepareHandler, PrepareHandlerDependencies } from './PrepareHandler'
 import { FulfilHandler, FulfilHandlerDependencies } from './FulfilHandler'
+import { GetHandler, GetHandlerDependencies } from './GetHandler'
 
 const rethrow = Util.rethrow
 const KafkaUtil = Util.Kafka
@@ -76,6 +77,31 @@ export const createFulfilHandler = (
   return (error: any, message: any) => handler.handle(error, message)
 }
 
+export const createGetHandler = (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  notificationProducer: Kafka.Producer,
+) => {
+  // Import existing business logic modules
+  const Validator = require('./validator')
+  const TransferService = require('../../domain/transfer/index')
+  const FxTransferModel = require('../../models/fxTransfer/fxTransfer')
+  const TransferObjectTransform = require('../../domain/transfer/transform')
+
+  const dependencies: GetHandlerDependencies = {
+    notificationProducer: new NotificationProducer(notificationProducer, config),
+    committer: new MessageCommitter(consumer),
+    config,
+    validator: Validator,
+    transferService: TransferService,
+    fxTransferModel: FxTransferModel,
+    transferObjectTransform: TransferObjectTransform
+  }
+
+  const handler = new GetHandler(dependencies)
+  return (error: any, message: any) => handler.handle(error, message)
+}
+
 export const registerPrepareHandler_new = async (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
@@ -109,5 +135,21 @@ export const registerFulfilHandler_new = async (
 
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'registerFulfilHandler_new' })
+  }
+}
+
+export const registerGetHandler_new = async (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  notificationProducer: Kafka.Producer,
+): Promise<void> => {
+  try {
+    logger.debug(`registerGetHandler_new registering`)
+
+    const handleMessage = createGetHandler(config, consumer, notificationProducer)
+    consumer.consume(handleMessage)
+
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'registerGetHandler_new' })
   }
 }
