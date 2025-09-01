@@ -21,6 +21,10 @@ export interface PositionHandlerDependencies {
   participantFacade: any;
   settlementModelCached: any;
   transferObjectTransform: any;
+  
+  // For settlement notifications
+  kafkaUtil: any;
+  positionProducer: any;
 }
 
 export interface PositionMessageInput {
@@ -273,7 +277,15 @@ export class PositionHandler {
   }
 
   private async handlePositionCommit(input: PositionMessageInput, message: any): Promise<any> {
-    const { transferId, action, payload } = input;
+    const { transferId, action } = input;
+
+    // Validate payload
+    const validatePayload = input.payload as CommitTransferDto
+    assert(validatePayload.transferState)
+    if (validatePayload.transferState !== 'COMMITTED' && validatePayload.transferState !== 'RESERVED') {
+      throw new Error('handlePositionCommit validation error - expected payload to be a `CommitTransferDto`')
+    }
+    const payload = input.payload as CommitTransferDto
 
     logger.info(`Processing position commit for transfer: ${transferId}`);
 
@@ -324,24 +336,6 @@ export class PositionHandler {
         transferStateChange
       );
 
-      // TODO(LD): undoing last thing claude did to 'fix' settlements
-      // Handle payee response to assign settlement window and complete fulfillment
-      // let actionEnum;
-      // if (action === Enum.Events.Event.Action.RESERVE) {
-      //   actionEnum = Enum.Events.Event.Action.RESERVE;
-      // } else if (action === Enum.Events.Event.Action.BULK_COMMIT) {
-      //   actionEnum = Enum.Events.Event.Action.BULK_COMMIT;
-      // } else {
-      //   actionEnum = Enum.Events.Event.Action.COMMIT;
-      // }
-      
-      // await this.deps.transferService.handlePayeeResponse(
-      //   transferInfo.transferId,
-      //   input.payload,
-      //   actionEnum,
-      //   null // no fspiopError for successful commit
-      // );
-
       // For RESERVE action, transform the payload
       if (action === Enum.Events.Event.Action.RESERVE) {
         const transfer = await this.deps.transferService.getById(transferInfo.transferId);
@@ -350,6 +344,9 @@ export class PositionHandler {
 
       // Send success notification
       await this.sendSuccessNotification(input, message);
+      
+      // Send settlement notification (missing from v2 handlers)
+      await this.sendSettlementNotification(input, message, transferInfo);
 
       logger.info(`Position commit processed successfully for transfer: ${transferId}`, {
         participantCurrencyId: participantCurrency.participantCurrencyId,
@@ -583,6 +580,74 @@ export class PositionHandler {
     } catch (error) {
       logger.error(`Failed to send timeout error notification for transfer: ${input.transferId}`, { error });
       // Don't throw here as the position reversal was successful
+    }
+  }
+
+  private async sendSettlementNotification(input: PositionMessageInput, message: any, transferInfo: any): Promise<void> {
+    try {
+      // Replicate the legacy Kafka.proceed call for settlement service integration
+      
+      // Build message in the same format as legacy handler
+      const kafkaMessage = {
+        value: {
+          id: message.value.id,
+          from: message.value.from,
+          to: message.value.to,
+          type: Enum.Events.Event.Type.POSITION,
+          content: {
+            headers: message.value.content.headers,
+            payload: message.value.content.payload
+          },
+          metadata: {
+            event: {
+              id: message.value.metadata.event.id,
+              type: Enum.Events.Event.Type.POSITION,
+              action: input.action,
+              createdAt: new Date().toISOString(),
+              state: {
+                status: 'success',
+                code: 0
+              }
+            }
+          }
+        },
+        key: message.key,
+        topic: message.topic,
+        partition: message.partition,
+        offset: message.offset
+      };
+
+      // Use KafkaUtil to transform to participant-specific topic
+      // This matches what the legacy Kafka.proceed was doing
+      const participantTopicName = this.deps.kafkaUtil.transformAccountToTopicName(
+        message.value.to, // participant name
+        Enum.Events.Event.Type.NOTIFICATION,
+        input.action
+      );
+
+      logger.debug(`Sending settlement notification to topic: ${participantTopicName}`, {
+        transferId: input.transferId,
+        action: input.action,
+        participantName: message.value.to
+      });
+
+      // Use the underlying producer directly since PositionProducer doesn't expose a generic sendMessage
+      await this.deps.positionProducer.producer.sendMessage(
+        kafkaMessage,
+        {
+          topicName: participantTopicName,
+          opaqueKey: input.transferId
+        }
+      );
+
+      logger.info(`Settlement notification sent for transfer ${input.transferId}`, {
+        topic: participantTopicName,
+        action: input.action
+      });
+
+    } catch (error) {
+      logger.error(`Failed to send settlement notification for transfer ${input.transferId}`, { error });
+      // Don't throw here - the position change was successful, just log the notification error
     }
   }
 

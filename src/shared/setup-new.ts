@@ -270,7 +270,7 @@ async function initializeHandlersV2(
       case HandlerType.position: {
         assert(consumers.position)
         assert(producers.notification)
-        await registerPositionHandler_new(config, consumers.position, producers.notification)
+        await registerPositionHandler_new(config, consumers.position, producers.notification, producers.position)
         break;
       }
       case HandlerType.fulfil: {
@@ -511,13 +511,7 @@ export async function initialize({
         producers.notification.disconnect()
       }
     }
-
-    // timeoutScheduler is scoped to the main try block
-    // if (timeoutScheduler) {
-    //   await timeoutScheduler.stop()
-    // }
-
-
+    
     if (config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.disconnect()
     }
