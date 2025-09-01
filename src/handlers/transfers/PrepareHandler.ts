@@ -290,26 +290,12 @@ export class PrepareHandler {
     const actionLetter = action[0].toUpperCase();
 
     // Handle hash mismatch or bulk prepare duplicates with errors
-    let error;
     if (!duplication.hasDuplicateHash) {
       logger.warn(`callbackErrorModified1--${actionLetter}5 for transfer ${transferId}`);
-      error = createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST);
+      throw createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST);
     } else if (actionEnum === Enum.Events.Event.Action.BULK_PREPARE) {
       logger.info(`validationError1--${actionLetter}2 for transfer ${transferId}`);
-      error = createFSPIOPError('Individual transfer prepare duplicate');
-    }
-
-    if (error) {
-      await this.deps.notificationProducer.sendError({
-        transferId,
-        fspiopError: error.toApiErrorObject(this.deps.config.ERROR_HANDLING),
-        action: actionEnum,
-        to: input.message.value.from,
-        from: this.deps.config.HUB_NAME,
-        headers: input.headers,
-        metadata: input.message.value.metadata
-      });
-      throw error;
+      throw createFSPIOPError('Individual transfer prepare duplicate');
     }
 
     logger.info('handleResend for transfer', { transferId });

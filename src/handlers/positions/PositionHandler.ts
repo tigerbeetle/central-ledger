@@ -324,6 +324,24 @@ export class PositionHandler {
         transferStateChange
       );
 
+      // TODO(LD): undoing last thing claude did to 'fix' settlements
+      // Handle payee response to assign settlement window and complete fulfillment
+      // let actionEnum;
+      // if (action === Enum.Events.Event.Action.RESERVE) {
+      //   actionEnum = Enum.Events.Event.Action.RESERVE;
+      // } else if (action === Enum.Events.Event.Action.BULK_COMMIT) {
+      //   actionEnum = Enum.Events.Event.Action.BULK_COMMIT;
+      // } else {
+      //   actionEnum = Enum.Events.Event.Action.COMMIT;
+      // }
+      
+      // await this.deps.transferService.handlePayeeResponse(
+      //   transferInfo.transferId,
+      //   input.payload,
+      //   actionEnum,
+      //   null // no fspiopError for successful commit
+      // );
+
       // For RESERVE action, transform the payload
       if (action === Enum.Events.Event.Action.RESERVE) {
         const transfer = await this.deps.transferService.getById(transferInfo.transferId);
