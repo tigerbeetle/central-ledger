@@ -40,7 +40,6 @@ const USE_NEW_HANDLERS = true
 export interface Initialized {
   server: undefined | Hapi.Server<Hapi.ServerApplicationState>,
   handlers: undefined | Array<unknown>,
-  // handlersV2: undefined | HandlerClients,
   proxyCache: undefined | unknown,
   mongoClient: undefined | unknown,
   consumers: undefined | Consumers,
@@ -79,6 +78,133 @@ export enum HandlerType {
   bulkfulfil = 'bulkfulfil',
   bulkprocessing = 'bulkprocessing',
   bulkget = 'bulkget',
+}
+
+
+export async function initialize({
+  config,
+  service,
+  modules,
+  handlerTypes
+}: { config: ApplicationConfig, service: Service, modules: Array<Plugin<any>>, handlerTypes: Array<HandlerType> }): Promise<Initialized> {
+
+  let consumers: Consumers
+  let producers: Producers
+
+  try {
+    if (!config.INSTRUMENTATION_METRICS_DISABLED) {
+      Metrics.setup(config.INSTRUMENTATION_METRICS_CONFIG)
+    }
+
+    if (config.RUN_MIGRATIONS) {
+      // TODO(LD): inject dependency
+      await Migrator.migrate()
+    }
+
+    // TODO(LD): inject dependency
+    await Db.connect(config.DATABASE)
+    const dbLoadedTables = Db._tables ? Db._tables.length : -1
+    Logger.debug(`DB.connect loaded '${dbLoadedTables}' tables!`)
+
+    let mongoClient
+    if (config.MONGODB_DISABLED === false) {
+      mongoClient = await initializeMongoDB(config)
+    }
+
+    await initializeCache()
+    let proxyCache
+    if (config.PROXY_CACHE_CONFIG.enabled) {
+      proxyCache = await ProxyCache.connect()
+    }
+
+    let server
+    switch (service) {
+      case Service.api:
+      case Service.admin: {
+        server = await initializeServer(config.PORT, modules)
+        break
+      }
+      case Service.handler: {
+        // Special case - when we're running in `handler` mode, we can still run an api
+        if (config.HANDLERS_API_DISABLED === false) {
+          server = await initializeServer(config.PORT, modules)
+        }
+        break
+      }
+      default: {
+        Logger.isErrorEnabled && Logger.error(`No valid service type ${service} found!`)
+        throw ErrorHandler.Factory.createInternalServerFSPIOPError(`No valid service type ${service} found!`)
+      }
+    }
+
+    // TODO: we need to be able to initialize the message handlers and api separately
+
+    // Initialize legacy handlers
+    const legacyHandlers = await initializeHandlers(handlerTypes)
+
+    // Initialize new V2 handlers with dependency injection
+    consumers = await createConsumers(config)
+    producers = await createProducers(config)
+    let timeoutScheduler: TimeoutScheduler | undefined
+    // TODO: rename handlers here to handlerTypes or something
+    if (USE_NEW_HANDLERS) {
+      const v2Handlers = await initializeHandlersV2(config, handlerTypes, consumers, producers)
+      timeoutScheduler = v2Handlers.timeoutScheduler
+    }
+
+    // Provision from scratch on first start, or update provisioning to match static config
+    if (config.EXPERIMENTAL.PROVISIONING.enabled) {
+      const provisioner = new Provisioner(config.EXPERIMENTAL.PROVISIONING)
+      await provisioner.run();
+    }
+
+    return {
+      server,
+      handlers: [legacyHandlers],
+      consumers: consumers,
+      producers: producers,
+      proxyCache,
+      mongoClient,
+      timeoutScheduler,
+    }
+  } catch (err) {
+    Logger.isErrorEnabled && Logger.error(`setup.initialize() - error while initializing ${err}`)
+
+    await Db.disconnect()
+
+    // TODO(LD): Improve the cleanup and disconnection of kafka consumers/handlers
+    if (consumers) {
+      if (consumers.prepare) {
+        consumers.prepare.disconnect()
+      }
+      if (consumers.position) {
+        consumers.position.disconnect()
+      }
+      if (consumers.fulfil) {
+        consumers.fulfil.disconnect()
+      }
+      if (consumers.get) {
+        consumers.get.disconnect()
+      }
+      if (consumers.admin) {
+        consumers.admin.disconnect()
+      }
+    }
+    if (producers) {
+      if (producers.position) {
+        producers.position.disconnect()
+      }
+
+      if (producers.notification) {
+        producers.notification.disconnect()
+      }
+    }
+    
+    if (config.PROXY_CACHE_CONFIG?.enabled) {
+      await ProxyCache.disconnect()
+    }
+    process.exit(1)
+  }
 }
 
 async function initializeMongoDB(config: ApplicationConfig): Promise<unknown> {
@@ -221,7 +347,7 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
 async function createProducers(config: ApplicationConfig): Promise<Producers> {
   const KafkaUtil = Util.Kafka;
 
-  Logger.isInfoEnabled && Logger.info('Creating shared Kafka producers...');
+  Logger.isInfoEnabled && Logger.info('createProducers() - Creating shared Kafka producers');
 
   // Create position producer
   const positionProducerConfig = KafkaUtil.getKafkaConfig(
@@ -393,133 +519,4 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
   }
 
   return registeredHandlers
-}
-
-
-export async function initialize({
-  config,
-  service,
-  modules,
-  handlerTypes
-}: { config: ApplicationConfig, service: Service, modules: Array<Plugin<any>>, handlerTypes: Array<HandlerType> }): Promise<Initialized> {
-
-  let consumers: Consumers
-  let producers: Producers
-
-  try {
-    if (!config.INSTRUMENTATION_METRICS_DISABLED) {
-      Metrics.setup(config.INSTRUMENTATION_METRICS_CONFIG)
-    }
-
-    if (config.RUN_MIGRATIONS) {
-      // TODO(LD): inject dependency
-      await Migrator.migrate()
-    }
-
-    // TODO(LD): inject dependency
-    await Db.connect(config.DATABASE)
-    const dbLoadedTables = Db._tables ? Db._tables.length : -1
-    Logger.debug(`DB.connect loaded '${dbLoadedTables}' tables!`)
-
-    let mongoClient
-    if (config.MONGODB_DISABLED === false) {
-      mongoClient = await initializeMongoDB(config)
-    }
-
-    await initializeCache()
-    let proxyCache
-    if (config.PROXY_CACHE_CONFIG.enabled) {
-      proxyCache = await ProxyCache.connect()
-    }
-
-    let server
-    switch (service) {
-      case Service.api:
-      case Service.admin: {
-        server = await initializeServer(config.PORT, modules)
-        break
-      }
-      case Service.handler: {
-        // Special case - when we're running in `handler` mode, we can still run an api
-        if (config.HANDLERS_API_DISABLED === false) {
-          server = await initializeServer(config.PORT, modules)
-        }
-        break
-      }
-      default: {
-        Logger.isErrorEnabled && Logger.error(`No valid service type ${service} found!`)
-        throw ErrorHandler.Factory.createInternalServerFSPIOPError(`No valid service type ${service} found!`)
-      }
-    }
-
-    // TODO: we need to be able to initialize the message handlers and api separately
-
-    // Initialize legacy handlers
-    const legacyHandlers = await initializeHandlers(handlerTypes)
-
-    // Initialize new V2 handlers with dependency injection
-    consumers = await createConsumers(config)
-    producers = await createProducers(config)
-    let timeoutScheduler: TimeoutScheduler | undefined
-    // TODO: rename handlers here to handlerTypes or something
-    if (USE_NEW_HANDLERS) {
-      const v2Handlers = await initializeHandlersV2(config, handlerTypes, consumers, producers)
-      timeoutScheduler = v2Handlers.timeoutScheduler
-    }
-
-    // Provision from scratch on first start, or update provisioning to match static config
-    if (config.EXPERIMENTAL.PROVISIONING.enabled) {
-      const provisioner = new Provisioner(config.EXPERIMENTAL.PROVISIONING)
-      await provisioner.run();
-    }
-
-    return {
-      server,
-      handlers: [legacyHandlers],
-      consumers: consumers,
-      producers: producers,
-      proxyCache,
-      mongoClient,
-      timeoutScheduler,
-    }
-  } catch (err) {
-    Logger.isErrorEnabled && Logger.error(`setup.initialize() - error while initializing ${err}`)
-
-    await Db.disconnect()
-
-    // TODO(LD): Improve the cleanup and disconnection of kafka consumers/handlers
-    if (consumers) {
-      if (consumers.prepare) {
-        consumers.prepare.disconnect()
-      }
-      if (consumers.position) {
-        consumers.position.disconnect()
-      }
-      if (consumers.fulfil) {
-        consumers.fulfil.disconnect()
-      }
-      if (consumers.get) {
-        consumers.get.disconnect()
-      }
-      if (consumers.admin) {
-        consumers.admin.disconnect()
-      }
-    }
-
-    if (producers) {
-      if (producers.position) {
-        producers.position.disconnect()
-      }
-
-      if (producers.notification) {
-        producers.notification.disconnect()
-      }
-    }
-    
-    if (config.PROXY_CACHE_CONFIG?.enabled) {
-      await ProxyCache.disconnect()
-    }
-    process.exit(1)
-  }
-
 }

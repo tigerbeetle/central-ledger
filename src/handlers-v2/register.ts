@@ -212,7 +212,6 @@ export const createPrepareHandler = (
     transferObjectTransform: TransferObjectTransform,
     
     // Business logic functions from prepare.js
-    calculateProxyObligation: prepareModule.calculateProxyObligation,
     checkDuplication: prepareModule.checkDuplication,
     savePreparedRequest: prepareModule.savePreparedRequest,
     definePositionParticipant: prepareModule.definePositionParticipant

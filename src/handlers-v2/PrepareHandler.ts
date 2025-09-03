@@ -9,11 +9,53 @@ import { CreateTransferDto } from './types';
 
 const { decodePayload } = Util.StreamingProtocol
 
-
 const rethrow = Util.rethrow;
 const { createFSPIOPError } = ErrorHandler.Factory;
 const { FSPIOPErrorCodes } = ErrorHandler.Enums;
 
+// Type definitions
+export interface DuplicationCheckResult {
+  hasDuplicateId: boolean;
+  hasDuplicateHash: boolean;
+}
+
+export interface Location {
+  module: string;
+  method: string;
+  path: string;
+}
+
+export interface ProxyObligation {
+  isFx: boolean;
+  payloadClone: CreateTransferDto;
+  isInitiatingFspProxy: boolean;
+  isCounterPartyFspProxy: boolean;
+  initiatingFspProxyOrParticipantId: any;
+  counterPartyFspProxyOrParticipantId: any;
+}
+
+export interface TransferCheckResult {
+  watchListRecords: any[];
+  participantCurrencyValidationList: any[];
+}
+
+export interface ValidationResult {
+  validationPassed: boolean;
+  reasons: string[];
+}
+
+export interface DefinePositionParticipantResult {
+  messageKey: string;
+  cyrilResult: any; // Complex object from position participant calculation
+}
+
+export interface PositionData {
+  participantCurrencyId: string;
+  amount: string;
+  currency: string;
+  cyrilResult: any;
+  messageKey: string;
+}
 export interface PrepareHandlerDependencies {
   positionProducer: IPositionProducer;
   notificationProducer: INotificationProducer;
@@ -21,7 +63,10 @@ export interface PrepareHandlerDependencies {
   config: any;
   
   // Business logic dependencies - injected from existing modules
-  validator: any;
+  validator: {
+    validatePrepare: (payload: CreateTransferDto, headers: any, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation) => Promise<ValidationResult>;
+    [key: string]: any;
+  };
   transferService: any;
   proxyCache: any;
   comparators: any;
@@ -29,10 +74,19 @@ export interface PrepareHandlerDependencies {
   transferObjectTransform: any;
   
   // Business logic functions from prepare.js
-  calculateProxyObligation: (args: { payload: any, isFx: boolean, params: any, functionality: any, action: any }) => Promise<any>;
-  checkDuplication: (args: { payload: any, isFx: boolean, ID: string, location: any }) => Promise<any>;
-  savePreparedRequest: (args: { validationPassed: boolean, reasons: any, payload: any, isFx: boolean, functionality: any, params: any, location: any, determiningTransferCheckResult: any, proxyObligation: any }) => Promise<any>;
-  definePositionParticipant: (args: { payload: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any }) => Promise<any>;
+  checkDuplication: (args: { payload: CreateTransferDto, isFx: boolean, ID: string, location: Location }) => Promise<DuplicationCheckResult>;
+  savePreparedRequest: (args: { 
+    validationPassed: boolean, 
+    reasons: string[], 
+    payload: CreateTransferDto, 
+    isFx: boolean, 
+    functionality: any, 
+    params: any, 
+    location: Location, 
+    determiningTransferCheckResult: TransferCheckResult, 
+    proxyObligation: ProxyObligation 
+  }) => Promise<void>;
+  definePositionParticipant: (args: { payload: CreateTransferDto, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation }) => Promise<DefinePositionParticipantResult>;
 }
 
 export interface PrepareMessageInput {
@@ -131,25 +185,20 @@ export class PrepareHandler {
     return Enum.Events.Event.Action[actionUpper] || actionUpper;
   }
 
-  private async processTransfer(input: any, message: any): Promise<ProcessResult> {
+  private async processTransfer(input: PrepareMessageInput, message: any): Promise<ProcessResult> {
     const { payload, transferId, isFx, action, functionality } = input;
 
-    // Proxy obligations, copied from original prepare.js, not sure I understand why we have it
-    const proxyObligation = await this.calculateProxyObligation(payload, isFx, input);
-
-    // 2. Check for duplicates
-    // TODO(LD): refactor this - needs to be moved to a different place to line up with TigerBeetle flow
+    // Check for duplicates
     const duplication = await this.checkDuplication(payload, transferId, isFx);
     if (duplication.hasDuplicateId) {
       return await this.processDuplication(duplication, input);
     }
 
-    // `determiningTransferCheckResult`, copied from original prepare.js, not sure I understand why we have it
-    const determiningTransferCheckResult = await createRemittanceEntity(isFx)
-      .checkIfDeterminingTransferExists(proxyObligation.payloadClone, proxyObligation)
+    // Create minimal objects for validation compatibility
+    const proxyObligation = this.createMinimalProxyObligation(payload, isFx);
+    const determiningTransferCheckResult = this.createMinimalTransferCheckResult();
 
-    // 3. Validate the transfer
-    // TODO(LD): Validation should be before we process I think
+    // Validate the transfer
     const validation = await this.validateTransfer(
       payload, 
       input.headers, 
@@ -157,14 +206,14 @@ export class PrepareHandler {
       determiningTransferCheckResult,
       proxyObligation,
     );
+    // Save the transfer with minimal objects
+    await this.saveTransfer(payload, validation, isFx, determiningTransferCheckResult, proxyObligation);
+
     if (validation.validationPassed === false) {
       throw createFSPIOPError(FSPIOPErrorCodes.VALIDATION_ERROR, validation.reasons.join(', '));
     }
 
-    // 4. Save the transfer
-    await this.saveTransfer(payload, validation, isFx, determiningTransferCheckResult, proxyObligation);
-
-    // 5. Calculate position data
+    // Calculate position data with minimal objects  
     const positionData = await this.calculatePositionData(payload, isFx, determiningTransferCheckResult, proxyObligation);
 
     return {
@@ -263,18 +312,26 @@ export class PrepareHandler {
     return 'PREPARE';
   }
 
-  // Business logic methods - these delegate to existing implementations
-  private async calculateProxyObligation(payload: any, isFx: boolean, input: any) {
-    return await this.deps.calculateProxyObligation({
-      payload,
+  // Helper methods to create minimal objects for validation compatibility
+  private createMinimalProxyObligation(payload: CreateTransferDto, isFx: boolean): ProxyObligation {
+    return {
       isFx,
-      params: { message: input.message },
-      functionality: input.functionality,
-      action: input.actionEnum
-    });
+      payloadClone: { ...payload },
+      isInitiatingFspProxy: false,
+      isCounterPartyFspProxy: false,
+      initiatingFspProxyOrParticipantId: null,
+      counterPartyFspProxyOrParticipantId: null
+    };
   }
 
-  private async checkDuplication(payload: any, transferId: string, isFx: boolean) {
+  private createMinimalTransferCheckResult(): TransferCheckResult {
+    return {
+      watchListRecords: [],
+      participantCurrencyValidationList: []
+    };
+  }
+
+  private async checkDuplication(payload: CreateTransferDto, transferId: string, isFx: boolean): Promise<DuplicationCheckResult> {
     return await this.deps.checkDuplication({
       payload,
       isFx,
@@ -283,7 +340,7 @@ export class PrepareHandler {
     });
   }
 
-  private async processDuplication(duplication: any, input: any): Promise<ProcessResult> {
+  private async processDuplication(duplication: DuplicationCheckResult, input: PrepareMessageInput): Promise<ProcessResult> {
     if (!duplication.hasDuplicateId) {
       return {
         type: 'duplicate',
@@ -323,7 +380,7 @@ export class PrepareHandler {
       Enum.Events.Event.Action.FX_PREPARE,
       Enum.Events.Event.Action.FORWARDED,
       Enum.Events.Event.Action.FX_FORWARDED
-    ].includes(actionEnum);
+    ].includes(actionEnum as any);
 
     if (isFinalized) {
       if (isPrepare) {
@@ -402,12 +459,12 @@ export class PrepareHandler {
     };
   }
 
-  private async validateTransfer(payload: any, headers: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
+  private async validateTransfer(payload: CreateTransferDto, headers: any, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation): Promise<ValidationResult> {
     // Delegate to existing validator
     return await this.deps.validator.validatePrepare(payload, headers, isFx, determiningTransferCheckResult, proxyObligation);
   }
 
-  private async saveTransfer(payload: any, validation: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
+  private async saveTransfer(payload: CreateTransferDto, validation: ValidationResult, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation): Promise<void> {
     return await this.deps.savePreparedRequest({
       validationPassed: validation.validationPassed,
       reasons: validation.reasons,
@@ -421,7 +478,7 @@ export class PrepareHandler {
     });
   }
 
-  private async calculatePositionData(payload: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
+  private async calculatePositionData(payload: CreateTransferDto, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation): Promise<PositionData> {
     const result = await this.deps.definePositionParticipant({
       payload: proxyObligation.payloadClone,
       isFx,
