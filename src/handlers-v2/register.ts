@@ -13,6 +13,8 @@ import { GetHandler, GetHandlerDependencies } from './GetHandler'
 import { PositionHandler, PositionHandlerDependencies } from './PositionHandler'
 import { PrepareHandler, PrepareHandlerDependencies } from './PrepareHandler'
 import { TimeoutHandler, TimeoutHandlerDependencies } from './TimeoutHandler'
+import { FusedPrepareHandler, FusedPrepareHandlerDependencies } from './FusedPrepareHandler'
+import LegacyCompatibleLedger from 'src/domain/ledger-v2/LegacyCompatibleLedger'
 const { createLock } = require('../lib/distLock');
 
 const rethrow = Util.rethrow
@@ -179,6 +181,44 @@ export async function registerTimeoutHandlerV2(
   } catch (err) {
     logger.error('Error in registerTimeoutHandlerV2:', err);
     throw err;
+  }
+}
+
+export const createFusedPrepareHandler = (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  positionProducer: Kafka.Producer,
+  notificationProducer: Kafka.Producer,
+  ledger: LegacyCompatibleLedger
+) => {
+  const deps: FusedPrepareHandlerDependencies = {
+    positionProducer: new PositionProducer(positionProducer, config),
+    notificationProducer: new NotificationProducer(notificationProducer, config),
+    committer: new MessageCommitter(consumer),
+    config,
+    ledger,
+  }
+  const handler = new FusedPrepareHandler(deps)
+  return (error: any, message: any) => handler.handle(error, message)
+}
+
+export const registerFusedPrepareHandler = async (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  positionProducer: Kafka.Producer,
+  notificationProducer: Kafka.Producer,
+  ledger: LegacyCompatibleLedger
+): Promise<void> => {
+  try {
+    logger.debug(`registerFusedPrepareHandler registering`)
+
+    const handleMessage = createFusedPrepareHandler(
+      config, consumer, positionProducer, notificationProducer, ledger
+    )
+
+    consumer.consume(handleMessage)
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'registerFusedPrepareHandler' })
   }
 }
 

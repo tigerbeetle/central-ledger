@@ -12,13 +12,14 @@ const Logger = require('../shared/logger').logger
 
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
-import { 
-  registerAdminHandlerV2, 
-  registerFulfilHandlerV2, 
-  registerGetHandlerV2, 
-  registerPositionHandlerV2, 
-  registerPrepareHandlerV2, 
-  registerTimeoutHandlerV2 
+import {
+  registerAdminHandlerV2,
+  registerFulfilHandlerV2,
+  registerFusedPrepareHandler,
+  registerGetHandlerV2,
+  registerPositionHandlerV2,
+  registerPrepareHandlerV2,
+  registerTimeoutHandlerV2
 } from '../handlers-v2/register';
 import RegisterHandlers from '../handlers/register';
 import Db from '../lib/db';
@@ -33,6 +34,11 @@ import ParticipantLimitCached from '../models/participant/participantLimitCached
 import BatchPositionModelCached from '../models/position/batchCached';
 import Plugins from './plugins';
 import Provisioner from './provisioner';
+import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from 'src/domain/ledger-v2/LegacyCompatibleLedger';
+import { PositionKafkaMessage, PreparePositionsBatchResult } from 'src/handlers-v2/PositionHandler';
+import { TransferCheckResult, ValidationResult, Location, DuplicationCheckResult, DefinePositionParticipantResult } from 'src/handlers-v2/PrepareHandler';
+import { CreateTransferDto } from 'src/handlers-v2/types';
+import { ProxyObligation } from 'src/handlers/transfers/prepare';
 
 
 const USE_NEW_HANDLERS = true
@@ -68,6 +74,7 @@ export enum Service {
 
 export enum HandlerType {
   prepare = 'prepare',
+  fusedprepare = 'fusedprepare',
   position = 'position',
   positionbatch = 'positionbatch',
   fulfil = 'fulfil',
@@ -79,7 +86,6 @@ export enum HandlerType {
   bulkprocessing = 'bulkprocessing',
   bulkget = 'bulkget',
 }
-
 
 export async function initialize({
   config,
@@ -142,13 +148,18 @@ export async function initialize({
     // Initialize legacy handlers
     const legacyHandlers = await initializeHandlers(handlerTypes)
 
+    // ledger
+    const ledger = initializeLedger(config)
+
     // Initialize new V2 handlers with dependency injection
     consumers = await createConsumers(config)
     producers = await createProducers(config)
     let timeoutScheduler: TimeoutScheduler | undefined
     // TODO: rename handlers here to handlerTypes or something
     if (USE_NEW_HANDLERS) {
-      const v2Handlers = await initializeHandlersV2(config, handlerTypes, consumers, producers)
+      const v2Handlers = await initializeHandlersV2(
+        config, handlerTypes, consumers, producers, ledger
+      )
       timeoutScheduler = v2Handlers.timeoutScheduler
     }
 
@@ -199,12 +210,40 @@ export async function initialize({
         producers.notification.disconnect()
       }
     }
-    
+
     if (config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.disconnect()
     }
     process.exit(1)
   }
+}
+
+function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
+  // Existing business logic modules
+  const Validator = require('../handlers/transfers/validator')
+  const TransferService = require('../domain/transfer/index')
+  const ProxyCache = require('../lib/proxyCache')
+  const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
+  const createRemittanceEntity = require('../handlers/transfers/createRemittanceEntity')
+  const TransferObjectTransform = require('../domain/transfer/transform')
+  const PositionService = require('../domain/position')
+  const prepareModule = require('../handlers/transfers/prepare')
+
+  const deps: LegacyCompatibleLedgerDependencies = {
+    config,
+    validator: Validator,
+    transferService: TransferService,
+    proxyCache: ProxyCache,
+    comparators: Comparators,
+    createRemittanceEntity: createRemittanceEntity,
+    transferObjectTransform: TransferObjectTransform,
+    checkDuplication: prepareModule.checkDuplication,
+    savePreparedRequest: prepareModule.savePreparedRequest,
+    definePositionParticipant: prepareModule.definePositionParticipant,
+    calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
+    changeParticipantPosition: PositionService.changeParticipantPosition
+  }
+  return new LegacyCompatibleLedger(deps)
 }
 
 async function initializeMongoDB(config: ApplicationConfig): Promise<unknown> {
@@ -296,7 +335,7 @@ async function createConsumers(config: ApplicationConfig): Promise<Consumers> {
     Enum.Events.Event.Action.POSITION.toUpperCase(),
   );
   (configPosition as any).rdkafkaConf['client.id'] = topicNamePosition;
-  
+
   const configFulfil = KafkaUtil.getKafkaConfig(
     config.KAFKA_CONFIG,
     Enum.Kafka.Config.CONSUMER,
@@ -382,7 +421,8 @@ async function initializeHandlersV2(
   config: ApplicationConfig,
   handlerTypes: Array<HandlerType>,
   consumers: Consumers,
-  producers: Producers
+  producers: Producers,
+  ledger: LegacyCompatibleLedger
 ): Promise<{ timeoutScheduler?: TimeoutScheduler }> {
   let timeoutScheduler: TimeoutScheduler | undefined;
 
@@ -395,6 +435,13 @@ async function initializeHandlersV2(
         assert(producers.position)
         assert(producers.notification)
         await registerPrepareHandlerV2(config, consumers.prepare, producers.position, producers.notification)
+        break;
+      }
+      case HandlerType.fusedprepare: {
+        assert(consumers.prepare)
+        assert(producers.position)
+        assert(producers.notification)
+        await registerFusedPrepareHandler(config, consumers.prepare, producers.position, producers.notification, ledger)
         break;
       }
       case HandlerType.position: {

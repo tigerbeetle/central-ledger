@@ -16,7 +16,8 @@ const server = {
       modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),
       // TODO: specify which handlers to run in config
       handlerTypes: [
-        HandlerType.prepare,
+        // HandlerType.prepare
+        HandlerType.fusedprepare,
         HandlerType.position,
         HandlerType.fulfil,
         HandlerType.timeout,

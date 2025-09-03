@@ -8,32 +8,60 @@ import { logger } from '../../shared/logger';
 
 
 export enum PrepareResultType {
+  /**
+   * Prepare step completed validation
+   */
   PASS = 'PASS',
-  FAIL_DUPLICATE = 'FAIL_DUPLICATE',
+
+  /**
+   * Duplicate transfer found in a finalized state
+   */
+  DUPLICATE_FINAL = 'DUPLICATE_FINAL',
+
+  /**
+   * Duplicate transfer found that is still being processed
+   */
+  DUPLICATE_NON_FINAL = 'DUPLICATE_NON_FINAL',
+
+  /**
+   * Transfer failed validation
+   */
   FAIL_VALIDATION = 'FAIL_VALIDATION',
-  FAIL_LIQUIDITY = 'FAIL_TRANSFAIL_LIQUIDITYIENT',
+
+  /**
+   * Transfer failed as payee didn't have sufficent liquidity
+   */
+  FAIL_LIQUIDITY = 'FAIL_LIQUIDITY',
 }
 
-type PrepareResult = PrepareResultPass
-  | PrepareResultFailDuplicate
+export type PrepareResult = PrepareResultPass
+  | PrepareResultDuplicateFinal
+  | PrepareResultDuplicateNonFinal
   | PrepareResultFailValidation
   | PrepareResultFailLiquidity
 
-interface PrepareResultPass {
+export interface PrepareResultPass {
   type: PrepareResultType.PASS
 }
 
-interface PrepareResultFailDuplicate {
-  type: PrepareResultType.FAIL_DUPLICATE,
+export interface PrepareResultDuplicateFinal {
+  type: PrepareResultType.DUPLICATE_FINAL,
+  hasDuplicateHash: boolean,
+  // TODO(LD): add types to this!
+  finalisedTransfer: any
+}
+
+export interface PrepareResultDuplicateNonFinal {
+  type: PrepareResultType.DUPLICATE_NON_FINAL,
   hasDuplicateHash: boolean
 }
 
-interface PrepareResultFailValidation {
+export interface PrepareResultFailValidation {
   type: PrepareResultType.FAIL_VALIDATION,
   failureReasons: Array<string>
 }
 
-interface PrepareResultFailLiquidity {
+export interface PrepareResultFailLiquidity {
   type: PrepareResultType.FAIL_LIQUIDITY,
   fspiopError: any,
 }
@@ -92,11 +120,14 @@ export default class LegacyCompatibleLedger {
     const { payload, transferId, headers } = input;
     logger.debug(`prepare() - transferId: ${transferId}`)
 
+    
     const duplicateCheckResult = await this.checkForDuplicate(payload, transferId)
     if (duplicateCheckResult.hasDuplicateId) {
+      // TODO(LD): As part of the duplicate check, we need to check to see if the transfer
+      // is in a final state, or still being processed
       return {
-        type: PrepareResultType.FAIL_DUPLICATE,
-        hasDuplicateHash: duplicateCheckResult.hasDuplicateHash
+        type: PrepareResultType.DUPLICATE_NON_FINAL,
+        hasDuplicateHash: duplicateCheckResult.hasDuplicateHash,
       }
     }
 
@@ -110,7 +141,6 @@ export default class LegacyCompatibleLedger {
         failureReasons: validationResult.reasons,
       }
     }
-
 
     // TODO: do we need this?
     // const positionData = await this.calculatePositionData(payload);

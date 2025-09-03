@@ -8,7 +8,6 @@ import createRemittanceEntity from '../handlers/transfers/createRemittanceEntity
 import { CreateTransferDto } from './types';
 
 const { decodePayload } = Util.StreamingProtocol
-
 const rethrow = Util.rethrow;
 const { createFSPIOPError } = ErrorHandler.Factory;
 const { FSPIOPErrorCodes } = ErrorHandler.Enums;
