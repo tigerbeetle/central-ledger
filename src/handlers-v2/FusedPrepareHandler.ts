@@ -17,14 +17,9 @@ export interface FusedPrepareHandlerDependencies {
   positionProducer: IPositionProducer
   notificationProducer: INotificationProducer
   committer: IMessageCommitter
-
-  // TODO(LD): scope to just the required config here
   config: ApplicationConfig
-
-  // TODO(LD): make this the generic ledger interface
   ledger: LegacyCompatibleLedger
 }
-
 
 export interface FusedPrepareHandlerInput {
   message: any;
@@ -32,9 +27,6 @@ export interface FusedPrepareHandlerInput {
   headers: any;
   transferId: string;
   action: any;
-  isFx: boolean;
-  isBulk: boolean;
-  isForwarded: boolean;
   metric: string;
   functionality: CentralServicesShared.EventTypeEnum.TRANSFER;
   actionEnum: string;
@@ -97,13 +89,9 @@ export class FusedPrepareHandler {
 
     const transferId = payload.transferId
 
-    const action = message.value.metadata?.event?.action || 'prepare';
-
-    // TODO(LD): I really don't like passing around booleans like this
-    // copied from other parts of the code but this really needs a refactor
-    const isFx = action.toLowerCase().includes('fx');
-    const isBulk = action.toLowerCase().includes('bulk');
-    const isForwarded = action.toLowerCase().includes('forward');
+    const action = message.value.metadata.event.action
+    // Note: we currently only support prepare messages
+    assert.equal(action, 'prepare')
 
     return {
       message,
@@ -111,9 +99,6 @@ export class FusedPrepareHandler {
       headers,
       transferId,
       action,
-      isFx,
-      isBulk,
-      isForwarded,
       metric: `handler_transfers_${action.toLowerCase()}`,
       functionality: Enum.Events.Event.Type.TRANSFER,
       actionEnum: this.getActionEnum(action)

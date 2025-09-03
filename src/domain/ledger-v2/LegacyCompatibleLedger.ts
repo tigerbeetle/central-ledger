@@ -1,14 +1,14 @@
-import { DefinePositionParticipantResult, DuplicationCheckResult, Location, PositionData, PrepareMessageInput, TransferCheckResult, ValidationResult } from "src/handlers-v2/PrepareHandler";
-import { CreateTransferDto } from "src/handlers-v2/types";
-import { ProxyObligation } from "src/handlers/transfers/prepare";
-import { Enum } from '@mojaloop/central-services-shared';
-import { PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult, MessageContext } from "src/handlers-v2/PositionHandler";
-import assert from "assert";
-import { logger } from '../../shared/logger';
-import { ApplicationConfig } from "src/shared/config";
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
-
-import fspiopErrorFactory from "src/shared/fspiopErrorFactory";
+import { Enum } from '@mojaloop/central-services-shared';
+import assert from "assert";
+import { MessageContext, PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult } from "src/handlers-v2/PositionHandler";
+import { DefinePositionParticipantResult, DuplicationCheckResult, Location, TransferCheckResult, ValidationResult } from "src/handlers-v2/PrepareHandler";
+import { CommitTransferDto, CreateTransferDto } from "src/handlers-v2/types";
+import { ProxyObligation } from "src/handlers/transfers/prepare";
+import { ApplicationConfig } from "src/shared/config";
+import { logger } from '../../shared/logger';
+import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
+import { FusedFulfilHandlerInput } from 'src/handlers-v2/FusedFulfilHandler';
 
 
 export enum PrepareResultType {
@@ -43,8 +43,7 @@ export enum PrepareResultType {
   FAIL_OTHER = 'FAIL_OTHER',
 }
 
-
-export enum DuplicationResult {
+export enum PrepareDuplicateResult {
   /**
    * Transfer id is unique
    */
@@ -59,7 +58,55 @@ export enum DuplicationResult {
    * Transfer Id is the same, body is the same
    */
   DUPLICATED = 'DUPLICATED'
+}
 
+export enum FulfilDuplicateResult {
+  /**
+   * Message is unique
+   */
+  UNIQUE = 'UNIQUE',
+
+  /**
+   * Transfer Id is the same, body is different
+   */
+  MODIFIED = 'MODIFIED',
+
+  /**
+   * Transfer Id is the same, body is the same
+   */
+  DUPLICATED = 'DUPLICATED'
+}
+
+export enum FulfilResultType {
+  /**
+   * Fulfil step completed validation
+   */
+  PASS = 'PASS',
+
+  /**
+   * Duplicate transfer found in a finalized state
+   */
+  DUPLICATE_FINAL = 'DUPLICATE_FINAL',
+
+  /**
+   * Duplicate transfer found that is still being processed
+   */
+  DUPLICATE_NON_FINAL = 'DUPLICATE_NON_FINAL',
+
+  /**
+   * Transfer failed validation
+   */
+  FAIL_VALIDATION = 'FAIL_VALIDATION',
+
+  // /**
+  //  * Transfer failed as payee didn't have sufficent liquidity
+  //  */
+  // FAIL_LIQUIDITY = 'FAIL_LIQUIDITY',
+
+  /**
+   * Catch-all Transfer failed for another reason
+   */
+  FAIL_OTHER = 'FAIL_OTHER',
 }
 
 export type PrepareResult = PrepareResultPass
@@ -97,10 +144,38 @@ export interface PrepareResultFailOther {
   fspiopError: any,
 }
 
+export type FulfilResult = FulfilResultPass
+  | FulfilResultDuplicateFinal
+  | FulfilResultFailValidation
+  | FulfilResultFailOther
+
+export interface FulfilResultPass {
+  type: FulfilResultType.PASS
+}
+
+// TODO(LD): I don't know if we need to distinguish between final and non final
+// for the duplicated fulfils
+export interface FulfilResultDuplicateFinal {
+  type: FulfilResultType.DUPLICATE_FINAL,
+}
+
+export interface FulfilResultFailValidation {
+  type: FulfilResultType.FAIL_VALIDATION,
+  fspiopError: any,
+}
+
+export interface FulfilResultFailOther {
+  type: FulfilResultType.FAIL_OTHER,
+  fspiopError: any,
+}
+
+
+
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
 
   // Business logic dependencies - injected from existing modules
+  // TODO: type all of these and simplify!
   validator: {
     validatePrepare: (payload: CreateTransferDto, headers: any, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation) => Promise<ValidationResult>;
     validateParticipantByName: (participantName: string) => Promise<boolean>;
@@ -109,6 +184,8 @@ export interface LegacyCompatibleLedgerDependencies {
     [key: string]: any;
   };
   transferService: any;
+  participantFacade: any;
+  positionService: any,
   proxyCache: any;
   comparators: any;
   createRemittanceEntity: any;
@@ -139,7 +216,7 @@ export interface LegacyCompatibleLedgerDependencies {
 
   calculatePreparePositionsBatch: (transferList: PositionKafkaMessage[]) => Promise<PreparePositionsBatchResult>;
   changeParticipantPosition: (participantCurrencyId: string, isReversal: boolean, amount: string, transferStateChange: any) => Promise<any>;
-  getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{currencyIsActive: boolean}>
+  getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>
 }
 
 export default class LegacyCompatibleLedger {
@@ -147,13 +224,13 @@ export default class LegacyCompatibleLedger {
 
   }
 
-  public async prepare(input: PrepareMessageInput): Promise<PrepareResult> {
+  public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
     const { payload, transferId, headers } = input;
     logger.debug(`prepare() - transferId: ${transferId}`)
 
-    const duplicationResult = await this.checkForDuplicate(payload, transferId)
-    switch (duplicationResult) {
-      case DuplicationResult.DUPLICATED: {
+    const duplicateResult = await this.checkPrepareDuplicate(payload, transferId)
+    switch (duplicateResult) {
+      case PrepareDuplicateResult.DUPLICATED: {
         const transfer = await this.deps.transferService.getById(transferId)
         assert(transfer.transferStateEnumeration)
         const finalizedStates = [
@@ -166,7 +243,7 @@ export default class LegacyCompatibleLedger {
           const payload = this.deps.transferObjectTransform.toFulfil(transfer, false)
           return {
             type: PrepareResultType.DUPLICATE_FINAL,
-            finalisedTransfer: payload, 
+            finalisedTransfer: payload,
           }
         }
 
@@ -174,13 +251,13 @@ export default class LegacyCompatibleLedger {
           type: PrepareResultType.DUPLICATE_NON_FINAL
         }
       }
-      case DuplicationResult.MODIFIED: {
+      case PrepareDuplicateResult.MODIFIED: {
         return {
           type: PrepareResultType.FAIL_OTHER,
           fspiopError: ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST),
         }
       }
-      case DuplicationResult.UNIQUE:
+      case PrepareDuplicateResult.UNIQUE:
       default: { }
     }
 
@@ -232,33 +309,192 @@ export default class LegacyCompatibleLedger {
     }
   }
 
-  public async fulfil(): Promise<unknown> {
-    throw new Error(`not implemented`)
+  public async fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
+    const { payload, transferId, headers } = input;
+    logger.debug(`fulfil() - transferId: ${transferId}`)
+
+    if (input.action === Enum.Events.Event.Action.ABORT) {
+      throw new Error(`not implemented`)
+    }
+
+    try {
+      // TODO(LD): we changed the order of processing here to include the condition
+      // which might change some of the error messages
+      await this.validateFulfilMessage(input)
+    } catch (err) {
+      return {
+        type: FulfilResultType.FAIL_VALIDATION,
+        fspiopError: err
+      }
+    }
+
+    const duplicateResult = await this.checkFulfilDuplicate(payload, transferId)
+    switch (duplicateResult) {
+      case FulfilDuplicateResult.DUPLICATED: {
+        return {
+          type: FulfilResultType.DUPLICATE_FINAL
+        }
+      }
+      case FulfilDuplicateResult.MODIFIED: {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST,
+            'Transfer fulfil has been modified'
+          ),
+        }
+      }
+      case FulfilDuplicateResult.UNIQUE:
+      default: { }
+    }
+
+    // save the fulfil response
+    await this.deps.transferService.handlePayeeResponse(transferId, payload, input.action);
+
+    // Update the positions
+    logger.info(`Processing position commit for transfer: ${transferId}`);
+    try {
+      // Get transfer info to change position for PAYEE
+      const transferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
+        transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      // Get participant currency info
+      const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
+        transferInfo.participantId,
+        transferInfo.currencyId,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // Validate transfer state - must be RECEIVED_FULFIL
+      if (transferInfo.transferStateId !== Enum.Transfers.TransferInternalState.RECEIVED_FULFIL) {
+        const expectedState = Enum.Transfers.TransferInternalState.RECEIVED_FULFIL;
+        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Invalid State: ${transferInfo.transferStateId} - expected: ${expectedState}`
+        );
+
+        logger.error(`Position commit validation failed - invalid state for transfer: ${transferId}`, {
+          currentState: transferInfo.transferStateId,
+          expectedState
+        });
+
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          fspiopError
+        }
+      }
+
+      logger.info(`Position commit validation passed for transfer: ${transferId}`);
+
+      // Change participant position (not a reversal for commit)
+      const isReversal = false;
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferState.COMMITTED
+      };
+
+      await this.deps.positionService.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      logger.info(`Position commit processed successfully for transfer: ${transferId}`, {
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount
+      });
+
+      return {
+        type: FulfilResultType.PASS
+      }
+
+    } catch (error) {
+      logger.error(`Position commit failed for transfer: ${transferId}`, { error: error.message });
+      return {
+        type: FulfilResultType.FAIL_OTHER,
+        fspiopError: error
+      }
+    }
+  }
+
+  private async validateFulfilMessage(input: FusedFulfilHandlerInput): Promise<void> {
+    const { transferId, payload, message: { value: { from } }, headers } = input;
+
+    // make sure the sender exists
+    if (!await this.deps.validator.validateParticipantByName(from)) {
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND, 'Participant not found');
+    }
+
+    // Get transfer details
+    const transfer = await this.deps.transferService.getById(transferId);
+    if (!transfer) {
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND, 'Transfer ID not found');
+    }
+
+    if (!await this.deps.validator.validateParticipantTransferId(from, transferId)) {
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant not associated with transfer');
+    }
+
+    if (headers[Enum.Http.Headers.FSPIOP.SOURCE].toLowerCase() !== transfer.payeeFsp.toLowerCase()) {
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'FSPIOP-Source header does not match transfer payee');
+    }
+
+    if (headers[Enum.Http.Headers.FSPIOP.DESTINATION].toLowerCase() !== transfer.payerFsp.toLowerCase()) {
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'FSPIOP-Destination header does not match transfer payer');
+    }
+
+    assert(payload.fulfilment, 'payload.fulfilment not found')
+    if (!this.deps.validator.validateFulfilCondition(payload.fulfilment, transfer.condition)) {
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'Invalid fulfilment');
+    }
+
   }
 
 
   /**
    * Shim Methods to improve usability before refactoring
    */
-  private async checkForDuplicate(payload: CreateTransferDto, transferId: string): Promise<DuplicationResult> {
-    const checkDuplicationResult = await this.deps.checkDuplication({
+  private async checkPrepareDuplicate(payload: CreateTransferDto, transferId: string): Promise<PrepareDuplicateResult> {
+    const checkDuplicateResult = await this.deps.checkDuplication({
       payload,
       isFx: false,
       ID: transferId,
       location: { module: 'PrepareHandler', method: 'checkDuplication', path: '' }
     });
 
-    if (checkDuplicationResult.hasDuplicateHash && checkDuplicationResult.hasDuplicateId) {
-      return DuplicationResult.DUPLICATED
+    if (checkDuplicateResult.hasDuplicateHash && checkDuplicateResult.hasDuplicateId) {
+      return PrepareDuplicateResult.DUPLICATED
     }
 
-    if (checkDuplicationResult.hasDuplicateId) {
-      return DuplicationResult.MODIFIED
+    if (checkDuplicateResult.hasDuplicateId) {
+      return PrepareDuplicateResult.MODIFIED
     }
 
     // transfers should be unique
-    assert(checkDuplicationResult.hasDuplicateHash === false)
-    return DuplicationResult.UNIQUE
+    assert(checkDuplicateResult.hasDuplicateHash === false)
+    return PrepareDuplicateResult.UNIQUE
+  }
+
+  private async checkFulfilDuplicate(payload: CommitTransferDto, transferId: string): Promise<FulfilDuplicateResult> {
+    const checkDuplicateResult = await this.deps.comparators.duplicateCheckComparator(
+      transferId,
+      payload,
+      this.deps.transferService.getTransferFulfilmentDuplicateCheck,
+      this.deps.transferService.saveTransferFulfilmentDuplicateCheck
+    )
+
+    if (checkDuplicateResult.hasDuplicateHash && checkDuplicateResult.hasDuplicateId) {
+      return FulfilDuplicateResult.DUPLICATED
+    }
+
+    if (checkDuplicateResult.hasDuplicateId && !checkDuplicateResult.hasDuplicateHash) {
+      return FulfilDuplicateResult.MODIFIED
+    }
+
+    return FulfilDuplicateResult.UNIQUE
   }
 
   private async validateParticipants(payload: CreateTransferDto): Promise<ValidationResult> {
@@ -276,7 +512,7 @@ export default class LegacyCompatibleLedger {
     // First check if participants exist and are active
     const payerValid = await this.deps.validator.validateParticipantByName(payerId);
     const payeeValid = await this.deps.validator.validateParticipantByName(payeeId);
-    
+
     if (!payerValid || !payeeValid) {
       return {
         validationPassed: false,
@@ -399,7 +635,7 @@ export default class LegacyCompatibleLedger {
    * @param input - The prepare message input containing the original Kafka message
    * @returns MessageContext with fields needed for position processing
    */
-  static extractMessageContext(input: PrepareMessageInput): MessageContext {
+  static extractMessageContext(input: FusedPrepareHandlerInput): MessageContext {
     const message = input.message;
 
     return {

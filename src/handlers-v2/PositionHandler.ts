@@ -405,7 +405,8 @@ export class PositionHandler {
       await this.sendSuccessNotification(input, message);
 
       // Send settlement notification
-      await this.sendSettlementNotification(input, message, transferInfo);
+      // I think claude hallucinated this
+      // await this.sendSettlementNotification(input, message, transferInfo);
 
       logger.info(`Position commit processed successfully for transfer: ${transferId}`, {
         participantCurrencyId: participantCurrency.participantCurrencyId,
