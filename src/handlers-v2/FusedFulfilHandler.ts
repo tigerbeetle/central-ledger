@@ -12,8 +12,6 @@ import * as EventSdk from '@mojaloop/event-sdk';
 
 const { decodePayload } = Util.StreamingProtocol
 const rethrow = Util.rethrow;
-const { createFSPIOPError } = ErrorHandler.Factory;
-const { FSPIOPErrorCodes } = ErrorHandler.Enums;
 
 
 export interface FusedFulfilHandlerDependencies {
@@ -24,7 +22,9 @@ export interface FusedFulfilHandlerDependencies {
   ledger: LegacyCompatibleLedger
 }
 
-export type SupportedFulfilHandlerAction = EventActionEnum.ABORT | EventActionEnum.COMMIT | EventActionEnum.RESERVE;
+export type SupportedFulfilHandlerAction = EventActionEnum.ABORT 
+  | EventActionEnum.COMMIT 
+  | EventActionEnum.RESERVE;
 
 export interface FusedFulfilHandlerInput {
   message: any;
@@ -62,8 +62,7 @@ export class FusedFulfilHandler {
 
     try {
       assert.equal(input.eventType, Enum.Events.Event.Type.FULFIL, 'Expected event type to be `FULFIL`')
-      const contextFromMessage = EventSdk.Tracer.extractContextFromMessage(message.value);
-      
+            
       // Process the fulfil message
       const result = await this.deps.ledger.fulfil(input)
       await this.deps.committer.commit(message);

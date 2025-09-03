@@ -167,7 +167,7 @@ export class TimeoutHandler {
               from: this.deps.config.HUB_NAME,
               to: destination,
               headers,
-              payload: error,
+              payload: JSON.stringify(error.toApiErrorObject()),
               metadata: message.metadata
             });
           }
@@ -191,7 +191,7 @@ export class TimeoutHandler {
               from: this.deps.config.HUB_NAME,
               to: destination,
               headers,
-              payload: error,
+              payload: JSON.stringify(error.toApiErrorObject()),
               metadata: message.metadata
             });
           }

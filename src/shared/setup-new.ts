@@ -232,15 +232,29 @@ function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
 
   const deps: LegacyCompatibleLedgerDependencies = {
     config,
-    validator: Validator,
-    transferService: TransferService,
-    proxyCache: ProxyCache,
-    comparators: Comparators,
-    createRemittanceEntity: createRemittanceEntity,
-    transferObjectTransform: TransferObjectTransform,
+    
+    // Validation functions (flattened from validator)
+    validatePrepare: Validator.validatePrepare,
+    validateParticipantByName: Validator.validateParticipantByName,
+    validatePositionAccountByNameAndCurrency: Validator.validatePositionAccountByNameAndCurrency,
+    validateParticipantTransferId: Validator.validateParticipantTransferId,
+    validateFulfilCondition: Validator.validateFulfilCondition,
+    validationReasons: Validator.reasons,
+    
+    // Transfer service functions (flattened from transferService)
+    handlePayeeResponse: TransferService.handlePayeeResponse,
+    getTransferById: TransferService.getById,
+    getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
+    getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
+    saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
+    
+    // Utility functions (flattened from nested objects)
+    transformTransferToFulfil: TransferObjectTransform.toFulfil,
+    duplicateCheckComparator: Comparators.duplicateCheckComparator,
+    
+    // Existing top-level functions
     checkDuplication: prepareModule.checkDuplication,
     savePreparedRequest: prepareModule.savePreparedRequest,
-    definePositionParticipant: prepareModule.definePositionParticipant,
     calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
     changeParticipantPosition: PositionService.changeParticipantPosition,
     getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,

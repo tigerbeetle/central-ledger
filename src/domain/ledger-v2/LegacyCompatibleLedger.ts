@@ -1,14 +1,125 @@
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
+import { FSPIOPError } from '@mojaloop/central-services-error-handling';
 import { Enum } from '@mojaloop/central-services-shared';
 import assert from "assert";
+import { FusedFulfilHandlerInput } from 'src/handlers-v2/FusedFulfilHandler';
+import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { MessageContext, PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult } from "src/handlers-v2/PositionHandler";
-import { DefinePositionParticipantResult, DuplicationCheckResult, Location, TransferCheckResult, ValidationResult } from "src/handlers-v2/PrepareHandler";
+import { DuplicationCheckResult, Location, TransferCheckResult, ValidationResult } from "src/handlers-v2/PrepareHandler";
 import { CommitTransferDto, CreateTransferDto } from "src/handlers-v2/types";
 import { ProxyObligation } from "src/handlers/transfers/prepare";
 import { ApplicationConfig } from "src/shared/config";
 import { logger } from '../../shared/logger';
-import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
-import { FusedFulfilHandlerInput } from 'src/handlers-v2/FusedFulfilHandler';
+
+// Type definitions for participant facade functions
+export interface ParticipantWithCurrency {
+  // From participant table
+  participantId: number;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdDate: string;
+  createdBy: string;
+  
+  // From participantCurrency table (added when currency is found)
+  participantCurrencyId: number;
+  currencyId: string;
+  currencyIsActive: boolean;
+}
+
+export interface TransferStateChange {
+  transferId: string;
+  transferStateId: string | number;
+  reason?: string;
+  createdDate?: string;
+}
+
+// Transfer service function types
+export interface Extension {
+  key: string;
+  value: string;
+  isError?: boolean;
+  isFulfilment?: boolean;
+}
+
+export interface ExtensionList {
+  extension: Extension[];
+}
+
+export interface Amount {
+  amount: string;
+  currency: string;
+}
+
+
+export interface FulfilmentPayload {
+  fulfilment?: string;
+  completedTimestamp?: string;
+  extensionList?: ExtensionList;
+}
+
+export interface ErrorPayload {
+  errorInformation: {
+    errorCode: string;
+    errorDescription: string;
+    extensionList?: ExtensionList;
+  };
+}
+
+export type PayeeResponsePayload = FulfilmentPayload | ErrorPayload;
+
+
+export interface TransformredTransfer {
+  transferId: string;
+  transferState: string;
+  completedTimestamp: string;
+  fulfilment?: string;
+  extensionList?: Extension[];
+}
+
+export interface TransferReadModel {
+  transferId: string;
+  amount: string;
+  currency: string;
+  payerParticipantCurrencyId?: number;
+  payerAmount: string;
+  payerParticipantId: number;
+  payerFsp: string;
+  payerIsProxy: boolean;
+  payeeParticipantCurrencyId?: number;
+  payeeAmount: string;
+  payeeParticipantId: number;
+  payeeFsp: string;
+  payeeIsProxy: boolean;
+  transferStateChangeId: number;
+  transferState: string;
+  reason?: string;
+  completedTimestamp: string;
+  transferStateEnumeration: string;
+  transferStateDescription: string;
+  ilpPacket: string;
+  condition: string;
+  fulfilment?: string;
+  errorCode?: string;
+  errorDescription?: string;
+  externalPayerName?: string;
+  externalPayeeName?: string;
+  extensionList?: Extension[];
+  isTransferReadModel: true;
+}
+
+export interface TransferParticipantInfo {
+  transferId: string;
+  participantId: number;
+  participantCurrencyId?: number;
+  transferParticipantRoleTypeId: number;
+  ledgerEntryTypeId: number;
+  amount: string;
+  externalParticipantId?: number;
+  currencyId: string;
+  transferStateId: string;
+  reason?: string;
+}
 
 
 export enum PrepareResultType {
@@ -98,11 +209,6 @@ export enum FulfilResultType {
    */
   FAIL_VALIDATION = 'FAIL_VALIDATION',
 
-  // /**
-  //  * Transfer failed as payee didn't have sufficent liquidity
-  //  */
-  // FAIL_LIQUIDITY = 'FAIL_LIQUIDITY',
-
   /**
    * Catch-all Transfer failed for another reason
    */
@@ -137,11 +243,11 @@ export interface PrepareResultFailValidation {
 
 export interface PrepareResultFailLiquidity {
   type: PrepareResultType.FAIL_LIQUIDITY,
-  fspiopError: any,
+  fspiopError: FSPIOPError,
 }
 export interface PrepareResultFailOther {
   type: PrepareResultType.FAIL_OTHER,
-  fspiopError: any,
+  fspiopError: FSPIOPError,
 }
 
 export type FulfilResult = FulfilResultPass
@@ -153,48 +259,50 @@ export interface FulfilResultPass {
   type: FulfilResultType.PASS
 }
 
-// TODO(LD): I don't know if we need to distinguish between final and non final
-// for the duplicated fulfils
 export interface FulfilResultDuplicateFinal {
   type: FulfilResultType.DUPLICATE_FINAL,
 }
 
 export interface FulfilResultFailValidation {
   type: FulfilResultType.FAIL_VALIDATION,
-  fspiopError: any,
+  fspiopError: FSPIOPError,
 }
 
 export interface FulfilResultFailOther {
   type: FulfilResultType.FAIL_OTHER,
-  fspiopError: any,
+  fspiopError: FSPIOPError,
 }
-
-
 
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
 
-  // Business logic dependencies - injected from existing modules
-  // TODO: type all of these and simplify!
-  validator: {
-    validatePrepare: (payload: CreateTransferDto, headers: any, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation) => Promise<ValidationResult>;
-    validateParticipantByName: (participantName: string) => Promise<boolean>;
-    validatePositionAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<boolean>;
-    reasons: string[];
-    [key: string]: any;
-  };
-  transferService: {
-    handlePayeeResponse: any,
-    getById: (transferId: string) => Promise<any>
-    getTransferInfoToChangePosition: (thing1: any, thing2: any, thing3: any) => Promise<any>
-    getTransferFulfilmentDuplicateCheck: any,
-    saveTransferFulfilmentDuplicateCheck: any,
-  };
+  // Validation functions
+  validatePrepare: (
+    payload: CreateTransferDto, 
+    headers: any, 
+    isFx: boolean, 
+    determiningTransferCheckResult: TransferCheckResult,
+    proxyObligation: ProxyObligation
+  ) => Promise<ValidationResult>;
+  validateParticipantByName: (participantName: string) => Promise<boolean>;
+  validatePositionAccountByNameAndCurrency: (
+    participantName: string, 
+    currency: string
+  ) => Promise<boolean>;
+  validateParticipantTransferId: (participantName: string, transferId: string) => Promise<boolean>;
+  validateFulfilCondition: (fulfilment: string, condition: string) => boolean;
+  validationReasons: string[];
 
-  proxyCache: any;
-  comparators: any;
-  createRemittanceEntity: any;
-  transferObjectTransform: any;
+  // Transfer service functions
+  handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any) => Promise<TransformredTransfer>;
+  getTransferById: (transferId: string) => Promise<TransferReadModel | null>;
+  getTransferInfoToChangePosition: (transferId: string, roleType: any, entryType: any) => Promise<TransferParticipantInfo | null>;
+  getTransferFulfilmentDuplicateCheck: any;
+  saveTransferFulfilmentDuplicateCheck: any;
+
+  // Utility functions
+  transformTransferToFulfil: (transfer: any, isFx: boolean) => any;
+  duplicateCheckComparator: (transferId: string, payload: any, getCheck: any, saveCheck: any) => Promise<any>;
   checkDuplication: (args: {
     payload: CreateTransferDto,
     isFx: boolean,
@@ -212,16 +320,10 @@ export interface LegacyCompatibleLedgerDependencies {
     determiningTransferCheckResult: TransferCheckResult,
     proxyObligation: ProxyObligation
   }) => Promise<void>;
-  definePositionParticipant: (args: {
-    payload: CreateTransferDto,
-    isFx: boolean,
-    determiningTransferCheckResult: TransferCheckResult,
-    proxyObligation: ProxyObligation
-  }) => Promise<DefinePositionParticipantResult>;
-  getByIDAndCurrency: (thing1: any, thing2: any, thing3: any) => Promise<any>
+  getByIDAndCurrency: (participantId: number, currencyId: string, ledgerAccountTypeId: number, isCurrencyActive?: boolean) => Promise<ParticipantWithCurrency | null>;
   calculatePreparePositionsBatch: (transferList: PositionKafkaMessage[]) => Promise<PreparePositionsBatchResult>;
-  changeParticipantPosition: (participantCurrencyId: string, isReversal: boolean, amount: string, transferStateChange: any) => Promise<any>;
-  getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>
+  changeParticipantPosition: (participantCurrencyId: number, isReversal: boolean, amount: number | string, transferStateChange: TransferStateChange) => Promise<void>;
+  getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>;
 }
 
 export default class LegacyCompatibleLedger {
@@ -236,16 +338,16 @@ export default class LegacyCompatibleLedger {
     const duplicateResult = await this.checkPrepareDuplicate(payload, transferId)
     switch (duplicateResult) {
       case PrepareDuplicateResult.DUPLICATED: {
-        const transfer = await this.deps.transferService.getById(transferId)
+        const transfer = await this.deps.getTransferById(transferId)
         assert(transfer.transferStateEnumeration)
         const finalizedStates = [
           Enum.Transfers.TransferState.COMMITTED,
           Enum.Transfers.TransferState.ABORTED,
           Enum.Transfers.TransferState.RESERVED
-        ];
+        ].map(e => e.toString())
 
         if (finalizedStates.includes(transfer.transferStateEnumeration)) {
-          const payload = this.deps.transferObjectTransform.toFulfil(transfer, false)
+          const payload = this.deps.transformTransferToFulfil(transfer, false)
           return {
             type: PrepareResultType.DUPLICATE_FINAL,
             finalisedTransfer: payload,
@@ -354,13 +456,13 @@ export default class LegacyCompatibleLedger {
     }
 
     // save the fulfil response
-    await this.deps.transferService.handlePayeeResponse(transferId, payload, input.action);
+    await this.deps.handlePayeeResponse(transferId, payload, input.action);
 
     // Update the positions
     logger.info(`Processing position commit for transfer: ${transferId}`);
     try {
       // Get transfer info to change position for PAYEE
-      const transferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
+      const transferInfo = await this.deps.getTransferInfoToChangePosition(
         transferId,
         Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
         Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
@@ -429,17 +531,17 @@ export default class LegacyCompatibleLedger {
     const { transferId, payload, message: { value: { from } }, headers } = input;
 
     // make sure the sender exists
-    if (!await this.deps.validator.validateParticipantByName(from)) {
+    if (!await this.deps.validateParticipantByName(from)) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND, 'Participant not found');
     }
 
     // Get transfer details
-    const transfer = await this.deps.transferService.getById(transferId);
+    const transfer = await this.deps.getTransferById(transferId);
     if (!transfer) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND, 'Transfer ID not found');
     }
 
-    if (!await this.deps.validator.validateParticipantTransferId(from, transferId)) {
+    if (!await this.deps.validateParticipantTransferId(from, transferId)) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant not associated with transfer');
     }
 
@@ -452,12 +554,10 @@ export default class LegacyCompatibleLedger {
     }
 
     assert(payload.fulfilment, 'payload.fulfilment not found')
-    if (!this.deps.validator.validateFulfilCondition(payload.fulfilment, transfer.condition)) {
+    if (!this.deps.validateFulfilCondition(payload.fulfilment, transfer.condition)) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'Invalid fulfilment');
     }
-
   }
-
 
   /**
    * Shim Methods to improve usability before refactoring
@@ -484,11 +584,11 @@ export default class LegacyCompatibleLedger {
   }
 
   private async checkFulfilDuplicate(payload: CommitTransferDto, transferId: string): Promise<FulfilDuplicateResult> {
-    const checkDuplicateResult = await this.deps.comparators.duplicateCheckComparator(
+    const checkDuplicateResult = await this.deps.duplicateCheckComparator(
       transferId,
       payload,
-      this.deps.transferService.getTransferFulfilmentDuplicateCheck,
-      this.deps.transferService.saveTransferFulfilmentDuplicateCheck
+      this.deps.getTransferFulfilmentDuplicateCheck,
+      this.deps.saveTransferFulfilmentDuplicateCheck
     )
 
     if (checkDuplicateResult.hasDuplicateHash && checkDuplicateResult.hasDuplicateId) {
@@ -515,8 +615,8 @@ export default class LegacyCompatibleLedger {
     const currency = payload.amount.currency
 
     // First check if participants exist and are active
-    const payerValid = await this.deps.validator.validateParticipantByName(payerId);
-    const payeeValid = await this.deps.validator.validateParticipantByName(payeeId);
+    const payerValid = await this.deps.validateParticipantByName(payerId);
+    const payeeValid = await this.deps.validateParticipantByName(payeeId);
 
     if (!payerValid || !payeeValid) {
       return {
@@ -525,47 +625,16 @@ export default class LegacyCompatibleLedger {
       };
     }
 
-    let validationPassed = true
-    let reasons: Array<string> = []
-
-    const payerAccountValid = await this.deps.validator.validatePositionAccountByNameAndCurrency(payerId, currency)
-    const payeeAccountValid = await this.deps.validator.validatePositionAccountByNameAndCurrency(payeeId, currency)
+    const payerAccountValid = await this.deps.validatePositionAccountByNameAndCurrency(payerId, currency)
+    const payeeAccountValid = await this.deps.validatePositionAccountByNameAndCurrency(payeeId, currency)
 
     if (!payerAccountValid || !payeeAccountValid) {
       return {
         validationPassed: false,
         // TODO(LD): nasty globals here
-        reasons: [this.deps.validator.reasons[0]]
+        reasons: [this.deps.validationReasons[0]]
       }
     }
-
-    // TODO: reinstate this - this was failing because of import issues with the database
-    // const payerAccount = await this.deps.getAccountByNameAndCurrency(payerId, currency)
-    // if (!payerAccount) {
-    //   validationPassed = false
-    //   reasons.push(`Participant ${payerId} ${currency} account not found`)
-    // }
-    // if (payerAccount && payerAccount.currencyIsActive === false) {
-    //   validationPassed = false
-    //   reasons.push(`Participant ${payerId} ${currency} account is inactive`)
-    // }
-
-    // const payeeAccount = await this.deps.getAccountByNameAndCurrency(payeeId, currency)
-    // if (!payeeAccount) {
-    //   validationPassed = false
-    //   reasons.push(`Participant ${payeeId} ${currency} account not found`)
-    // }
-    // if (payeeAccount && payerAccount.currencyIsActive === false) {
-    //   validationPassed = false
-    //   reasons.push(`Participant ${payeeId} ${currency} account is inactive`)
-    // }
-
-    // if (!validationPassed) {
-    //   return {
-    //     validationPassed,
-    //     reasons
-    //   };
-    // }
 
     return {
       validationPassed: true,
@@ -578,7 +647,7 @@ export default class LegacyCompatibleLedger {
     const determiningTransferCheckResult = this.createMinimalTransferCheckResult()
     const proxyObligation = this.createMinimalProxyObligation(payload)
 
-    return await this.deps.validator.validatePrepare(
+    return await this.deps.validatePrepare(
       payload,
       headers,
       isFx,
@@ -658,9 +727,6 @@ export default class LegacyCompatibleLedger {
 
   /**
    * Creates a minimal Kafka message for position processing from a transfer DTO and context
-   * @param payload - The transfer data (contains transferId, amount, payerFsp, payeeFsp, etc.)
-   * @param messageContext - Additional context needed for the Kafka message structure
-   * @returns A properly formatted PositionKafkaMessage for calculatePreparePositionsBatch
    */
   static createMinimalPositionKafkaMessage(
     payload: CreateTransferDto,
