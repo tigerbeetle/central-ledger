@@ -183,9 +183,14 @@ export interface LegacyCompatibleLedgerDependencies {
     reasons: string[];
     [key: string]: any;
   };
-  transferService: any;
-  participantFacade: any;
-  positionService: any,
+  transferService: {
+    handlePayeeResponse: any,
+    getById: (transferId: string) => Promise<any>
+    getTransferInfoToChangePosition: (thing1: any, thing2: any, thing3: any) => Promise<any>
+    getTransferFulfilmentDuplicateCheck: any,
+    saveTransferFulfilmentDuplicateCheck: any,
+  };
+
   proxyCache: any;
   comparators: any;
   createRemittanceEntity: any;
@@ -213,7 +218,7 @@ export interface LegacyCompatibleLedgerDependencies {
     determiningTransferCheckResult: TransferCheckResult,
     proxyObligation: ProxyObligation
   }) => Promise<DefinePositionParticipantResult>;
-
+  getByIDAndCurrency: (thing1: any, thing2: any, thing3: any) => Promise<any>
   calculatePreparePositionsBatch: (transferList: PositionKafkaMessage[]) => Promise<PreparePositionsBatchResult>;
   changeParticipantPosition: (participantCurrencyId: string, isReversal: boolean, amount: string, transferStateChange: any) => Promise<any>;
   getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>
@@ -362,7 +367,7 @@ export default class LegacyCompatibleLedger {
       );
 
       // Get participant currency info
-      const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
+      const participantCurrency = await this.deps.getByIDAndCurrency(
         transferInfo.participantId,
         transferInfo.currencyId,
         Enum.Accounts.LedgerAccountType.POSITION
@@ -395,7 +400,7 @@ export default class LegacyCompatibleLedger {
         transferStateId: Enum.Transfers.TransferState.COMMITTED
       };
 
-      await this.deps.positionService.changeParticipantPosition(
+      await this.deps.changeParticipantPosition(
         participantCurrency.participantCurrencyId,
         isReversal,
         transferInfo.amount,

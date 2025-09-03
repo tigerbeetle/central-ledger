@@ -15,6 +15,7 @@ import { PrepareHandler, PrepareHandlerDependencies } from './PrepareHandler'
 import { TimeoutHandler, TimeoutHandlerDependencies } from './TimeoutHandler'
 import { FusedPrepareHandler, FusedPrepareHandlerDependencies } from './FusedPrepareHandler'
 import LegacyCompatibleLedger from 'src/domain/ledger-v2/LegacyCompatibleLedger'
+import { FusedFulfilHandler, FusedFulfilHandlerDependencies } from './FusedFulfilHandler'
 const { createLock } = require('../lib/distLock');
 
 const rethrow = Util.rethrow
@@ -326,6 +327,44 @@ export const registerFulfilHandlerV2 = async (
 
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'registerFulfilHandlerV2' })
+  }
+}
+
+export const createFusedFulfilHandler = (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  positionProducer: Kafka.Producer,
+  notificationProducer: Kafka.Producer,
+  ledger: LegacyCompatibleLedger
+) => {
+  const deps: FusedFulfilHandlerDependencies = {
+    positionProducer: new PositionProducer(positionProducer, config),
+    notificationProducer: new NotificationProducer(notificationProducer, config),
+    committer: new MessageCommitter(consumer),
+    config,
+    ledger,
+  }
+  const handler = new FusedFulfilHandler(deps)
+  return (error: any, message: any) => handler.handle(error, message)
+}
+
+export const registerFusedFulfilHandler = async (
+  config: ApplicationConfig,
+  consumer: Kafka.Consumer,
+  positionProducer: Kafka.Producer,
+  notificationProducer: Kafka.Producer,
+  ledger: LegacyCompatibleLedger
+): Promise<void> => {
+  try {
+    logger.debug(`registerFusedFulfilHandler registering`)
+
+    const handleMessage = createFusedFulfilHandler(
+      config, consumer, positionProducer, notificationProducer, ledger
+    )
+
+    consumer.consume(handleMessage)
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'registerFusedFulfilHandler' })
   }
 }
 

@@ -1,12 +1,12 @@
-import { IPositionProducer, INotificationProducer, IMessageCommitter, ProcessResult } from '../messaging/types';
-import CentralServicesShared, { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
-import { logger } from '../shared/logger';
-import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
+import * as Metrics from '@mojaloop/central-services-metrics';
+import { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
 import assert from 'assert';
-import { CommitTransferDto, CreateTransferDto } from './types';
+import LegacyCompatibleLedger, { FulfilResult, FulfilResultType } from '../domain/ledger-v2/LegacyCompatibleLedger';
+import { IMessageCommitter, INotificationProducer, IPositionProducer } from '../messaging/types';
 import { ApplicationConfig } from '../shared/config';
-import LegacyCompatibleLedger, { FulfilResult, FulfilResultType, PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from '../domain/ledger-v2/LegacyCompatibleLedger';
+import { logger } from '../shared/logger';
+import { CommitTransferDto } from './types';
 
 import * as EventSdk from '@mojaloop/event-sdk';
 
@@ -147,6 +147,8 @@ export class FusedFulfilHandler {
         assert(input.message.value.content)
         assert(input.message.value.content.payload)
         assert(input.message.value.metadata)
+
+        // TODO: we need to send a message to the payee when action === 'RESERVED'
 
         await this.deps.notificationProducer.sendSuccess({
           transferId: input.transferId,

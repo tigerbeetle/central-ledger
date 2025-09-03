@@ -16,6 +16,7 @@ import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../d
 import {
   registerAdminHandlerV2,
   registerFulfilHandlerV2,
+  registerFusedFulfilHandler,
   registerFusedPrepareHandler,
   registerGetHandlerV2,
   registerPositionHandlerV2,
@@ -75,6 +76,7 @@ export enum HandlerType {
   position = 'position',
   positionbatch = 'positionbatch',
   fulfil = 'fulfil',
+  fusedfulfil = 'fusedfulfil',
   timeout = 'timeout',
   admin = 'admin',
   get = 'get',
@@ -220,7 +222,7 @@ function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
   const Validator = require('../handlers/transfers/validator')
   const TransferService = require('../domain/transfer/index')
   const Participant = require('../domain/participant')
-
+  const participantFacade = require('../models/participant/facade')
   const ProxyCache = require('../lib/proxyCache')
   const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
   const createRemittanceEntity = require('../handlers/transfers/createRemittanceEntity')
@@ -241,7 +243,8 @@ function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
     definePositionParticipant: prepareModule.definePositionParticipant,
     calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
     changeParticipantPosition: PositionService.changeParticipantPosition,
-    getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency, 
+    getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
+    getByIDAndCurrency: participantFacade.getByIDAndCurrency,
   }
   return new LegacyCompatibleLedger(deps)
 }
@@ -457,6 +460,13 @@ async function initializeHandlersV2(
         await registerFulfilHandlerV2(config, consumers.fulfil, producers.position, producers.notification)
         break;
       }
+      case HandlerType.fusedfulfil: {
+        assert(consumers.prepare)
+        assert(producers.position)
+        assert(producers.notification)
+        await registerFusedFulfilHandler(config, consumers.fulfil, producers.position, producers.notification, ledger)
+        break;
+      }
       case HandlerType.timeout: {
         assert(producers.position)
         assert(producers.notification)
@@ -558,7 +568,8 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
         break
       }
       // ignore newer handlers
-      case 'fusedprepare': {
+      case 'fusedprepare': 
+      case 'fusedfulfil': {
         break;
       }
       default: {
