@@ -20,14 +20,19 @@ export interface PrepareHandlerDependencies {
   committer: IMessageCommitter;
   config: any;
   
-  // TODO(LD): remove these I think, but interesting to keep a track of them!
-  // Business logic dependencies - these will come from existing modules
+  // Business logic dependencies - injected from existing modules
   validator: any;
   transferService: any;
   proxyCache: any;
   comparators: any;
   createRemittanceEntity: any;
   transferObjectTransform: any;
+  
+  // Business logic functions from prepare.js
+  calculateProxyObligation: (args: { payload: any, isFx: boolean, params: any, functionality: any, action: any }) => Promise<any>;
+  checkDuplication: (args: { payload: any, isFx: boolean, ID: string, location: any }) => Promise<any>;
+  savePreparedRequest: (args: { validationPassed: boolean, reasons: any, payload: any, isFx: boolean, functionality: any, params: any, location: any, determiningTransferCheckResult: any, proxyObligation: any }) => Promise<any>;
+  definePositionParticipant: (args: { payload: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any }) => Promise<any>;
 }
 
 export interface PrepareMessageInput {
@@ -260,9 +265,7 @@ export class PrepareHandler {
 
   // Business logic methods - these delegate to existing implementations
   private async calculateProxyObligation(payload: any, isFx: boolean, input: any) {
-    // Delegate to existing implementation
-    const { calculateProxyObligation } = require('./prepare');
-    return await calculateProxyObligation({
+    return await this.deps.calculateProxyObligation({
       payload,
       isFx,
       params: { message: input.message },
@@ -272,8 +275,7 @@ export class PrepareHandler {
   }
 
   private async checkDuplication(payload: any, transferId: string, isFx: boolean) {
-    const { checkDuplication } = require('./prepare');
-    return await checkDuplication({
+    return await this.deps.checkDuplication({
       payload,
       isFx,
       ID: transferId,
@@ -406,9 +408,7 @@ export class PrepareHandler {
   }
 
   private async saveTransfer(payload: any, validation: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
-    // Delegate to existing implementation
-    const { savePreparedRequest } = require('./prepare');
-    return await savePreparedRequest({
+    return await this.deps.savePreparedRequest({
       validationPassed: validation.validationPassed,
       reasons: validation.reasons,
       payload,
@@ -422,9 +422,7 @@ export class PrepareHandler {
   }
 
   private async calculatePositionData(payload: any, isFx: boolean, determiningTransferCheckResult: any, proxyObligation: any) {
-    // Delegate to existing implementation
-    const { definePositionParticipant } = require('./prepare');
-    const result = await definePositionParticipant({
+    const result = await this.deps.definePositionParticipant({
       payload: proxyObligation.payloadClone,
       isFx,
       determiningTransferCheckResult,

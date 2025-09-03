@@ -196,6 +196,9 @@ export const createPrepareHandler = (
   const createRemittanceEntity = require('../handlers/transfers/createRemittanceEntity')
   const TransferObjectTransform = require('../domain/transfer/transform')
 
+  // Import business logic functions from prepare.js
+  const prepareModule = require('../handlers/transfers/prepare')
+
   const dependencies: PrepareHandlerDependencies = {
     positionProducer: new PositionProducer(positionProducer, config),
     notificationProducer: new NotificationProducer(notificationProducer, config),
@@ -206,7 +209,13 @@ export const createPrepareHandler = (
     proxyCache: ProxyCache,
     comparators: Comparators,
     createRemittanceEntity,
-    transferObjectTransform: TransferObjectTransform
+    transferObjectTransform: TransferObjectTransform,
+    
+    // Business logic functions from prepare.js
+    calculateProxyObligation: prepareModule.calculateProxyObligation,
+    checkDuplication: prepareModule.checkDuplication,
+    savePreparedRequest: prepareModule.savePreparedRequest,
+    definePositionParticipant: prepareModule.definePositionParticipant
   }
 
   const handler = new PrepareHandler(dependencies)
