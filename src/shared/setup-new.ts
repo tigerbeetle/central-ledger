@@ -12,16 +12,20 @@ const Logger = require('../shared/logger').logger
 
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
+import { 
+  registerAdminHandlerV2, 
+  registerFulfilHandlerV2, 
+  registerGetHandlerV2, 
+  registerPositionHandlerV2, 
+  registerPrepareHandlerV2, 
+  registerTimeoutHandlerV2 
+} from '../handlers-v2/register';
 import RegisterHandlers from '../handlers/register';
-import { registerFulfilHandler_new, registerPrepareHandler_new, registerGetHandler_new } from '../handlers/transfers/register';
-import { registerAdminHandler_new } from '../handlers/admin/register';
-import { registerPositionHandler_new } from '../handlers/positions/register';
-import { registerTimeoutHandler_new } from '../handlers/timeouts/register';
-import { TimeoutScheduler } from '../messaging/jobs/TimeoutScheduler';
 import Db from '../lib/db';
 import EnumCached from '../lib/enumCached';
 import Migrator from '../lib/migrator';
 import ProxyCache from '../lib/proxyCache';
+import { TimeoutScheduler } from '../messaging/jobs/TimeoutScheduler';
 import externalParticipantCached from '../models/participant/externalParticipantCached';
 import ParticipantCached from '../models/participant/participantCached';
 import ParticipantCurrencyCached from '../models/participant/participantCurrencyCached';
@@ -264,37 +268,37 @@ async function initializeHandlersV2(
         assert(consumers.prepare)
         assert(producers.position)
         assert(producers.notification)
-        await registerPrepareHandler_new(config, consumers.prepare, producers.position, producers.notification)
+        await registerPrepareHandlerV2(config, consumers.prepare, producers.position, producers.notification)
         break;
       }
       case HandlerType.position: {
         assert(consumers.position)
         assert(producers.notification)
-        await registerPositionHandler_new(config, consumers.position, producers.notification, producers.position)
+        await registerPositionHandlerV2(config, consumers.position, producers.notification, producers.position)
         break;
       }
       case HandlerType.fulfil: {
         assert(consumers.fulfil)
         assert(producers.position)
         assert(producers.notification)
-        await registerFulfilHandler_new(config, consumers.fulfil, producers.position, producers.notification)
+        await registerFulfilHandlerV2(config, consumers.fulfil, producers.position, producers.notification)
         break;
       }
       case HandlerType.timeout: {
         assert(producers.position)
         assert(producers.notification)
-        timeoutScheduler = await registerTimeoutHandler_new(config, producers.notification, producers.position)
+        timeoutScheduler = await registerTimeoutHandlerV2(config, producers.notification, producers.position)
         break;
       }
       case HandlerType.get: {
         assert(consumers.get)
         assert(producers.notification)
-        await registerGetHandler_new(config, consumers.get, producers.notification)
+        await registerGetHandlerV2(config, consumers.get, producers.notification)
         break;
       }
       case HandlerType.admin: {
         assert(consumers.admin)
-        await registerAdminHandler_new(config, consumers.admin)
+        await registerAdminHandlerV2(config, consumers.admin)
         break;
       }
       default: {

@@ -1,6 +1,6 @@
-import { INotificationProducer, IMessageCommitter, ProcessResult } from '../../messaging/types';
+import { INotificationProducer, IMessageCommitter, ProcessResult } from '../messaging/types';
 import { Enum, Util } from '@mojaloop/central-services-shared';
-import { logger } from '../../shared/logger';
+import { logger } from '../shared/logger';
 import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as EventSdk from '@mojaloop/event-sdk';

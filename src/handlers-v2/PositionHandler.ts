@@ -5,7 +5,7 @@ import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
 import { IMessageCommitter, INotificationProducer, ProcessResult } from '../../messaging/types';
 import { logger } from '../../shared/logger';
-import { AbortTransferDto, CommitTransferDto, CreateTransferDto } from '../types';
+import { AbortTransferDto, CommitTransferDto, CreateTransferDto } from '../../handlers-v2/types';
 
 const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;

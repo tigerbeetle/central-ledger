@@ -3,9 +3,9 @@ import * as Metrics from '@mojaloop/central-services-metrics';
 import { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
 import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
-import { IMessageCommitter, INotificationProducer, IPositionProducer, ProcessResult } from '../../messaging/types';
-import { logger } from '../../shared/logger';
-import { CommitTransferDto, CreateTransferDto } from '../types';
+import { IMessageCommitter, INotificationProducer, IPositionProducer, ProcessResult } from '../messaging/types';
+import { logger } from '../shared/logger';
+import { CommitTransferDto } from './types';
 
 const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;

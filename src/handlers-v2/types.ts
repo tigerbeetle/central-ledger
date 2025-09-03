@@ -37,10 +37,10 @@ export interface TimeoutTransferDto {
 
 export interface AdminTransferDto {
   action: string;
-  amount?: {
+  amount: {
     amount: string;
     currency: string;
   };
-  participantCurrencyId?: string;
-  reason?: string;
+  participantCurrencyId: string;
+  reason: string;
 }

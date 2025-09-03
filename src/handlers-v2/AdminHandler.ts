@@ -1,13 +1,12 @@
-import { IMessageCommitter, ProcessResult } from '../../messaging/types';
-import { Enum, Util } from '@mojaloop/central-services-shared';
-import { logger } from '../../shared/logger';
-import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
+import * as Metrics from '@mojaloop/central-services-metrics';
+import { Enum, Util } from '@mojaloop/central-services-shared';
 import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
-import { AdminTransferDto } from '../types';
+import { IMessageCommitter, ProcessResult } from '../messaging/types';
+import { logger } from '../shared/logger';
+import { AdminTransferDto } from './types';
 
-const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;
 
 export interface AdminHandlerDependencies {
@@ -43,7 +42,10 @@ export class AdminHandler {
     Enum.Events.Event.Action.RECORD_FUNDS_OUT_ABORT
   ];
 
-  private readonly allowedActions = [...this.httpPostRelatedActions, ...this.httpPutRelatedActions];
+  private readonly allowedActions = [
+    ...this.httpPostRelatedActions, 
+    ...this.httpPutRelatedActions
+  ];
 
   constructor(private deps: AdminHandlerDependencies) {}
 
@@ -68,8 +70,8 @@ export class AdminHandler {
     let span: any;
 
     try {
-      const contextFromMessage = EventSdk.Tracer.extractContextFromMessage(message.value);
-      span = EventSdk.Tracer.createChildSpanFromContext('cl_admin_transfer', contextFromMessage);
+      const spanContext = EventSdk.Tracer.extractContextFromMessage(message.value);
+      span = EventSdk.Tracer.createChildSpanFromContext('cl_admin_transfer', spanContext);
       await span.audit(message, EventSdk.AuditEventAction.start);
 
       // Process the admin transfer message
@@ -141,7 +143,7 @@ export class AdminHandler {
   }
 
   private async processAdminTransfer(input: AdminMessageInput, message: any): Promise<ProcessResult> {
-    const { payload, transferId, action, transactionTimestamp, enums } = input;
+    const { payload, transferId, action } = input;
 
     try {
       // Validate action is allowed
