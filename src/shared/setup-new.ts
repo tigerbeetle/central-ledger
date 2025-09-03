@@ -12,6 +12,7 @@ const Logger = require('../shared/logger').logger
 
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
+import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../domain/ledger-v2/LegacyCompatibleLedger';
 import {
   registerAdminHandlerV2,
   registerFulfilHandlerV2,
@@ -34,11 +35,6 @@ import ParticipantLimitCached from '../models/participant/participantLimitCached
 import BatchPositionModelCached from '../models/position/batchCached';
 import Plugins from './plugins';
 import Provisioner from './provisioner';
-import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from 'src/domain/ledger-v2/LegacyCompatibleLedger';
-import { PositionKafkaMessage, PreparePositionsBatchResult } from 'src/handlers-v2/PositionHandler';
-import { TransferCheckResult, ValidationResult, Location, DuplicationCheckResult, DefinePositionParticipantResult } from 'src/handlers-v2/PrepareHandler';
-import { CreateTransferDto } from 'src/handlers-v2/types';
-import { ProxyObligation } from 'src/handlers/transfers/prepare';
 
 
 const USE_NEW_HANDLERS = true
@@ -556,6 +552,10 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
       case 'bulkget': {
         await RegisterHandlers.bulk.registerBulkGetHandler()
         break
+      }
+      // ignore newer handlers
+      case 'fusedprepare': {
+        break;
       }
       default: {
         const error = `Handler Setup - ${JSON.stringify(handlerType)} is not a valid handler to register!`

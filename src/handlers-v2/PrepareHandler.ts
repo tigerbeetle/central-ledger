@@ -60,7 +60,7 @@ export interface PrepareHandlerDependencies {
   notificationProducer: INotificationProducer;
   committer: IMessageCommitter;
   config: any;
-  
+
   // Business logic dependencies - injected from existing modules
   validator: {
     validatePrepare: (payload: CreateTransferDto, headers: any, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation) => Promise<ValidationResult>;
@@ -71,39 +71,39 @@ export interface PrepareHandlerDependencies {
   comparators: any;
   createRemittanceEntity: any;
   transferObjectTransform: any;
-  
+
   // Business logic functions from prepare.js
   checkDuplication: (args: { payload: CreateTransferDto, isFx: boolean, ID: string, location: Location }) => Promise<DuplicationCheckResult>;
-  savePreparedRequest: (args: { 
-    validationPassed: boolean, 
-    reasons: string[], 
-    payload: CreateTransferDto, 
-    isFx: boolean, 
-    functionality: any, 
-    params: any, 
-    location: Location, 
-    determiningTransferCheckResult: TransferCheckResult, 
-    proxyObligation: ProxyObligation 
+  savePreparedRequest: (args: {
+    validationPassed: boolean,
+    reasons: string[],
+    payload: CreateTransferDto,
+    isFx: boolean,
+    functionality: any,
+    params: any,
+    location: Location,
+    determiningTransferCheckResult: TransferCheckResult,
+    proxyObligation: ProxyObligation
   }) => Promise<void>;
   definePositionParticipant: (args: { payload: CreateTransferDto, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation }) => Promise<DefinePositionParticipantResult>;
 }
 
 export interface PrepareMessageInput {
-    message: any;
-    payload: CreateTransferDto;
-    headers: any;
-    transferId: string;
-    action: any;
-    isFx: boolean;
-    isBulk: boolean;
-    isForwarded: boolean;
-    metric: string;
-    functionality: CentralServicesShared.EventTypeEnum.TRANSFER;
-    actionEnum: string;
+  message: any;
+  payload: CreateTransferDto;
+  headers: any;
+  transferId: string;
+  action: any;
+  isFx: boolean;
+  isBulk: boolean;
+  isForwarded: boolean;
+  metric: string;
+  functionality: CentralServicesShared.EventTypeEnum.TRANSFER;
+  actionEnum: string;
 }
 
 export class PrepareHandler {
-  constructor(private deps: PrepareHandlerDependencies) {}
+  constructor(private deps: PrepareHandlerDependencies) { }
 
   async handle(error: any, messages: any): Promise<void> {
     if (error) {
@@ -115,7 +115,7 @@ export class PrepareHandler {
     assert.equal(messages.length, 1, 'Expected exactly only 1 message from consumers')
     const message = messages[0]
     const input = this.extractMessageData(message);
-    
+
     const histTimerEnd = Metrics.getHistogram(
       input.metric,
       `Consume a ${input.metric} message from the kafka topic and process it accordingly`,
@@ -126,17 +126,17 @@ export class PrepareHandler {
       // Process the transfer business logic
       const result = await this.processTransfer(input, message);
       await this.deps.committer.commit(message);
-      
+
       // Handle the result - send downstream messages
       await this.handleResult(result, input);
-      
+
       histTimerEnd({ success: true, fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId });
       return
     } catch (err) {
       histTimerEnd({ success: false, fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId });
-      
+
       await this.deps.committer.commit(message);
-    
+
       await this.handleError(err, input, message);
       return
     }
@@ -150,14 +150,14 @@ export class PrepareHandler {
     assert(message.value.metadata)
     assert(message.value.metadata.event)
     assert(message.value.metadata.event.action)
-    const payloadEncoded  = message.value.content.payload
+    const payloadEncoded = message.value.content.payload
     const payload = decodePayload(payloadEncoded, {}) as unknown as CreateTransferDto
     const headers = message.value.content.headers
 
     const transferId = payload.transferId
 
     const action = message.value.metadata?.event?.action || 'prepare';
-  
+
     // TODO(LD): I really don't like passing around booleans like this
     // copied from other parts of the code but this really needs a refactor
     const isFx = action.toLowerCase().includes('fx');
@@ -199,9 +199,9 @@ export class PrepareHandler {
 
     // Validate the transfer
     const validation = await this.validateTransfer(
-      payload, 
-      input.headers, 
-      isFx, 
+      payload,
+      input.headers,
+      isFx,
       determiningTransferCheckResult,
       proxyObligation,
     );
@@ -282,7 +282,7 @@ export class PrepareHandler {
 
   private async handleError(error: any, input: any, message: any): Promise<void> {
     const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(error);
-    
+
     await this.deps.notificationProducer.sendError({
       transferId: input.transferId,
       fspiopError: fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),
@@ -369,11 +369,11 @@ export class PrepareHandler {
       Enum.Transfers.TransferState.ABORTED,
       Enum.Transfers.TransferState.RESERVED
     ];
-    
-    const isFinalized = 
+
+    const isFinalized =
       finalizedState.includes(transfer?.transferStateEnumeration) ||
       finalizedState.includes(transfer?.fxTransferStateEnumeration);
-    
+
     const isPrepare = [
       Enum.Events.Event.Action.PREPARE,
       Enum.Events.Event.Action.FX_PREPARE,
@@ -384,11 +384,11 @@ export class PrepareHandler {
     if (isFinalized) {
       if (isPrepare) {
         logger.info(`finalized callback--${actionLetter}1 for transfer ${transferId}`);
-        
+
         // Transform payload for duplicate response  
         const transformedPayload = this.deps.transferObjectTransform.toFulfil(transfer, isFx);
-        const duplicateAction = isFx ? 
-          Enum.Events.Event.Action.FX_PREPARE_DUPLICATE : 
+        const duplicateAction = isFx ?
+          Enum.Events.Event.Action.FX_PREPARE_DUPLICATE :
           Enum.Events.Event.Action.PREPARE_DUPLICATE;
 
         await this.deps.notificationProducer.sendDuplicate({
@@ -404,7 +404,7 @@ export class PrepareHandler {
         return {
           type: 'duplicate',
           transferId,
-          data: { 
+          data: {
             isFinalized: true,
             transformedPayload
           }
@@ -412,7 +412,7 @@ export class PrepareHandler {
       } else if (actionEnum === Enum.Events.Event.Action.BULK_PREPARE) {
         logger.info(`validationError1--${actionLetter}2 for transfer ${transferId}`);
         const fspiopError = createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST, 'Individual transfer prepare duplicate');
-        
+
         await this.deps.notificationProducer.sendError({
           transferId,
           fspiopError: fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),
@@ -429,7 +429,7 @@ export class PrepareHandler {
       if (actionEnum === Enum.Events.Event.Action.BULK_PREPARE) {
         logger.info(`validationError2--${actionLetter}4 for transfer ${transferId}`);
         const fspiopError = createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST, 'Individual transfer prepare duplicate');
-        
+
         await this.deps.notificationProducer.sendError({
           transferId,
           fspiopError: fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),

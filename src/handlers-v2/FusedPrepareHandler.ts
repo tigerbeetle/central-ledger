@@ -4,10 +4,9 @@ import { logger } from '../shared/logger';
 import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import assert from 'assert';
-import createRemittanceEntity from '../handlers/transfers/createRemittanceEntity';
 import { CreateTransferDto } from './types';
-import { ApplicationConfig } from 'src/shared/config';
-import LegacyCompatibleLedger, { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from 'src/domain/ledger-v2/LegacyCompatibleLedger';
+import { ApplicationConfig } from '../shared/config';
+import LegacyCompatibleLedger, { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from '../domain/ledger-v2/LegacyCompatibleLedger';
 
 const { decodePayload } = Util.StreamingProtocol
 const rethrow = Util.rethrow;

@@ -1,10 +1,11 @@
 import { DefinePositionParticipantResult, DuplicationCheckResult, Location, PositionData, PrepareMessageInput, TransferCheckResult, ValidationResult } from "src/handlers-v2/PrepareHandler";
 import { CreateTransferDto } from "src/handlers-v2/types";
 import { ProxyObligation } from "src/handlers/transfers/prepare";
-import CentralServicesShared, { Enum, Util } from '@mojaloop/central-services-shared';
-import { PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult } from "src/handlers-v2/PositionHandler";
+import { Enum } from '@mojaloop/central-services-shared';
+import { PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult, MessageContext } from "src/handlers-v2/PositionHandler";
 import assert from "assert";
 import { logger } from '../../shared/logger';
+import { ApplicationConfig } from "src/shared/config";
 
 
 export enum PrepareResultType {
@@ -67,7 +68,7 @@ export interface PrepareResultFailLiquidity {
 }
 
 export interface LegacyCompatibleLedgerDependencies {
-  config: any;
+  config: ApplicationConfig
 
   // Business logic dependencies - injected from existing modules
   validator: {
@@ -107,8 +108,6 @@ export interface LegacyCompatibleLedgerDependencies {
 
   calculatePreparePositionsBatch: (transferList: PositionKafkaMessage[]) => Promise<PreparePositionsBatchResult>;
   changeParticipantPosition: (participantCurrencyId: string, isReversal: boolean, amount: string, transferStateChange: any) => Promise<any>;
-
-
 }
 
 export default class LegacyCompatibleLedger {
@@ -120,7 +119,6 @@ export default class LegacyCompatibleLedger {
     const { payload, transferId, headers } = input;
     logger.debug(`prepare() - transferId: ${transferId}`)
 
-    
     const duplicateCheckResult = await this.checkForDuplicate(payload, transferId)
     if (duplicateCheckResult.hasDuplicateId) {
       // TODO(LD): As part of the duplicate check, we need to check to see if the transfer
@@ -131,7 +129,7 @@ export default class LegacyCompatibleLedger {
       }
     }
 
-    // always save the transfer, even if it's invalid
+    // Always save the transfer, even if it's invalid
     const validationResult = await this.validateTransfer(payload, headers)
     await this.saveTransfer(payload, validationResult)
 
@@ -142,11 +140,12 @@ export default class LegacyCompatibleLedger {
       }
     }
 
-    // TODO: do we need this?
-    // const positionData = await this.calculatePositionData(payload);
-
-    // check positions
-    const { preparedMessagesList } = await this.calculatePreparePositions(payload)
+    // TODO(LD): this is really ugly, but the original method needs a lot of kafka context,
+    // so for compatibility we are going to keep it this way for now.
+    //
+    // Ideally we would refactor the positions to not require all of this Kafka context
+    const messageContext = LegacyCompatibleLedger.extractMessageContext(input);
+    const { preparedMessagesList } = await this.calculatePreparePositions(payload, messageContext)
     assert(Array.isArray(preparedMessagesList))
     assert(preparedMessagesList.length === 1)
 
@@ -244,10 +243,13 @@ export default class LegacyCompatibleLedger {
     };
   }
 
-  private async calculatePreparePositions(payload: CreateTransferDto): Promise<PreparePositionsBatchResult> {
+  private async calculatePreparePositions(
+    payload: CreateTransferDto,
+    messageContext: MessageContext
+  ): Promise<PreparePositionsBatchResult> {
     // this.deps.calculatePreparePositionsBatch expects a whole kafka message
     // so transform the payload to one:
-    const message = this.createMinimalPositionKafkaMessage(payload)
+    const message = LegacyCompatibleLedger.createMinimalPositionKafkaMessage(payload, messageContext)
     return this.deps.calculatePreparePositionsBatch([message])
   }
 
@@ -270,8 +272,68 @@ export default class LegacyCompatibleLedger {
     };
   }
 
-  private createMinimalPositionKafkaMessage(payload: CreateTransferDto): PositionKafkaMessage {
+  /**
+   * Extracts MessageContext from a PrepareMessageInput for position processing
+   * @param input - The prepare message input containing the original Kafka message
+   * @returns MessageContext with fields needed for position processing
+   */
+  static extractMessageContext(input: PrepareMessageInput): MessageContext {
+    const message = input.message;
+    
+    return {
+      from: message.value.from,
+      to: message.value.to,
+      headers: input.headers,
+      action: input.action,
+      eventId: message.value.metadata?.event?.id,
+      eventType: message.value.metadata?.event?.type,
+      messageId: message.value.id,
+      messageType: message.value.type,
+      trace: message.value.metadata?.trace
+    };
+  }
 
-    throw new Error('not implemented')
+  /**
+   * Creates a minimal Kafka message for position processing from a transfer DTO and context
+   * @param payload - The transfer data (contains transferId, amount, payerFsp, payeeFsp, etc.)
+   * @param messageContext - Additional context needed for the Kafka message structure
+   * @returns A properly formatted PositionKafkaMessage for calculatePreparePositionsBatch
+   */
+  static createMinimalPositionKafkaMessage(
+    payload: CreateTransferDto, 
+    messageContext: MessageContext
+  ): PositionKafkaMessage {
+    const now = new Date().toISOString();
+    
+    return {
+      topic: 'position-prepare',
+      key: payload.transferId,
+      value: {
+        id: messageContext.messageId || payload.transferId,
+        from: messageContext.from,
+        to: messageContext.to,
+        type: messageContext.messageType || 'application/json',
+        content: {
+          headers: messageContext.headers,
+          payload: payload,
+          uriParams: { id: payload.transferId },
+          context: {}
+        },
+        metadata: {
+          event: {
+            id: messageContext.eventId || payload.transferId,
+            type: messageContext.eventType || 'position',
+            action: messageContext.action,
+            createdAt: now,
+            state: {
+              status: 'success',
+              code: 0,
+              description: 'action successful'
+            }
+          },
+          trace: messageContext.trace
+        }
+      }
+    };
   }
 }

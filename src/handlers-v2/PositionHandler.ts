@@ -57,6 +57,18 @@ export interface PositionKafkaMessage {
   };
 }
 
+export interface MessageContext {
+  from: string;
+  to: string;
+  headers: Record<string, any>;
+  action: string;
+  eventId?: string;
+  eventType?: string;
+  messageId?: string;
+  messageType?: string;
+  trace?: any;
+}
+
 export interface PositionHandlerDependencies {
   notificationProducer: INotificationProducer;
   committer: IMessageCommitter;
