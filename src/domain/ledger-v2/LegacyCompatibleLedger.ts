@@ -2,18 +2,22 @@ import { DefinePositionParticipantResult, DuplicationCheckResult, Location, Posi
 import { CreateTransferDto } from "src/handlers-v2/types";
 import { ProxyObligation } from "src/handlers/transfers/prepare";
 import CentralServicesShared, { Enum, Util } from '@mojaloop/central-services-shared';
+import { PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult } from "src/handlers-v2/PositionHandler";
+import assert from "assert";
+import { logger } from '../../shared/logger';
 
 
 export enum PrepareResultType {
   PASS = 'PASS',
   FAIL_DUPLICATE = 'FAIL_DUPLICATE',
   FAIL_VALIDATION = 'FAIL_VALIDATION',
-  FAIL_TRANSIENT = 'FAIL_TRANSIENT',
+  FAIL_LIQUIDITY = 'FAIL_TRANSFAIL_LIQUIDITYIENT',
 }
 
 type PrepareResult = PrepareResultPass
   | PrepareResultFailDuplicate
   | PrepareResultFailValidation
+  | PrepareResultFailLiquidity
 
 interface PrepareResultPass {
   type: PrepareResultType.PASS
@@ -27,6 +31,11 @@ interface PrepareResultFailDuplicate {
 interface PrepareResultFailValidation {
   type: PrepareResultType.FAIL_VALIDATION,
   failureReasons: Array<string>
+}
+
+interface PrepareResultFailLiquidity {
+  type: PrepareResultType.FAIL_LIQUIDITY,
+  fspiopError: any,
 }
 
 export interface LegacyCompatibleLedgerDependencies {
@@ -44,7 +53,12 @@ export interface LegacyCompatibleLedgerDependencies {
   transferObjectTransform: any;
 
   // Business logic functions from prepare.js
-  checkDuplication: (args: { payload: CreateTransferDto, isFx: boolean, ID: string, location: Location }) => Promise<DuplicationCheckResult>;
+  checkDuplication: (args: {
+    payload: CreateTransferDto,
+    isFx: boolean,
+    ID: string,
+    location: Location
+  }) => Promise<DuplicationCheckResult>;
   savePreparedRequest: (args: {
     validationPassed: boolean,
     reasons: string[],
@@ -62,6 +76,11 @@ export interface LegacyCompatibleLedgerDependencies {
     determiningTransferCheckResult: TransferCheckResult,
     proxyObligation: ProxyObligation
   }) => Promise<DefinePositionParticipantResult>;
+
+  calculatePreparePositionsBatch: (transferList: PositionKafkaMessage[]) => Promise<PreparePositionsBatchResult>;
+  changeParticipantPosition: (participantCurrencyId: string, isReversal: boolean, amount: string, transferStateChange: any) => Promise<any>;
+
+
 }
 
 export default class LegacyCompatibleLedger {
@@ -71,6 +90,7 @@ export default class LegacyCompatibleLedger {
 
   public async prepare(input: PrepareMessageInput): Promise<PrepareResult> {
     const { payload, transferId, headers } = input;
+    logger.debug(`prepare() - transferId: ${transferId}`)
 
     const duplicateCheckResult = await this.checkForDuplicate(payload, transferId)
     if (duplicateCheckResult.hasDuplicateId) {
@@ -91,15 +111,32 @@ export default class LegacyCompatibleLedger {
       }
     }
 
-    const positionData = await this.calculatePositionData(payload);
 
+    // TODO: do we need this?
+    // const positionData = await this.calculatePositionData(payload);
 
+    // check positions
+    const { preparedMessagesList } = await this.calculatePreparePositions(payload)
+    assert(Array.isArray(preparedMessagesList))
+    assert(preparedMessagesList.length === 1)
 
+    // Process the prepared messages results
+    const prepareMessage: PreparedMessage = preparedMessagesList[0];
+    const { transferState, fspiopError } = prepareMessage;
 
+    if (transferState.transferStateId !== Enum.Transfers.TransferState.RESERVED) {
+      logger.info(`prepare() - Position prepare failed - insufficient liquidity for transfer: ${transferId}`);
 
-    // check the liquidity
+      return {
+        type: PrepareResultType.FAIL_LIQUIDITY,
+        fspiopError
+      }
+    }
 
-    throw new Error(`not implemented`)
+    logger.debug(`prepare() - Position prepare successful - funds reserved for transfer: ${transferId}`);
+    return {
+      type: PrepareResultType.PASS
+    }
   }
 
   public async fulfil(): Promise<unknown> {
@@ -177,6 +214,13 @@ export default class LegacyCompatibleLedger {
     };
   }
 
+  private async calculatePreparePositions(payload: CreateTransferDto): Promise<PreparePositionsBatchResult> {
+    // this.deps.calculatePreparePositionsBatch expects a whole kafka message
+    // so transform the payload to one:
+    const message = this.createMinimalPositionKafkaMessage(payload)
+    return this.deps.calculatePreparePositionsBatch([message])
+  }
+
   // Helper methods to create minimal objects for validation compatibility
   private createMinimalProxyObligation(payload: CreateTransferDto): ProxyObligation {
     return {
@@ -194,5 +238,10 @@ export default class LegacyCompatibleLedger {
       watchListRecords: [],
       participantCurrencyValidationList: []
     };
+  }
+
+  private createMinimalPositionKafkaMessage(payload: CreateTransferDto): PositionKafkaMessage {
+
+    throw new Error('not implemented')
   }
 }

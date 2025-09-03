@@ -10,6 +10,53 @@ import { logger } from '../shared/logger';
 const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;
 
+// Type definitions for position operations
+export interface TransferStateResult {
+  transferStateId: string;
+}
+
+export interface PreparedMessage {
+  transferState: TransferStateResult;
+  fspiopError?: any;
+}
+
+export interface PreparePositionsBatchResult {
+  preparedMessagesList: PreparedMessage[];
+  limitAlarms?: any[];
+}
+
+export interface PositionKafkaMessage {
+  topic?: string;
+  key?: string;
+  partition?: number;
+  value: {
+    id: string;
+    from: string;
+    to: string;
+    type: string;
+    content: {
+      headers: Record<string, any>;
+      payload: CreateTransferDto;
+      uriParams?: { id: string };
+      context?: any;
+    };
+    metadata: {
+      event: {
+        id: string;
+        type: string;
+        action: string;
+        createdAt: string;
+        state: {
+          status: string;
+          code: number;
+          description?: string;
+        };
+      };
+      trace?: any;
+    };
+  };
+}
+
 export interface PositionHandlerDependencies {
   notificationProducer: INotificationProducer;
   committer: IMessageCommitter;
@@ -17,7 +64,11 @@ export interface PositionHandlerDependencies {
 
   // Business logic dependencies
   transferService: any;
-  positionService: any;
+  positionService: {
+    calculatePreparePositionsBatch: (transferList: PositionKafkaMessage[]) => Promise<PreparePositionsBatchResult>;
+    changeParticipantPosition: (participantCurrencyId: string, isReversal: boolean, amount: string, transferStateChange: any) => Promise<any>;
+    [key: string]: any;
+  };
   participantFacade: any;
   settlementModelCached: any;
   transferObjectTransform: any;
@@ -228,13 +279,13 @@ export class PositionHandler {
       // including all metadata etc.
       message.value.content.payload = input.payload
       const prepareBatch = [message];
-      const { preparedMessagesList } = await this.deps.positionService.calculatePreparePositionsBatch(prepareBatch);
+      const { preparedMessagesList }: PreparePositionsBatchResult = await this.deps.positionService.calculatePreparePositionsBatch(prepareBatch);
 
       assert(Array.isArray(preparedMessagesList))
       assert(preparedMessagesList.length === 1)
 
       // Process the prepared messages results
-      const prepareMessage = preparedMessagesList[0];
+      const prepareMessage: PreparedMessage = preparedMessagesList[0];
       const { transferState, fspiopError } = prepareMessage;
 
       if (transferState.transferStateId === Enum.Transfers.TransferState.RESERVED) {
