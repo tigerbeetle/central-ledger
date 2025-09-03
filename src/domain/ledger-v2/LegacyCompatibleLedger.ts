@@ -27,6 +27,8 @@ import {
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
 
+  // TODO(LD): Collect these into "transferDependencies"
+
   // Validation functions
   validatePrepare: (
     payload: CreateTransferDto,
