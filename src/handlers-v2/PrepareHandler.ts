@@ -64,6 +64,8 @@ export interface PrepareHandlerDependencies {
   // Business logic dependencies - injected from existing modules
   validator: {
     validatePrepare: (payload: CreateTransferDto, headers: any, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation) => Promise<ValidationResult>;
+    validateParticipantByName: (participantName: string) => Promise<boolean>;
+    reasons: string[];
     [key: string]: any;
   };
   transferService: any;

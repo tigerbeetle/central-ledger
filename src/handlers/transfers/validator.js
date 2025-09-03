@@ -302,5 +302,6 @@ module.exports = {
   validateParticipantByName,
   reasons,
   validateParticipantTransferId,
-  validateParticipantForCommitRequestId
+  validateParticipantForCommitRequestId,
+  validatePositionAccountByNameAndCurrency
 }

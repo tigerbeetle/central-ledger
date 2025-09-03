@@ -103,6 +103,9 @@ export interface LegacyCompatibleLedgerDependencies {
   // Business logic dependencies - injected from existing modules
   validator: {
     validatePrepare: (payload: CreateTransferDto, headers: any, isFx: boolean, determiningTransferCheckResult: TransferCheckResult, proxyObligation: ProxyObligation) => Promise<ValidationResult>;
+    validateParticipantByName: (participantName: string) => Promise<boolean>;
+    validatePositionAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<boolean>;
+    reasons: string[];
     [key: string]: any;
   };
   transferService: any;
@@ -136,6 +139,7 @@ export interface LegacyCompatibleLedgerDependencies {
 
   calculatePreparePositionsBatch: (transferList: PositionKafkaMessage[]) => Promise<PreparePositionsBatchResult>;
   changeParticipantPosition: (participantCurrencyId: string, isReversal: boolean, amount: string, transferStateChange: any) => Promise<any>;
+  getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{currencyIsActive: boolean}>
 }
 
 export default class LegacyCompatibleLedger {
@@ -174,21 +178,29 @@ export default class LegacyCompatibleLedger {
         return {
           type: PrepareResultType.FAIL_OTHER,
           fspiopError: ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST),
-          
         }
       }
       case DuplicationResult.UNIQUE:
       default: { }
     }
 
-    // Always save the transfer, even if it's invalid
-    const validationResult = await this.validateTransfer(payload, headers)
-    await this.saveTransfer(payload, validationResult)
-
-    if (!validationResult.validationPassed) {
+    // Validate participants and their currency accounts
+    const participantValidation = await this.validateParticipants(payload)
+    if (!participantValidation.validationPassed) {
       return {
         type: PrepareResultType.FAIL_VALIDATION,
-        failureReasons: validationResult.reasons,
+        failureReasons: participantValidation.reasons
+      };
+    }
+
+    // Save the transfer, even if it's invalid
+    const transferValidationResult = await this.validateTransfer(payload, headers)
+    await this.saveTransfer(payload, transferValidationResult)
+
+    if (!transferValidationResult.validationPassed) {
+      return {
+        type: PrepareResultType.FAIL_VALIDATION,
+        failureReasons: transferValidationResult.reasons,
       }
     }
 
@@ -249,13 +261,81 @@ export default class LegacyCompatibleLedger {
     return DuplicationResult.UNIQUE
   }
 
+  private async validateParticipants(payload: CreateTransferDto): Promise<ValidationResult> {
+    assert(payload)
+    assert(payload.payerFsp)
+    assert(payload.payeeFsp)
+    assert(payload.amount)
+    assert(payload.amount.currency)
+
+    // shortcuts
+    const payerId = payload.payerFsp
+    const payeeId = payload.payeeFsp
+    const currency = payload.amount.currency
+
+    // First check if participants exist and are active
+    const payerValid = await this.deps.validator.validateParticipantByName(payerId);
+    const payeeValid = await this.deps.validator.validateParticipantByName(payeeId);
+    
+    if (!payerValid || !payeeValid) {
+      return {
+        validationPassed: false,
+        reasons: ['payer or payee invalid']
+      };
+    }
+
+    let validationPassed = true
+    let reasons: Array<string> = []
+
+    const payerAccountValid = await this.deps.validator.validatePositionAccountByNameAndCurrency(payerId, currency)
+    const payeeAccountValid = await this.deps.validator.validatePositionAccountByNameAndCurrency(payeeId, currency)
+
+    if (!payerAccountValid || !payeeAccountValid) {
+      return {
+        validationPassed: false,
+        // TODO(LD): nasty globals here
+        reasons: [...this.deps.validator.reasons]
+      }
+    }
+
+    // TODO: reinstate this - this was failing because of import issues with the database
+    // const payerAccount = await this.deps.getAccountByNameAndCurrency(payerId, currency)
+    // if (!payerAccount) {
+    //   validationPassed = false
+    //   reasons.push(`Participant ${payerId} ${currency} account not found`)
+    // }
+    // if (payerAccount && payerAccount.currencyIsActive === false) {
+    //   validationPassed = false
+    //   reasons.push(`Participant ${payerId} ${currency} account is inactive`)
+    // }
+
+    // const payeeAccount = await this.deps.getAccountByNameAndCurrency(payeeId, currency)
+    // if (!payeeAccount) {
+    //   validationPassed = false
+    //   reasons.push(`Participant ${payeeId} ${currency} account not found`)
+    // }
+    // if (payeeAccount && payerAccount.currencyIsActive === false) {
+    //   validationPassed = false
+    //   reasons.push(`Participant ${payeeId} ${currency} account is inactive`)
+    // }
+
+    // if (!validationPassed) {
+    //   return {
+    //     validationPassed,
+    //     reasons
+    //   };
+    // }
+
+    return {
+      validationPassed: true,
+      reasons: []
+    }
+  }
+
   private async validateTransfer(payload: CreateTransferDto, headers: any): Promise<ValidationResult> {
-    // hardcoded for our use case
     const isFx = false
     const determiningTransferCheckResult = this.createMinimalTransferCheckResult()
     const proxyObligation = this.createMinimalProxyObligation(payload)
-
-    // Delegate to existing validator
 
     return await this.deps.validator.validatePrepare(
       payload,

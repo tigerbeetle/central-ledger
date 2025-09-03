@@ -35,6 +35,7 @@ import ParticipantLimitCached from '../models/participant/participantLimitCached
 import BatchPositionModelCached from '../models/position/batchCached';
 import Plugins from './plugins';
 import Provisioner from './provisioner';
+import { getAccountByNameAndCurrency } from 'src/domain/participant';
 
 
 const USE_NEW_HANDLERS = true
@@ -218,6 +219,8 @@ function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
   // Existing business logic modules
   const Validator = require('../handlers/transfers/validator')
   const TransferService = require('../domain/transfer/index')
+  const Participant = require('../domain/participant')
+
   const ProxyCache = require('../lib/proxyCache')
   const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
   const createRemittanceEntity = require('../handlers/transfers/createRemittanceEntity')
@@ -237,7 +240,8 @@ function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
     savePreparedRequest: prepareModule.savePreparedRequest,
     definePositionParticipant: prepareModule.definePositionParticipant,
     calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
-    changeParticipantPosition: PositionService.changeParticipantPosition
+    changeParticipantPosition: PositionService.changeParticipantPosition,
+    getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency, 
   }
   return new LegacyCompatibleLedger(deps)
 }

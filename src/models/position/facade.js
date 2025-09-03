@@ -163,6 +163,9 @@ const prepareChangeParticipantPositionTransaction = async (transferList) => {
           'facade_prepareChangeParticipantPositionTransaction_transaction_ValidatePositionBatch - Metrics for position model',
           ['success', 'queryName']
         ).startTimer()
+
+        // TODO(LD): I think this returns undefined when the account is disabled
+        // in the legacy implementation I don't think we got this far.
         const participantLimit = await participantFacade.getParticipantLimitByParticipantCurrencyLimit(participantCurrency.participantId, participantCurrency.currencyId, Enum.Accounts.LedgerAccountType.POSITION, Enum.Accounts.ParticipantLimitType.NET_DEBIT_CAP)
 
         const liquidityCover = new MLNumber(settlementParticipantPosition.value).multiply(-1)
