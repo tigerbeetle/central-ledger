@@ -294,7 +294,7 @@ export default class LegacyCompatibleLedger {
       return {
         validationPassed: false,
         // TODO(LD): nasty globals here
-        reasons: [...this.deps.validator.reasons]
+        reasons: [this.deps.validator.reasons[0]]
       }
     }
 
