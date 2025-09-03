@@ -9,22 +9,35 @@ import { CommitTransferDto, CreateTransferDto } from "src/handlers-v2/types";
 import { ProxyObligation } from "src/handlers/transfers/prepare";
 import { ApplicationConfig } from "src/shared/config";
 import { logger } from '../../shared/logger';
-import { FulfilDuplicateResult, FulfilResult, FulfilResultType, ParticipantWithCurrency, PayeeResponsePayload, PrepareDuplicateResult, PrepareResult, PrepareResultType, TransferParticipantInfo, TransferReadModel, TransferStateChange, TransformredTransfer } from './types';
+import {
+  FulfilDuplicateResult,
+  FulfilResult,
+  FulfilResultType,
+  ParticipantWithCurrency,
+  PayeeResponsePayload,
+  PrepareDuplicateResult,
+  PrepareResult,
+  PrepareResultType,
+  TransferParticipantInfo,
+  TransferReadModel,
+  TransferStateChange,
+  TransformredTransfer
+} from './types';
 
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
 
   // Validation functions
   validatePrepare: (
-    payload: CreateTransferDto, 
-    headers: any, 
-    isFx: boolean, 
+    payload: CreateTransferDto,
+    headers: any,
+    isFx: boolean,
     determiningTransferCheckResult: TransferCheckResult,
     proxyObligation: ProxyObligation
   ) => Promise<ValidationResult>;
   validateParticipantByName: (participantName: string) => Promise<boolean>;
   validatePositionAccountByNameAndCurrency: (
-    participantName: string, 
+    participantName: string,
     currency: string
   ) => Promise<boolean>;
   validateParticipantTransferId: (participantName: string, transferId: string) => Promise<boolean>;
@@ -59,18 +72,18 @@ export interface LegacyCompatibleLedgerDependencies {
     proxyObligation: ProxyObligation
   }) => Promise<void>;
   getByIDAndCurrency: (
-    participantId: number, 
-    currencyId: string, 
-    ledgerAccountTypeId: number, 
+    participantId: number,
+    currencyId: string,
+    ledgerAccountTypeId: number,
     isCurrencyActive?: boolean
   ) => Promise<ParticipantWithCurrency | null>;
   calculatePreparePositionsBatch: (
     transferList: PositionKafkaMessage[]
   ) => Promise<PreparePositionsBatchResult>;
   changeParticipantPosition: (
-    participantCurrencyId: number, 
-    isReversal: boolean, 
-    amount: string, 
+    participantCurrencyId: number,
+    isReversal: boolean,
+    amount: string,
     transferStateChange: TransferStateChange
   ) => Promise<void>;
   getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>;
@@ -80,6 +93,38 @@ export default class LegacyCompatibleLedger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) {
 
   }
+
+  /**
+   * Onboarding/Lifecycle Management
+   */
+
+  public async createHubAccount(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  public async createDfsp(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  public async disableDfsp(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  public async enableDfsp(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  public async fundsIn(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  public async fundsOut(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  /**
+   * Transfer Methods
+   */
 
   public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
     const { payload, transferId, headers } = input;
@@ -276,6 +321,23 @@ export default class LegacyCompatibleLedger {
       }
     }
   }
+
+  public async getTransfer(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  /**
+   * Settlement Methods
+   */
+  public async closeSettlementWindow(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+  public async settleClosedWindows(thing: unknown): Promise<unknown> {
+    throw new Error('not implemented')
+  }
+
+
 
   private async validateFulfilMessage(input: FusedFulfilHandlerInput): Promise<void> {
     const { transferId, payload, message: { value: { from } }, headers } = input;
