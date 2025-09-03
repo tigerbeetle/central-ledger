@@ -1,13 +1,10 @@
-import { INotificationProducer, IPositionProducer } from '../../messaging/types';
+import { INotificationProducer, IPositionProducer } from '../messaging/types';
 import { Enum, Util } from '@mojaloop/central-services-shared';
-import { logger } from '../../shared/logger';
+import { logger } from '../shared/logger';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as EventSdk from '@mojaloop/event-sdk';
-import fspiopErrorFactory from 'src/shared/fspiopErrorFactory';
 
 const { resourceVersions } = Util;
-
-const log = logger.child({ context: 'CL_TOH' });
 
 export interface TimeoutHandlerDependencies {
   notificationProducer: INotificationProducer;
@@ -86,7 +83,7 @@ export class TimeoutHandler {
         fxTransferTimeoutList
       };
     } catch (err) {
-      log.error('error in processTimeouts:', err);
+      logger.error('error in processTimeouts:', err);
       throw ErrorHandler.Factory.reformatFSPIOPError(err);
     } finally {
       if (isAcquired) await this.releaseLock();
@@ -98,7 +95,7 @@ export class TimeoutHandler {
     if (!Array.isArray(transferTimeoutList)) {
       transferTimeoutList = [transferTimeoutList as TimedOutTransfer];
     }
-    log.verbose(`processing ${transferTimeoutList.length} timed out transfers...`);
+    logger.verbose(`processing ${transferTimeoutList.length} timed out transfers...`);
 
     for (const TT of transferTimeoutList) {
       const span = EventSdk.Tracer.createSpan('cl_transfer_timeout');
@@ -177,7 +174,7 @@ export class TimeoutHandler {
         } else { // individual transfer from a bulk
           if (TT.transferStateId === Enum.Transfers.TransferInternalState.EXPIRED_PREPARED) {
             // Handle bulk timeout - would need bulk producer
-            log.info(`Bulk timeout for transfer ${TT.transferId} - bulk handling not yet implemented`);
+            logger.info(`Bulk timeout for transfer ${TT.transferId} - bulk handling not yet implemented`);
           } else if (TT.transferStateId === Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT) {
             // Handle bulk reserved timeout
             message.from = this.deps.config.HUB_NAME;
@@ -200,7 +197,7 @@ export class TimeoutHandler {
           }
         }
       } catch (err) {
-        log.error('error in processTimedOutTransfers:', err);
+        logger.error('error in processTimedOutTransfers:', err);
         const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err);
         const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message);
         await span.error(fspiopError, state);
@@ -219,7 +216,7 @@ export class TimeoutHandler {
     if (!Array.isArray(fxTransferTimeoutList)) {
       fxTransferTimeoutList = [fxTransferTimeoutList as TimedOutFxTransfer];
     }
-    log.verbose(`processing ${fxTransferTimeoutList.length} timed out fxTransfers...`);
+    logger.verbose(`processing ${fxTransferTimeoutList.length} timed out fxTransfers...`);
 
     for (const fTT of fxTransferTimeoutList) {
       const span = EventSdk.Tracer.createSpan('cl_fx_transfer_timeout');
@@ -291,7 +288,7 @@ export class TimeoutHandler {
           });
         }
       } catch (err) {
-        log.error('error in processFxTimedOutTransfers:', err);
+        logger.error('error in processFxTimedOutTransfers:', err);
         const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err);
         const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message);
         await span.error(fspiopError, state);
@@ -346,11 +343,11 @@ export class TimeoutHandler {
         
         return !!(await this.deps.distLock.acquire(distLockKey, distLockTtl, distLockAcquireTimeout));
       } catch (err) {
-        log.error('Error acquiring distributed lock:', err);
+        logger.error('Error acquiring distributed lock:', err);
         return false;
       }
     }
-    log.debug('Distributed lock not configured or disabled, running without distributed lock');
+    logger.debug('Distributed lock not configured or disabled, running without distributed lock');
     return this.running ? false : (this.running = true);
   }
 
@@ -358,9 +355,9 @@ export class TimeoutHandler {
     if (this.deps.distLock) {
       try {
         await this.deps.distLock.release();
-        log.verbose('Distributed lock released');
+        logger.verbose('Distributed lock released');
       } catch (error) {
-        log.error('Error releasing distributed lock:', error);
+        logger.error('Error releasing distributed lock:', error);
       }
     }
     this.running = false;

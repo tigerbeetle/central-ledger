@@ -1,4 +1,4 @@
-import { Enum, Util } from '@mojaloop/central-services-shared'
+import { Util } from '@mojaloop/central-services-shared'
 import { Kafka } from '@mojaloop/central-services-stream'
 import { ApplicationConfig } from 'src/shared/config'
 import { TimeoutScheduler, TimeoutSchedulerConfig } from '../messaging/jobs/TimeoutScheduler'
@@ -13,7 +13,7 @@ import { GetHandler, GetHandlerDependencies } from './GetHandler'
 import { PositionHandler, PositionHandlerDependencies } from './PositionHandler'
 import { PrepareHandler, PrepareHandlerDependencies } from './PrepareHandler'
 import { TimeoutHandler, TimeoutHandlerDependencies } from './TimeoutHandler'
-const { createLock } = require('../../lib/distLock');
+const { createLock } = require('../lib/distLock');
 
 const rethrow = Util.rethrow
 
@@ -22,9 +22,9 @@ export const createAdminHandler = (
   consumer: Kafka.Consumer,
 ) => {
   // Import existing business logic modules
-  const TransferService = require('../../domain/transfer/index')
+  const TransferService = require('../domain/transfer/index')
   const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
-  const Db = require('../../lib/db')
+  const Db = require('../lib/db')
 
   const dependencies: AdminHandlerDependencies = {
     committer: new MessageCommitter(consumer),
@@ -60,11 +60,11 @@ export const createPositionHandler = (
   positionProducer: Kafka.Producer,
 ) => {
   // Import existing business logic modules
-  const TransferService = require('../../domain/transfer/index')
-  const PositionService = require('../../domain/position')
-  const participantFacade = require('../../models/participant/facade')
-  const SettlementModelCached = require('../../models/settlement/settlementModelCached')
-  const TransferObjectTransform = require('../../domain/transfer/transform')
+  const TransferService = require('../domain/transfer/index')
+  const PositionService = require('../domain/position')
+  const participantFacade = require('../models/participant/facade')
+  const SettlementModelCached = require('../models/settlement/settlementModelCached')
+  const TransferObjectTransform = require('../domain/transfer/transform')
 
   // Import Kafka utilities for settlement notifications
   const KafkaUtil = Util.Kafka
@@ -96,7 +96,7 @@ export const registerPositionHandlerV2 = async (
     logger.debug(`registerPositionHandlerV2 registering`)
 
     // Initialize settlement model cache (required by position handler)
-    const SettlementModelCached = require('../../models/settlement/settlementModelCached')
+    const SettlementModelCached = require('../models/settlement/settlementModelCached')
     await SettlementModelCached.initialize()
 
     // Create the position handler function
@@ -116,7 +116,7 @@ export function createTimeoutHandler(
   positionProducer: IPositionProducer
 ): TimeoutHandler {
   // TODO(LD): inject the timeout service
-  const TimeoutService = require('../../domain/timeout');
+  const TimeoutService = require('../domain/timeout');
 
   // Initialize distributed lock if enabled
   let distLock;
@@ -189,12 +189,12 @@ export const createPrepareHandler = (
   notificationProducer: Kafka.Producer,
 ) => {
   // Import existing business logic modules
-  const Validator = require('./validator')
-  const TransferService = require('../../domain/transfer/index')
-  const ProxyCache = require('../../lib/proxyCache')
+  const Validator = require('../handlers/transfers/validator')
+  const TransferService = require('../domain/transfer/index')
+  const ProxyCache = require('../lib/proxyCache')
   const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
-  const createRemittanceEntity = require('./createRemittanceEntity')
-  const TransferObjectTransform = require('../../domain/transfer/transform')
+  const createRemittanceEntity = require('../handlers/transfers/createRemittanceEntity')
+  const TransferObjectTransform = require('../domain/transfer/transform')
 
   const dependencies: PrepareHandlerDependencies = {
     positionProducer: new PositionProducer(positionProducer, config),
@@ -239,12 +239,12 @@ export const createFulfilHandler = (
   notificationProducer: Kafka.Producer,
 ) => {
   // Import existing business logic modules
-  const TransferService = require('../../domain/transfer/index')
-  const Validator = require('./validator')
+  const TransferService = require('../domain/transfer/index')
+  const Validator = require('../handlers/transfers/validator')
   const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
-  const FxService = require('../../domain/fx')
-  const TransferObjectTransform = require('../../domain/transfer/transform')
-  const ParticipantFacade = require('../../models/participant/facade')
+  const FxService = require('../domain/fx')
+  const TransferObjectTransform = require('../domain/transfer/transform')
+  const ParticipantFacade = require('../models/participant/facade')
 
   const dependencies: FulfilHandlerDependencies = {
     positionProducer: new PositionProducer(positionProducer, config),
@@ -287,10 +287,10 @@ export const createGetHandler = (
   notificationProducer: Kafka.Producer,
 ) => {
   // Import existing business logic modules
-  const Validator = require('./validator')
-  const TransferService = require('../../domain/transfer/index')
-  const FxTransferModel = require('../../models/fxTransfer/fxTransfer')
-  const TransferObjectTransform = require('../../domain/transfer/transform')
+  const Validator = require('../handlers/transfers/validator')
+  const TransferService = require('../domain/transfer/index')
+  const FxTransferModel = require('../models/fxTransfer/fxTransfer')
+  const TransferObjectTransform = require('../domain/transfer/transform')
 
   const dependencies: GetHandlerDependencies = {
     notificationProducer: new NotificationProducer(notificationProducer, config),

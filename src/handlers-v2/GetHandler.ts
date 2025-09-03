@@ -6,7 +6,6 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
 
-const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;
 
 export interface GetHandlerDependencies {
@@ -86,7 +85,11 @@ export class GetHandler {
 
       if (span && !span.isFinished) {
         const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err);
-        const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message);
+        const state = new EventSdk.EventStateMetadata(
+          EventSdk.EventStatusType.failed, 
+          fspiopError.apiErrorCode.code, 
+          fspiopError.apiErrorCode.message
+        );
         await span.error(fspiopError, state);
         await span.finish(fspiopError.message, state);
       }
@@ -97,13 +100,15 @@ export class GetHandler {
     assert(message);
     assert(message.value);
     assert(message.value.content);
+    assert(message.value.content.uriParams);
+    assert(message.value.content.uriParams.id);
     assert(message.value.metadata);
     assert(message.value.metadata.event);
 
     const headers = message.value.content.headers;
     const action = message.value.metadata.event.action;
     const eventType = message.value.metadata.event.type;
-    const transferId = message.value.content.uriParams?.id;
+    const transferId = message.value.content.uriParams.id;
 
     assert(transferId, 'could not parse transferId from uriParams');
 

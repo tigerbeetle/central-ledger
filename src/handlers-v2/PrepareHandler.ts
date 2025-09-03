@@ -1,5 +1,5 @@
 import { IPositionProducer, INotificationProducer, IMessageCommitter, ProcessResult } from '../messaging/types';
-import { Enum, Util } from '@mojaloop/central-services-shared';
+import CentralServicesShared, { Enum, Util } from '@mojaloop/central-services-shared';
 import { logger } from '../shared/logger';
 import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
@@ -30,10 +30,23 @@ export interface PrepareHandlerDependencies {
   transferObjectTransform: any;
 }
 
+export interface PrepareMessageInput {
+    message: any;
+    payload: CreateTransferDto;
+    headers: any;
+    transferId: string;
+    action: any;
+    isFx: boolean;
+    isBulk: boolean;
+    isForwarded: boolean;
+    metric: string;
+    functionality: CentralServicesShared.EventTypeEnum.TRANSFER;
+    actionEnum: string;
+}
+
 export class PrepareHandler {
   constructor(private deps: PrepareHandlerDependencies) {}
 
-  // TODO(LD): add some typing
   async handle(error: any, messages: any): Promise<void> {
     if (error) {
       rethrow.rethrowAndCountFspiopError(error, { operation: 'PrepareHandler.handle' });
@@ -71,8 +84,7 @@ export class PrepareHandler {
     }
   }
 
-  // TODO(LD): add types here
-  private extractMessageData(message: any) {
+  private extractMessageData(message: any): PrepareMessageInput {
     assert(message)
     assert(message.value)
     assert(message.value.content)
@@ -86,9 +98,6 @@ export class PrepareHandler {
 
     const transferId = payload.transferId
 
-
-    // TODO(LD): copied from dto.js but it's a bad idea
-    // const isFx = !payload.transferId
     const action = message.value.metadata?.event?.action || 'prepare';
   
     // TODO(LD): I really don't like passing around booleans like this
@@ -121,7 +130,6 @@ export class PrepareHandler {
     const { payload, transferId, isFx, action, functionality } = input;
 
     // Proxy obligations, copied from original prepare.js, not sure I understand why we have it
-
     const proxyObligation = await this.calculateProxyObligation(payload, isFx, input);
 
     // 2. Check for duplicates
@@ -220,9 +228,6 @@ export class PrepareHandler {
   }
 
   private async handleError(error: any, input: any, message: any): Promise<void> {
-    // if (error.stack) {
-    //   logger.error
-    // }
     const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(error);
     
     await this.deps.notificationProducer.sendError({
@@ -246,7 +251,7 @@ export class PrepareHandler {
     await this.handleError(result.error, input, input.message);
   }
 
-  private getPositionAction(action: string): 'PREPARE' | 'COMMIT' | 'ABORT' | 'FX_PREPARE' | 'BULK_PREPARE' {
+  private getPositionAction(action: string): 'PREPARE' | 'FX_PREPARE' | 'BULK_PREPARE' {
     const actionUpper = action.toUpperCase();
     if (actionUpper.includes('FX')) return 'FX_PREPARE';
     if (actionUpper.includes('BULK')) return 'BULK_PREPARE';
@@ -267,7 +272,6 @@ export class PrepareHandler {
   }
 
   private async checkDuplication(payload: any, transferId: string, isFx: boolean) {
-    // Delegate to existing implementation
     const { checkDuplication } = require('./prepare');
     return await checkDuplication({
       payload,

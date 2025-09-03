@@ -3,9 +3,9 @@ import * as Metrics from '@mojaloop/central-services-metrics';
 import { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
 import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
-import { IMessageCommitter, INotificationProducer, ProcessResult } from '../../messaging/types';
-import { logger } from '../../shared/logger';
-import { AbortTransferDto, CommitTransferDto, CreateTransferDto } from '../../handlers-v2/types';
+import { AbortTransferDto, CommitTransferDto, CreateTransferDto } from '../handlers-v2/types';
+import { IMessageCommitter, INotificationProducer, ProcessResult } from '../messaging/types';
+import { logger } from '../shared/logger';
 
 const { decodePayload } = Util.StreamingProtocol;
 const rethrow = Util.rethrow;
@@ -21,7 +21,7 @@ export interface PositionHandlerDependencies {
   participantFacade: any;
   settlementModelCached: any;
   transferObjectTransform: any;
-  
+
   // For settlement notifications
   kafkaUtil: any;
   positionProducer: any;
@@ -167,10 +167,7 @@ export class PositionHandler {
   }
 
   private async processPosition(input: PositionMessageInput, message: any): Promise<ProcessResult> {
-    const { payload, transferId, action, eventType, isBulk } = input;
-
-    // Delegate to the original position handling logic
-    const { positions } = require('./handler');
+    const { transferId } = input;
 
     try {
       // Call the original positions function but extract only the business logic we need
@@ -192,29 +189,31 @@ export class PositionHandler {
   }
 
   private async executePositionLogic(input: PositionMessageInput, message: any): Promise<any> {
-    const { payload, transferId, action, eventType, isBulk, kafkaTopic } = input;
+    const { action, eventType } = input;
 
-    if (eventType === Enum.Events.Event.Type.POSITION &&
-      (action === Enum.Events.Event.Action.PREPARE || action === Enum.Events.Event.Action.BULK_PREPARE)) {
-
-      return await this.handlePositionPrepare(input, message);
+    if (eventType !== Enum.Events.Event.Type.POSITION) {
+      throw new Error(`executePositionLogic - unexpected eventType: ${eventType}`)
     }
 
-    if (eventType === Enum.Events.Event.Type.POSITION &&
-      (action === Enum.Events.Event.Action.COMMIT || action === Enum.Events.Event.Action.BULK_COMMIT || action === Enum.Events.Event.Action.RESERVE)) {
-
-      return await this.handlePositionCommit(input, message);
+    switch (action) {
+      case Enum.Events.Event.Action.PREPARE:
+      case Enum.Events.Event.Action.BULK_PREPARE: {
+        return await this.handlePositionPrepare(input, message);
+      }
+      case Enum.Events.Event.Action.COMMIT:
+      case Enum.Events.Event.Action.BULK_COMMIT:
+      case Enum.Events.Event.Action.RESERVE: {
+        return await this.handlePositionCommit(input, message);
+      }
+      case Enum.Events.Event.Action.TIMEOUT_RESERVED:
+      case Enum.Events.Event.Action.FX_TIMEOUT_RESERVED:
+      case Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED: {
+        return await this.handlePositionTimeout(input, message);
+      }
+      default: {
+        throw new Error(`executePositionLogic action: ${action}`);
+      }
     }
-
-    if (eventType === Enum.Events.Event.Type.POSITION &&
-      (action === Enum.Events.Event.Action.TIMEOUT_RESERVED ||
-        action === Enum.Events.Event.Action.FX_TIMEOUT_RESERVED ||
-        action === Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED)) {
-
-      return await this.handlePositionTimeout(input, message);
-    }
-
-    throw new Error(`Unsupported position action: ${action} for eventType: ${eventType}`);
   }
 
   private async handlePositionPrepare(input: PositionMessageInput, message: any): Promise<any> {
@@ -229,7 +228,6 @@ export class PositionHandler {
       // including all metadata etc.
       message.value.content.payload = input.payload
       const prepareBatch = [message];
-      // maybe need to set message.value.content.payload to input.payload
       const { preparedMessagesList } = await this.deps.positionService.calculatePreparePositionsBatch(prepareBatch);
 
       assert(Array.isArray(preparedMessagesList))
@@ -250,7 +248,6 @@ export class PositionHandler {
           transferId,
           transferState: transferState.transferStateId
         };
-
       }
 
       // Failure case - insufficient liquidity
@@ -285,7 +282,6 @@ export class PositionHandler {
     if (validatePayload.transferState !== 'COMMITTED' && validatePayload.transferState !== 'RESERVED') {
       throw new Error('handlePositionCommit validation error - expected payload to be a `CommitTransferDto`')
     }
-    const payload = input.payload as CommitTransferDto
 
     logger.info(`Processing position commit for transfer: ${transferId}`);
 
@@ -344,8 +340,8 @@ export class PositionHandler {
 
       // Send success notification
       await this.sendSuccessNotification(input, message);
-      
-      // Send settlement notification (missing from v2 handlers)
+
+      // Send settlement notification
       await this.sendSettlementNotification(input, message, transferInfo);
 
       logger.info(`Position commit processed successfully for transfer: ${transferId}`, {
@@ -367,24 +363,18 @@ export class PositionHandler {
   }
 
   private async sendSuccessNotification(input: PositionMessageInput, message: any): Promise<void> {
-    // For position prepare success, we pass through the message with original from/to
-    // The switch is just confirming the position change was successful
-
     logger.debug(`Sending success notification for position prepare: ${input.transferId}`);
 
     try {
       await this.deps.notificationProducer.sendSuccess({
         transferId: input.transferId,
         action: input.action,
-        to: message.value.to,        // Keep original destination
-        from: message.value.from,    // Keep original source
-        payload: message.value.content.payload, // Pass through the original payload
+        to: message.value.to,
+        from: message.value.from,
+        payload: message.value.content.payload,
         headers: input.headers,
         metadata: message.value.metadata
       });
-
-
-
 
       logger.debug(`Success notification sent for transfer: ${input.transferId}`);
 
@@ -435,9 +425,6 @@ export class PositionHandler {
       transferId: result.transferId,
       action: input.action
     });
-
-    // Send downstream notifications if needed
-    // This would depend on the specific position action
   }
 
   private async handleErrorResult(result: ProcessResult, input: PositionMessageInput): Promise<void> {
@@ -586,7 +573,7 @@ export class PositionHandler {
   private async sendSettlementNotification(input: PositionMessageInput, message: any, transferInfo: any): Promise<void> {
     try {
       // Replicate the legacy Kafka.proceed call for settlement service integration
-      
+
       // Build message in the same format as legacy handler
       const kafkaMessage = {
         value: {

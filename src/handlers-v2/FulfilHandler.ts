@@ -94,7 +94,11 @@ export class FulfilHandler {
 
       if (span && !span.isFinished) {
         const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err);
-        const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message);
+        const state = new EventSdk.EventStateMetadata(
+          EventSdk.EventStatusType.failed, 
+          fspiopError.apiErrorCode.code, 
+          fspiopError.apiErrorCode.message
+        );
         await span.error(fspiopError, state);
         await span.finish(fspiopError.message, state);
       }
@@ -429,7 +433,7 @@ export class FulfilHandler {
       from: message.value.from,
       to: message.value.to,
       headers: input.headers,
-      payload: message.value.content.payload, // base64 encoded payload
+      payload: message.value.content.payload,
       metadata: message.value.metadata
     };
 
