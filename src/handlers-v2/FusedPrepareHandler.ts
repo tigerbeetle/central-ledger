@@ -184,7 +184,8 @@ export class FusedPrepareHandler {
         });
         break;
       }
-      case PrepareResultType.FAIL_LIQUIDITY: {
+      case PrepareResultType.FAIL_LIQUIDITY:
+      case PrepareResultType.FAIL_OTHER: {
         const typedResult = result as PrepareResultFailLiquidity
         assert(typedResult.fspiopError)
         assert(input.message)

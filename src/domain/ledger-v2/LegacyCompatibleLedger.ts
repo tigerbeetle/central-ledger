@@ -6,6 +6,9 @@ import { PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult, Mes
 import assert from "assert";
 import { logger } from '../../shared/logger';
 import { ApplicationConfig } from "src/shared/config";
+import * as ErrorHandler from '@mojaloop/central-services-error-handling';
+
+import fspiopErrorFactory from "src/shared/fspiopErrorFactory";
 
 
 export enum PrepareResultType {
@@ -33,6 +36,30 @@ export enum PrepareResultType {
    * Transfer failed as payee didn't have sufficent liquidity
    */
   FAIL_LIQUIDITY = 'FAIL_LIQUIDITY',
+
+  /**
+   * Catch-all Transfer failed for another reason
+   */
+  FAIL_OTHER = 'FAIL_OTHER',
+}
+
+
+export enum DuplicationResult {
+  /**
+   * Transfer id is unique
+   */
+  UNIQUE = 'UNIQUE',
+
+  /**
+   * Transfer Id is the same, body is different
+   */
+  MODIFIED = 'MODIFIED',
+
+  /**
+   * Transfer Id is the same, body is the same
+   */
+  DUPLICATED = 'DUPLICATED'
+
 }
 
 export type PrepareResult = PrepareResultPass
@@ -40,6 +67,7 @@ export type PrepareResult = PrepareResultPass
   | PrepareResultDuplicateNonFinal
   | PrepareResultFailValidation
   | PrepareResultFailLiquidity
+  | PrepareResultFailOther
 
 export interface PrepareResultPass {
   type: PrepareResultType.PASS
@@ -47,14 +75,12 @@ export interface PrepareResultPass {
 
 export interface PrepareResultDuplicateFinal {
   type: PrepareResultType.DUPLICATE_FINAL,
-  hasDuplicateHash: boolean,
   // TODO(LD): add types to this!
   finalisedTransfer: any
 }
 
 export interface PrepareResultDuplicateNonFinal {
   type: PrepareResultType.DUPLICATE_NON_FINAL,
-  hasDuplicateHash: boolean
 }
 
 export interface PrepareResultFailValidation {
@@ -64,6 +90,10 @@ export interface PrepareResultFailValidation {
 
 export interface PrepareResultFailLiquidity {
   type: PrepareResultType.FAIL_LIQUIDITY,
+  fspiopError: any,
+}
+export interface PrepareResultFailOther {
+  type: PrepareResultType.FAIL_OTHER,
   fspiopError: any,
 }
 
@@ -80,8 +110,6 @@ export interface LegacyCompatibleLedgerDependencies {
   comparators: any;
   createRemittanceEntity: any;
   transferObjectTransform: any;
-
-  // Business logic functions from prepare.js
   checkDuplication: (args: {
     payload: CreateTransferDto,
     isFx: boolean,
@@ -119,14 +147,38 @@ export default class LegacyCompatibleLedger {
     const { payload, transferId, headers } = input;
     logger.debug(`prepare() - transferId: ${transferId}`)
 
-    const duplicateCheckResult = await this.checkForDuplicate(payload, transferId)
-    if (duplicateCheckResult.hasDuplicateId) {
-      // TODO(LD): As part of the duplicate check, we need to check to see if the transfer
-      // is in a final state, or still being processed
-      return {
-        type: PrepareResultType.DUPLICATE_NON_FINAL,
-        hasDuplicateHash: duplicateCheckResult.hasDuplicateHash,
+    const duplicationResult = await this.checkForDuplicate(payload, transferId)
+    switch (duplicationResult) {
+      case DuplicationResult.DUPLICATED: {
+        const transfer = await this.deps.transferService.getById(transferId)
+        assert(transfer.transferStateEnumeration)
+        const finalizedStates = [
+          Enum.Transfers.TransferState.COMMITTED,
+          Enum.Transfers.TransferState.ABORTED,
+          Enum.Transfers.TransferState.RESERVED
+        ];
+
+        if (finalizedStates.includes(transfer.transferStateEnumeration)) {
+          const payload = this.deps.transferObjectTransform.toFulfil(transfer, false)
+          return {
+            type: PrepareResultType.DUPLICATE_FINAL,
+            finalisedTransfer: payload, 
+          }
+        }
+
+        return {
+          type: PrepareResultType.DUPLICATE_NON_FINAL
+        }
       }
+      case DuplicationResult.MODIFIED: {
+        return {
+          type: PrepareResultType.FAIL_OTHER,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST),
+          
+        }
+      }
+      case DuplicationResult.UNIQUE:
+      default: { }
     }
 
     // Always save the transfer, even if it's invalid
@@ -176,13 +228,25 @@ export default class LegacyCompatibleLedger {
   /**
    * Shim Methods to improve usability before refactoring
    */
-  private async checkForDuplicate(payload: CreateTransferDto, transferId: string): Promise<DuplicationCheckResult> {
-    return await this.deps.checkDuplication({
+  private async checkForDuplicate(payload: CreateTransferDto, transferId: string): Promise<DuplicationResult> {
+    const checkDuplicationResult = await this.deps.checkDuplication({
       payload,
       isFx: false,
       ID: transferId,
       location: { module: 'PrepareHandler', method: 'checkDuplication', path: '' }
     });
+
+    if (checkDuplicationResult.hasDuplicateHash && checkDuplicationResult.hasDuplicateId) {
+      return DuplicationResult.DUPLICATED
+    }
+
+    if (checkDuplicationResult.hasDuplicateId) {
+      return DuplicationResult.MODIFIED
+    }
+
+    // transfers should be unique
+    assert(checkDuplicationResult.hasDuplicateHash === false)
+    return DuplicationResult.UNIQUE
   }
 
   private async validateTransfer(payload: CreateTransferDto, headers: any): Promise<ValidationResult> {
@@ -221,28 +285,6 @@ export default class LegacyCompatibleLedger {
     });
   }
 
-  private async calculatePositionData(payload: CreateTransferDto): Promise<PositionData> {
-    // hardcoded for our use case
-    const isFx = false
-    const determiningTransferCheckResult = this.createMinimalTransferCheckResult()
-    const proxyObligation = this.createMinimalProxyObligation(payload)
-
-    const result = await this.deps.definePositionParticipant({
-      payload: proxyObligation.payloadClone,
-      isFx,
-      determiningTransferCheckResult,
-      proxyObligation
-    });
-
-    return {
-      participantCurrencyId: result.messageKey,
-      amount: payload.amount.amount,
-      currency: payload.amount.currency,
-      cyrilResult: result.cyrilResult,
-      messageKey: result.messageKey
-    };
-  }
-
   private async calculatePreparePositions(
     payload: CreateTransferDto,
     messageContext: MessageContext
@@ -279,7 +321,7 @@ export default class LegacyCompatibleLedger {
    */
   static extractMessageContext(input: PrepareMessageInput): MessageContext {
     const message = input.message;
-    
+
     return {
       from: message.value.from,
       to: message.value.to,
@@ -300,11 +342,11 @@ export default class LegacyCompatibleLedger {
    * @returns A properly formatted PositionKafkaMessage for calculatePreparePositionsBatch
    */
   static createMinimalPositionKafkaMessage(
-    payload: CreateTransferDto, 
+    payload: CreateTransferDto,
     messageContext: MessageContext
   ): PositionKafkaMessage {
     const now = new Date().toISOString();
-    
+
     return {
       topic: 'position-prepare',
       key: payload.transferId,
