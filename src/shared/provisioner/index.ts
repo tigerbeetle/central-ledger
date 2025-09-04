@@ -1,13 +1,19 @@
+import assert from "node:assert"
 
 const Logger = require('../logger').logger
 
 export interface ProvisioningConfig {
   currencies: Array<string>,
-  hubAlertEmailAddress: string | undefined,
+  hubAlertEmailAddress?: string,
   settlementModels: Array<unknown>
   oracles: Array<unknown>
 }
 
+export interface ProvisionerDependencies {
+  participantsHandler: any,
+  participantService: any,
+  settlementModelDomain: any,
+}
 
 
 /**
@@ -25,16 +31,11 @@ export interface ProvisioningConfig {
  */
 export default class Provisioner {
   private config: ProvisioningConfig
-  private participantsHandler: any
-  private participantService: any
-  private settlementModelDomain: any
+  private deps: ProvisionerDependencies
 
-  constructor(config: ProvisioningConfig) {
+  constructor(config: ProvisioningConfig, deps: ProvisionerDependencies) {
     this.config = config
-
-    this.participantsHandler = require('../../api/participants/handler')
-    this.participantService = require('../../domain/participant')
-    this.settlementModelDomain = require('../../domain/settlement')
+    this.deps = deps
   }
 
   public async run(): Promise<void> {
@@ -53,8 +54,10 @@ export default class Provisioner {
   }
 
   private async isFreshLedger(): Promise<boolean> {
-    const hubParticipant = await this.participantService.getByName('Hub');
-
+    const hubParticipant = await this.deps.participantService.getByName('Hub');
+    assert(hubParticipant, 'Expected hubParticipant to be defined')
+    assert(hubParticipant.currencyList)
+    
     // TODO(LD): not sure how kosher it is to imply whether or not the hub has been configured based
     // on the currency list
     if (hubParticipant.currencyList.length === 0) {
@@ -101,7 +104,7 @@ export default class Provisioner {
           }
         }
       }
-      await this.participantsHandler.createHubAccount(requestMultilateralSettlement, mockCallback)
+      await this.deps.participantsHandler.createHubAccount(requestMultilateralSettlement, mockCallback)
 
       const requestHubReconcilation = {
         params: {
@@ -112,7 +115,7 @@ export default class Provisioner {
           currency,
         }
       }
-      await this.participantsHandler.createHubAccount(requestHubReconcilation, mockCallback)
+      await this.deps.participantsHandler.createHubAccount(requestHubReconcilation, mockCallback)
 
 
       // settlement models per currency
@@ -129,7 +132,7 @@ export default class Provisioner {
         autoPositionReset: true
       }
 
-      await this.settlementModelDomain.createSettlementModel(model)
+      await this.deps.settlementModelDomain.createSettlementModel(model)
     }
   }
 }

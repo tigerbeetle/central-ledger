@@ -6,7 +6,9 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import assert from 'assert';
 import { CreateTransferDto } from './types';
 import { ApplicationConfig } from '../shared/config';
-import LegacyCompatibleLedger, { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from '../domain/ledger-v2/LegacyCompatibleLedger';
+import LegacyCompatibleLedger from '../domain/ledger-v2/LegacyCompatibleLedger';
+import { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from 'src/domain/ledger-v2/types';
+
 
 const { decodePayload } = Util.StreamingProtocol
 const rethrow = Util.rethrow;
@@ -51,6 +53,7 @@ export class FusedPrepareHandler {
     assert.equal(messages.length, 1, 'Expected exactly only 1 message from consumers')
     const message = messages[0]
     const input = this.extractMessageData(message);
+    logger.debug(`FusedPrepareHandler.handle() - extracted message is: ${input}`)
 
     const histTimerEnd = Metrics.getHistogram(
       input.metric,

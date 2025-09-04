@@ -36,6 +36,9 @@ export interface FulfilMessageInput {
   kafkaTopic: string;
 }
 
+/**
+ * @deprecated Use FusedFulfilHandler instead
+ */
 export class FulfilHandler {
   constructor(private deps: FulfilHandlerDependencies) { }
 

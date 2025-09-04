@@ -91,6 +91,17 @@ export interface LegacyCompatibleLedgerDependencies {
   getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>;
 }
 
+
+// TODO(LD): TODO
+export interface SettlementModel {
+
+}
+
+/**
+ * @class LegacyCompatibleLedger
+ * @description Collects the business logic from all ledger-related activites into a common 
+ *   interface which can be abstracted out and reimplemented with TigerBeetle
+ */
 export default class LegacyCompatibleLedger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) {
 
@@ -102,6 +113,11 @@ export default class LegacyCompatibleLedger {
 
   public async createHubAccount(thing: unknown): Promise<unknown> {
     throw new Error('not implemented')
+  }
+
+  // need to create settlement models somehow
+  public async createSettlementModel(model: SettlementModel): Promise<void> {
+
   }
 
   public async createDfsp(thing: unknown): Promise<unknown> {

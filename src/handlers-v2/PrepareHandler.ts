@@ -104,6 +104,9 @@ export interface PrepareMessageInput {
   actionEnum: string;
 }
 
+/**
+ * @deprecated Use FusedPrepareHandler instead
+ */
 export class PrepareHandler {
   constructor(private deps: PrepareHandlerDependencies) { }
 

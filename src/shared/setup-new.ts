@@ -35,7 +35,7 @@ import ParticipantCurrencyCached from '../models/participant/participantCurrency
 import ParticipantLimitCached from '../models/participant/participantLimitCached';
 import BatchPositionModelCached from '../models/position/batchCached';
 import Plugins from './plugins';
-import Provisioner from './provisioner';
+import Provisioner, { ProvisionerDependencies } from './provisioner';
 import { getAccountByNameAndCurrency } from 'src/domain/participant';
 
 
@@ -164,7 +164,12 @@ export async function initialize({
 
     // Provision from scratch on first start, or update provisioning to match static config
     if (config.EXPERIMENTAL.PROVISIONING.enabled) {
-      const provisioner = new Provisioner(config.EXPERIMENTAL.PROVISIONING)
+      const provisionerDependencies: ProvisionerDependencies = {
+        participantsHandler: require('../../api/participants/handler'),
+        participantService: require('../../domain/participant'),
+        settlementModelDomain: require('../../domain/settlement'),
+      }
+      const provisioner = new Provisioner(config.EXPERIMENTAL.PROVISIONING, provisionerDependencies)
       await provisioner.run();
     }
 

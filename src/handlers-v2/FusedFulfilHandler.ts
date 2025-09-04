@@ -2,13 +2,14 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as Metrics from '@mojaloop/central-services-metrics';
 import { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
 import assert from 'assert';
-import LegacyCompatibleLedger, { FulfilResult, FulfilResultType } from '../domain/ledger-v2/LegacyCompatibleLedger';
+import LegacyCompatibleLedger from '../domain/ledger-v2/LegacyCompatibleLedger';
 import { IMessageCommitter, INotificationProducer, IPositionProducer } from '../messaging/types';
 import { ApplicationConfig } from '../shared/config';
 import { logger } from '../shared/logger';
 import { CommitTransferDto } from './types';
 
 import * as EventSdk from '@mojaloop/event-sdk';
+import { FulfilResult, FulfilResultType } from 'src/domain/ledger-v2/types';
 
 const { decodePayload } = Util.StreamingProtocol
 const rethrow = Util.rethrow;
@@ -59,6 +60,7 @@ export class FusedFulfilHandler {
 
     const message = messages[0];
     const input = this.extractMessageData(message);
+    logger.debug(`FusedFulfilHandler.handle() - extracted message is: ${input}`)
 
     try {
       assert.equal(input.eventType, Enum.Events.Event.Type.FULFIL, 'Expected event type to be `FULFIL`')
