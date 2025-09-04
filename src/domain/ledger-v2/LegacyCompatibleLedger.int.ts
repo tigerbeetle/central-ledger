@@ -1,3 +1,24 @@
+// Mock Kafka before any imports
+const mockKafkaProducer = {
+  produceGeneralMessage: async () => ({ success: true }),
+  connect: async () => {},
+  disconnect: async () => {}
+};
+
+// Simple module patching approach
+const Module = require('module');
+const originalRequire = Module.prototype.require;
+Module.prototype.require = function(id: string) {
+  if (id === '@mojaloop/central-services-stream') {
+    return {
+      Util: {
+        Producer: mockKafkaProducer
+      }
+    };
+  }
+  return originalRequire.apply(this, arguments);
+};
+
 import { describe, it, beforeEach, afterEach, before, after } from 'node:test';
 import assert from 'node:assert';
 import { Enum } from '@mojaloop/central-services-shared';
@@ -100,6 +121,8 @@ describe('LegacyCompatibleLedger', () => {
         participantsHandler: require('../../api/participants/handler'),
         participantService: require('../../domain/participant'),
         participantFacade: require('../../models/participant/facade'),
+        transferService: require('../../domain/transfer'),
+        enums: await require('../../lib/enumCached').getEnums('all'),
       })
       await dfspProvisioner.run(dfspAConfig)
       await dfspProvisioner.run(dfspBConfig)

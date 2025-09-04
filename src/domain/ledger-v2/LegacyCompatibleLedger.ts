@@ -143,7 +143,7 @@ export default class LegacyCompatibleLedger {
   /**
    * Transfer Methods
    */
-
+  
   public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
     const { payload, transferId, headers } = input;
     logger.debug(`prepare() - transferId: ${transferId}`)

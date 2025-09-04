@@ -1,8 +1,9 @@
 import assert from "assert";
 import LegacyCompatibleLedger from "../domain/ledger-v2/LegacyCompatibleLedger";
 import { logger } from '../shared/logger';
+import { randomUUID } from 'crypto';
 
-const { Enum } = require('@mojaloop/central-services-shared');
+const { Enum, Util: { Time } } = require('@mojaloop/central-services-shared');
 
 
 export interface DFSPProvisionerConfig {
@@ -17,7 +18,7 @@ export interface DFSPProvisionerConfig {
   currencies: Array<string>
 
   /**
-   * The account opening positions per currency
+   * The account opening limits, one per currency
    */
   initialLimits: Array<number>
 
@@ -30,6 +31,8 @@ export interface DFSPProvisionerDependencies {
   participantsHandler: any
   participantService: any
   participantFacade: any
+  transferService: any
+  enums: any
 }
 
 /**
@@ -64,6 +67,10 @@ export default class DFSPProvisioner {
 
       childLogger.info('Setting initial limits for participant');
       await this.setInitialLimits(config);
+
+      // 5. Fund the settlement accounts
+      childLogger.info('Funding settlement accounts');
+      await this.fundsIn(config);
       
       childLogger.info('DFSP provisioning completed successfully');
     } catch (error) {
@@ -116,9 +123,9 @@ export default class DFSPProvisioner {
   private async setInitialLimits(config: DFSPProvisionerConfig): Promise<void> {
     for (let i = 0; i < config.currencies.length; i++) {
       const currency = config.currencies[i];
-      const limitValue = config.initialLimits[i]
-      assert(limitValue)
-      assert(limitValue >= 0)
+      const initialLimit = config.initialLimits[i]
+      assert(initialLimit)
+      assert(initialLimit >= 0)
       
       // Get participant accounts to get the participantCurrencyIds needed by the facade
       const positionAccount = await this.deps.participantFacade.getByNameAndCurrency(
@@ -137,7 +144,7 @@ export default class DFSPProvisioner {
       const limitPayload = {
         limit: {
           type: 'NET_DEBIT_CAP',
-          value: limitValue,
+          value: initialLimit,
           thresholdAlarmPercentage: 10
         },
         initialPosition: 0
@@ -150,6 +157,45 @@ export default class DFSPProvisioner {
         limitPayload,
         true
       );
+    }
+  }
+
+  private async fundsIn(config: DFSPProvisionerConfig): Promise<void> {
+    for (let i = 0; i < config.currencies.length; i++) {
+      const currency = config.currencies[i];
+      const fundingAmount = config.initialLimits[i];
+      
+      // Get settlement account to get the account ID
+      const settlementAccount = await this.deps.participantFacade.getByNameAndCurrency(
+        config.id,
+        currency,
+        Enum.Accounts.LedgerAccountType.SETTLEMENT
+      );
+      assert(settlementAccount);
+
+      // Generate a unique transferId for the funding transaction
+      const transferId = randomUUID();
+      
+      // Call TransferService.recordFundsIn directly to bypass Kafka
+      const payload = {
+        transferId,
+        participantCurrencyId: settlementAccount.participantCurrencyId,
+        action: 'recordFundsIn',
+        reason: 'Initial funding for testing',
+        externalReference: `funding-${config.id}-${currency}-${Date.now()}`,
+        amount: {
+          amount: fundingAmount.toString(),
+          currency
+        }
+      };
+
+      const transactionTimestamp = Time.getUTCString(new Date());
+      
+      // Create duplicate check entry first (required by foreign key constraint)
+      await this.deps.transferService.saveTransferDuplicateCheck(transferId, payload);
+      
+      // Call the transfer service directly
+      await this.deps.transferService.recordFundsIn(payload, transactionTimestamp, this.deps.enums);
     }
   }
 }
