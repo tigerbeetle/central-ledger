@@ -21,31 +21,31 @@ Module.prototype.require = function (id: string) {
   return originalRequire.apply(this, arguments);
 };
 
-import { describe, it, beforeEach, afterEach, before, after } from 'node:test';
-import assert from 'node:assert';
 import { Enum } from '@mojaloop/central-services-shared';
-import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from './LegacyCompatibleLedger';
-import { PrepareResultType, FulfilResultType, PrepareResult, FulfilResult } from './types';
-import { CreateTransferDto, CommitTransferDto } from '../../handlers-v2/types';
-import { FusedPrepareHandlerInput } from '../../handlers-v2/FusedPrepareHandler';
+import assert from 'node:assert';
+import { randomUUID } from 'node:crypto';
+import { after, before, describe, it } from 'node:test';
 import { FusedFulfilHandlerInput } from '../../handlers-v2/FusedFulfilHandler';
-import { ApplicationConfig } from '../../shared/config';
-import { makeConfig } from '../../shared/config/resolver';
-import Db from '../../lib/db';
+import { FusedPrepareHandlerInput } from '../../handlers-v2/FusedPrepareHandler';
+import { CommitTransferDto, CreateTransferDto } from '../../handlers-v2/types';
 import Cache from '../../lib/cache';
+import Db from '../../lib/db';
 import EnumCached from '../../lib/enumCached';
+import externalParticipantCached from '../../models/participant/externalParticipantCached';
 import ParticipantCached from '../../models/participant/participantCached';
 import ParticipantCurrencyCached from '../../models/participant/participantCurrencyCached';
 import ParticipantLimitCached from '../../models/participant/participantLimitCached';
 import BatchPositionModelCached from '../../models/position/batchCached';
-import externalParticipantCached from '../../models/participant/externalParticipantCached';
 import SettlementModelCached from '../../models/settlement/settlementModelCached';
-import { IntegrationHarness, DatabaseConfig } from '../../testing/integration-harness';
-import Provisioner, { ProvisionerDependencies, ProvisioningConfig } from '../../shared/provisioner';
+import { ApplicationConfig } from '../../shared/config';
+import { makeConfig } from '../../shared/config/resolver';
 import { logger } from '../../shared/logger';
+import Provisioner, { ProvisionerDependencies, ProvisioningConfig } from '../../shared/provisioner';
 import DFSPProvisioner, { DFSPProvisionerConfig } from '../../testing/dfsp-provisioner';
-import { randomUUID } from 'node:crypto';
+import { DatabaseConfig, IntegrationHarness } from '../../testing/integration-harness';
 import { MojaloopMockQuoteILPResponse, TestUtils } from '../../testing/testutils';
+import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from './LegacyCompatibleLedger';
+import { PrepareResultType } from './types';
 
 describe('LegacyCompatibleLedger', () => {
   let ledger: LegacyCompatibleLedger;
@@ -61,7 +61,6 @@ describe('LegacyCompatibleLedger', () => {
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
         port: 3307,
-        // migration: { type: 'knex' }
         migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
       });
 
@@ -114,6 +113,7 @@ describe('LegacyCompatibleLedger', () => {
           participantFacade: require('../../models/participant/facade'),
           transferService: require('../../domain/transfer'),
           enums: await require('../../lib/enumCached').getEnums('all'),
+          settlementModelDomain: require('../../domain/settlement'),
         },
         clearing: {
           validatePrepare: Validator.validatePrepare,
@@ -146,12 +146,7 @@ describe('LegacyCompatibleLedger', () => {
         settlementModels: [],
         oracles: []
       }
-      const provisionerDependencies: ProvisionerDependencies = {
-        participantsHandler: require('../../api/participants/handler'),
-        participantService: require('../../domain/participant'),
-        settlementModelDomain: require('../../domain/settlement'),
-      }
-      const provisioner = new Provisioner(provisionConfig, provisionerDependencies)
+      const provisioner = new Provisioner(provisionConfig, { ledger })
       await provisioner.run();
 
       // Provision dfsps
@@ -200,11 +195,6 @@ describe('LegacyCompatibleLedger', () => {
       await harness.teardown();
     }
   });
-
-  // beforeEach(async () => {
-
-  // });
-
 
   describe('happy path prepare and fulfill', () => {
     const transferId = randomUUID()
@@ -348,6 +338,13 @@ describe('LegacyCompatibleLedger', () => {
   /**
    * Test scenarios to implement:
    * 
+   * Lifecycle:
+   * - createDfsp
+   * - createDfsp which already exists
+   * - createDfsp with bad parameters
+   * - depositCollateral
+   * 
+   * Clearing:
    * - payer insufficent liquidity
    * - closed account payer
    * - closed account payee

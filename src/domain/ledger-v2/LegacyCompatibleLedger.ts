@@ -32,10 +32,14 @@ export interface LegacyCompatibleLedgerDependencies {
   lifecycle: {
     participantsHandler: {
       create: (request: { payload: { name: string, currency: string } }, callback: any) => Promise<void>
+      createHubAccount: (request: { params: { name: string }, payload: { type: string, currency: string } }, callback: any) => Promise<void>
     }
     participantService: {
-      getByName: (name: string) => Promise<any>
-    }
+      getByName: (name: string) => Promise<{ currencyList: any[] }>
+    },
+    settlementModelDomain: {
+      createSettlementModel: (model: { name: string, settlementGranularity: string, settlementInterchange: string, settlementDelay: string, currency: string, requireLiquidityCheck: boolean, ledgerAccountType: string, settlementAccountType: string, autoPositionReset: boolean }) => Promise<void>
+    },
     participantFacade: {
       getByNameAndCurrency: (name: string, currency: string, accountType: any) => Promise<{ participantCurrencyId: number }>
       addLimitAndInitialPosition: (positionParticipantCurrencyId: number, settlementParticipantCurrencyId: number, payload: any, processLimitsOnly: boolean) => Promise<void>
@@ -111,6 +115,29 @@ export interface LegacyCompatibleLedgerDependencies {
   }
 }
 
+export interface CreateHubAccountCommand {
+  currency: string,
+  settlementModel: SettlementModel
+}
+
+export interface CreateHubAccountResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface CreateHubAccountResponseAlreadyExists {
+  type: 'ALREADY_EXISTS'
+}
+
+export interface CreateHubAccountResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type CreateHubAccountResponse = CreateHubAccountResponseSuccess
+  | CreateHubAccountResponseAlreadyExists
+  | CreateHubAccountResponseFailed
+
+
 export interface CreateDFSPCommand {
   dfspId: string,
   currencies: Array<string>
@@ -164,7 +191,15 @@ export type DepositCollateralResponse = DepositCollateralResponseSuccess
 
 // TODO(LD): TODO
 export interface SettlementModel {
-
+  name: string,
+  settlementGranularity: string,
+  settlementInterchange: string,
+  settlementDelay: string,
+  currency: string,
+  requireLiquidityCheck: boolean,
+  ledgerAccountType: string,
+  settlementAccountType: string,
+  autoPositionReset: boolean
 }
 
 /**
@@ -181,13 +216,75 @@ export default class LegacyCompatibleLedger {
    * Onboarding/Lifecycle Management
    */
 
-  public async createHubAccount(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
-  }
+  public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
+    assert(cmd.currency)
+    assert(cmd.settlementModel)
+    assert(cmd.settlementModel.name)
+    assert(cmd.settlementModel.settlementGranularity)
+    assert(cmd.settlementModel.settlementInterchange)
+    assert(cmd.settlementModel.settlementDelay)
+    assert.equal(cmd.settlementModel.currency, cmd.currency)
+    assert(cmd.settlementModel.requireLiquidityCheck === true, 'createHubAccount - currently only allows settlements with liquidity checks enabled')
+    assert(cmd.settlementModel.ledgerAccountType)
+    assert(cmd.settlementModel.settlementAccountType)
+    assert(cmd.settlementModel.autoPositionReset === true || cmd.settlementModel.autoPositionReset === false)
 
-  // need to create settlement models somehow
-  public async createSettlementModel(model: SettlementModel): Promise<void> {
+    // dummy to suit the `h` object the handlers expect
+    const mockCallback = {
+      response: (body: any) => {
+        return {
+          code: (code: number) => { }
+        }
+      }
+    }
 
+    try {
+      const requestMultilateralSettlement = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          type: 'HUB_MULTILATERAL_SETTLEMENT',
+          currency: cmd.currency
+        }
+      }
+      const requestHubReconcilation = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          type: 'HUB_RECONCILIATION',
+          currency: cmd.currency,
+        }
+      }
+      try {
+        await this.deps.lifecycle.participantsHandler.createHubAccount(requestMultilateralSettlement, mockCallback)
+        await this.deps.lifecycle.participantsHandler.createHubAccount(requestHubReconcilation, mockCallback)
+      } catch (err) {
+        // catch this early, since we can't know if the settlementModel has also already been created
+        if ((err as ErrorHandler.FSPIOPError).message === 'Hub account has already been registered.') {
+          logger.warn('createHubAccount', {error: err})
+        } else {
+          throw err
+        }
+      }
+
+      await this.deps.lifecycle.settlementModelDomain.createSettlementModel(cmd.settlementModel)
+      return {
+        type: 'SUCCESS'
+      }
+    } catch (err) {
+      if (err.message === 'Settlement Model already exists') {
+        return {
+          type: 'ALREADY_EXISTS'
+        }
+      }
+
+      return {
+        type: 'FAILED',
+        error: err
+      }
+    }
   }
 
   /**
@@ -300,7 +397,7 @@ export default class LegacyCompatibleLedger {
     assert(cmd.currency)
     assert(cmd.dfspId)
 
-    try {      
+    try {
       const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
         cmd.dfspId,
         cmd.currency,
@@ -325,7 +422,7 @@ export default class LegacyCompatibleLedger {
 
       // Call the transfer service directly
       await this.deps.lifecycle.transferService.recordFundsIn(
-        payload, 
+        payload,
         Time.getUTCString(now),
         this.deps.lifecycle.enums
       );
