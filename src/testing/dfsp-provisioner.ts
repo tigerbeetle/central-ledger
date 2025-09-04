@@ -1,16 +1,14 @@
 import assert from "assert";
+import { randomUUID } from 'crypto';
 import LegacyCompatibleLedger from "../domain/ledger-v2/LegacyCompatibleLedger";
 import { logger } from '../shared/logger';
-import { randomUUID } from 'crypto';
-
-const { Enum, Util: { Time } } = require('@mojaloop/central-services-shared');
 
 
 export interface DFSPProvisionerConfig {
   /**
    * The id of the DFSP
    */
-  id: string
+  dfspId: string
 
   /**
    * Which currencies to create accounts for
@@ -26,13 +24,6 @@ export interface DFSPProvisionerConfig {
 
 export interface DFSPProvisionerDependencies {
   ledger: LegacyCompatibleLedger
-
-  // TODO(LD): remove the need for these, eventually we should just be calling the ledger itself
-  participantsHandler: any
-  participantService: any
-  participantFacade: any
-  transferService: any
-  enums: any
 }
 
 /**
@@ -41,161 +32,52 @@ export interface DFSPProvisionerDependencies {
 export default class DFSPProvisioner {
 
   constructor(private deps: DFSPProvisionerDependencies) {
-    
+
   }
 
   public async run(config: DFSPProvisionerConfig): Promise<void> {
     assert(config.currencies.length > 0, 'DFSP should have at least 1 currency')
     assert.equal(config.currencies.length, config.initialLimits.length)
 
-    const childLogger = logger.child({ dfspId: config.id });
-    
+    const childLogger = logger.child({ dfspId: config.dfspId });
+
     try {
-      // 1. Check if DFSP already exists. If it does, then exit
-      const existingParticipant = await this.checkParticipantExists(config);
-      if (existingParticipant) {
-        childLogger.info(`DFSP already exists, skipping provisioning`);
-        return;
+      const result = await this.deps.ledger.createDfsp(config)
+      if (result.type === 'FAILED') {
+        throw result.error
       }
 
-      // 2. Create the participant
-      childLogger.info(`Creating DFSP participant`);
-      await this.createParticipant(config);
+      if (result.type === 'ALREADY_EXISTS') {
+        childLogger.info('DFSP already created')
+        return
+      }
 
-      childLogger.info('Creating participant accounts for currencies', { currencies: config.currencies });
-      await this.createParticipantAccounts(config);
+      for (let i = 0; i < config.currencies.length; i++) {
+        const currency = config.currencies[i];
+        const initialLimit = config.initialLimits[i]
+        assert(currency)
+        assert(initialLimit)
 
-      childLogger.info('Setting initial limits for participant');
-      await this.setInitialLimits(config);
+        const depositResult = await this.deps.ledger.depositCollateral({
+          transferId: randomUUID(),
+          dfspId: config.dfspId,
+          currency,
+          amount: initialLimit,
+        })
+        if (depositResult.type === 'FAILED') {
+          throw depositResult.error
+        }
+        if (depositResult.type === 'ALREADY_EXISTS') {
+          return
+        }
 
-      // 5. Fund the settlement accounts
-      childLogger.info('Funding settlement accounts');
-      await this.fundsIn(config);
-      
+        childLogger.info(`depositted collateral of: ${currency} ${initialLimit}`)
+      }
+
       childLogger.info('DFSP provisioning completed successfully');
     } catch (error) {
       childLogger.error('DFSP provisioning failed', { error: error.message });
       throw error;
-    }
-  }
-
-  private async checkParticipantExists(config: DFSPProvisionerConfig): Promise<boolean> {
-    try {
-      const participant = await this.deps.participantService.getByName(config.id);
-      assert(participant)
-      return true
-    } catch (error) {
-      // If getByName throws an error, the participant doesn't exist
-      return false;
-    }
-  }
-
-  private async createParticipant(config: DFSPProvisionerConfig): Promise<void> {
-    // The participant is created automatically by the handler when creating the first account
-    // So we don't need a separate createParticipant step
-  }
-
-  private async createParticipantAccounts(config: DFSPProvisionerConfig): Promise<void> {
-    // Mock callback to suit the handler expectations
-    const mockCallback = {
-      response: (body: any) => {
-        return {
-          code: (code: number) => { }
-        }
-      }
-    };
-
-    for (let i = 0; i < config.currencies.length; i++) {
-      const currency = config.currencies[i];
-      
-      // Create participant with position account (this creates participant if it doesn't exist)
-      const positionAccountRequest = {
-        payload: {
-          name: config.id,
-          currency
-        }
-      };
-      
-      await this.deps.participantsHandler.create(positionAccountRequest, mockCallback);
-    }
-  }
-
-  private async setInitialLimits(config: DFSPProvisionerConfig): Promise<void> {
-    for (let i = 0; i < config.currencies.length; i++) {
-      const currency = config.currencies[i];
-      const initialLimit = config.initialLimits[i]
-      assert(initialLimit)
-      assert(initialLimit >= 0)
-      
-      // Get participant accounts to get the participantCurrencyIds needed by the facade
-      const positionAccount = await this.deps.participantFacade.getByNameAndCurrency(
-        config.id, 
-        currency, 
-        Enum.Accounts.LedgerAccountType.POSITION
-      );
-      assert(positionAccount)
-      const settlementAccount = await this.deps.participantFacade.getByNameAndCurrency(
-        config.id, 
-        currency, 
-        Enum.Accounts.LedgerAccountType.SETTLEMENT
-      );
-      assert(settlementAccount)
-      
-      const limitPayload = {
-        limit: {
-          type: 'NET_DEBIT_CAP',
-          value: initialLimit,
-          thresholdAlarmPercentage: 10
-        },
-        initialPosition: 0
-      };
-      
-      // Call facade directly to bypass Kafka messaging
-      await this.deps.participantFacade.addLimitAndInitialPosition(
-        positionAccount.participantCurrencyId,
-        settlementAccount.participantCurrencyId,
-        limitPayload,
-        true
-      );
-    }
-  }
-
-  private async fundsIn(config: DFSPProvisionerConfig): Promise<void> {
-    for (let i = 0; i < config.currencies.length; i++) {
-      const currency = config.currencies[i];
-      const fundingAmount = config.initialLimits[i];
-      
-      // Get settlement account to get the account ID
-      const settlementAccount = await this.deps.participantFacade.getByNameAndCurrency(
-        config.id,
-        currency,
-        Enum.Accounts.LedgerAccountType.SETTLEMENT
-      );
-      assert(settlementAccount);
-
-      // Generate a unique transferId for the funding transaction
-      const transferId = randomUUID();
-      
-      // Call TransferService.recordFundsIn directly to bypass Kafka
-      const payload = {
-        transferId,
-        participantCurrencyId: settlementAccount.participantCurrencyId,
-        action: 'recordFundsIn',
-        reason: 'Initial funding for testing',
-        externalReference: `funding-${config.id}-${currency}-${Date.now()}`,
-        amount: {
-          amount: fundingAmount.toString(),
-          currency
-        }
-      };
-
-      const transactionTimestamp = Time.getUTCString(new Date());
-      
-      // Create duplicate check entry first (required by foreign key constraint)
-      await this.deps.transferService.saveTransferDuplicateCheck(transferId, payload);
-      
-      // Call the transfer service directly
-      await this.deps.transferService.recordFundsIn(payload, transactionTimestamp, this.deps.enums);
     }
   }
 }

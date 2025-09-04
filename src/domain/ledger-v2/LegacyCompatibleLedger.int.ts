@@ -96,6 +96,50 @@ describe('LegacyCompatibleLedger', () => {
       externalParticipantCached.initialize();
       await Cache.initCache();
 
+      // Initialize ledger with real dependencies (same as initializeLedger in setup-new.ts)
+      const Validator = require('../../handlers/transfers/validator');
+      const TransferService = require('../../domain/transfer/index');
+      const Participant = require('../../domain/participant');
+      const participantFacade = require('../../models/participant/facade');
+      const Comparators = require('@mojaloop/central-services-shared').Util.Comparators;
+      const TransferObjectTransform = require('../../domain/transfer/transform');
+      const PositionService = require('../../domain/position');
+      const prepareModule = require('../../handlers/transfers/prepare');
+
+      const deps: LegacyCompatibleLedgerDependencies = {
+        config,
+        lifecycle: {
+          participantsHandler: require('../../api/participants/handler'),
+          participantService: require('../../domain/participant'),
+          participantFacade: require('../../models/participant/facade'),
+          transferService: require('../../domain/transfer'),
+          enums: await require('../../lib/enumCached').getEnums('all'),
+        },
+        clearing: {
+          validatePrepare: Validator.validatePrepare,
+          validateParticipantByName: Validator.validateParticipantByName,
+          validatePositionAccountByNameAndCurrency: Validator.validatePositionAccountByNameAndCurrency,
+          validateParticipantTransferId: Validator.validateParticipantTransferId,
+          validateFulfilCondition: Validator.validateFulfilCondition,
+          validationReasons: Validator.reasons,
+          handlePayeeResponse: TransferService.handlePayeeResponse,
+          getTransferById: TransferService.getById,
+          getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
+          getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
+          saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
+          transformTransferToFulfil: TransferObjectTransform.toFulfil,
+          duplicateCheckComparator: Comparators.duplicateCheckComparator,
+          checkDuplication: prepareModule.checkDuplication,
+          savePreparedRequest: prepareModule.savePreparedRequest,
+          calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
+          changeParticipantPosition: PositionService.changeParticipantPosition,
+          getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
+          getByIDAndCurrency: participantFacade.getByIDAndCurrency,
+        }
+      };
+
+      ledger = new LegacyCompatibleLedger(deps);
+
       // Provision the switch
       const provisionConfig: ProvisioningConfig = {
         currencies: ['USD'],
@@ -112,22 +156,17 @@ describe('LegacyCompatibleLedger', () => {
 
       // Provision dfsps
       const dfspAConfig: DFSPProvisionerConfig = {
-        id: 'dfsp_a',
+        dfspId: 'dfsp_a',
         currencies: ['USD'],
         initialLimits: [100000]
       }
       const dfspBConfig: DFSPProvisionerConfig = {
-        id: 'dfsp_b',
+        dfspId: 'dfsp_b',
         currencies: ['USD'],
         initialLimits: [100000]
       }
       const dfspProvisioner = new DFSPProvisioner({
-        ledger: null as LegacyCompatibleLedger,
-        participantsHandler: require('../../api/participants/handler'),
-        participantService: require('../../domain/participant'),
-        participantFacade: require('../../models/participant/facade'),
-        transferService: require('../../domain/transfer'),
-        enums: await require('../../lib/enumCached').getEnums('all'),
+        ledger: ledger,
       })
       await dfspProvisioner.run(dfspAConfig)
       await dfspProvisioner.run(dfspBConfig)
@@ -162,42 +201,9 @@ describe('LegacyCompatibleLedger', () => {
     }
   });
 
-  beforeEach(async () => {
-    // Initialize ledger with real dependencies (same as initializeLedger in setup-new.ts)
-    const Validator = require('../../handlers/transfers/validator');
-    const TransferService = require('../../domain/transfer/index');
-    const Participant = require('../../domain/participant');
-    const participantFacade = require('../../models/participant/facade');
-    const Comparators = require('@mojaloop/central-services-shared').Util.Comparators;
-    const TransferObjectTransform = require('../../domain/transfer/transform');
-    const PositionService = require('../../domain/position');
-    const prepareModule = require('../../handlers/transfers/prepare');
+  // beforeEach(async () => {
 
-    const deps: LegacyCompatibleLedgerDependencies = {
-      config,
-      validatePrepare: Validator.validatePrepare,
-      validateParticipantByName: Validator.validateParticipantByName,
-      validatePositionAccountByNameAndCurrency: Validator.validatePositionAccountByNameAndCurrency,
-      validateParticipantTransferId: Validator.validateParticipantTransferId,
-      validateFulfilCondition: Validator.validateFulfilCondition,
-      validationReasons: Validator.reasons,
-      handlePayeeResponse: TransferService.handlePayeeResponse,
-      getTransferById: TransferService.getById,
-      getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
-      getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
-      saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
-      transformTransferToFulfil: TransferObjectTransform.toFulfil,
-      duplicateCheckComparator: Comparators.duplicateCheckComparator,
-      checkDuplication: prepareModule.checkDuplication,
-      savePreparedRequest: prepareModule.savePreparedRequest,
-      calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
-      changeParticipantPosition: PositionService.changeParticipantPosition,
-      getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
-      getByIDAndCurrency: participantFacade.getByIDAndCurrency,
-    };
-
-    ledger = new LegacyCompatibleLedger(deps);
-  });
+  // });
 
 
   describe('happy path prepare and fulfill', () => {

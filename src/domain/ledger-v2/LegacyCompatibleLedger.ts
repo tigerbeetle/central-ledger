@@ -1,5 +1,5 @@
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
-import { Enum } from '@mojaloop/central-services-shared';
+const { Enum, Util: { Time } } = require('@mojaloop/central-services-shared');
 import assert from "assert";
 import { FusedFulfilHandlerInput } from 'src/handlers-v2/FusedFulfilHandler';
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
@@ -29,68 +29,138 @@ export interface LegacyCompatibleLedgerDependencies {
 
   // TODO(LD): Collect these into "transferDependencies"
 
-  // Validation functions
-  validatePrepare: (
-    payload: CreateTransferDto,
-    headers: any,
-    isFx: boolean,
-    determiningTransferCheckResult: TransferCheckResult,
-    proxyObligation: ProxyObligation
-  ) => Promise<ValidationResult>;
-  validateParticipantByName: (participantName: string) => Promise<boolean>;
-  validatePositionAccountByNameAndCurrency: (
-    participantName: string,
-    currency: string
-  ) => Promise<boolean>;
-  validateParticipantTransferId: (participantName: string, transferId: string) => Promise<boolean>;
-  validateFulfilCondition: (fulfilment: string, condition: string) => boolean;
-  validationReasons: string[];
+  lifecycle: {
+    participantsHandler: {
+      create: (request: { payload: { name: string, currency: string } }, callback: any) => Promise<void>
+    }
+    participantService: {
+      getByName: (name: string) => Promise<any>
+    }
+    participantFacade: {
+      getByNameAndCurrency: (name: string, currency: string, accountType: any) => Promise<{ participantCurrencyId: number }>
+      addLimitAndInitialPosition: (positionParticipantCurrencyId: number, settlementParticipantCurrencyId: number, payload: any, processLimitsOnly: boolean) => Promise<void>
+    }
+    transferService: {
+      saveTransferDuplicateCheck: (transferId: string, payload: any) => Promise<void>
+      recordFundsIn: (payload: any, transactionTimestamp: string, enums: any) => Promise<void>
+    }
+    enums: any
+  },
 
-  // Transfer service functions
-  handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any) => Promise<TransformredTransfer>;
-  getTransferById: (transferId: string) => Promise<TransferReadModel | null>;
-  getTransferInfoToChangePosition: (transferId: string, roleType: any, entryType: any) => Promise<TransferParticipantInfo | null>;
-  getTransferFulfilmentDuplicateCheck: any;
-  saveTransferFulfilmentDuplicateCheck: any;
+  clearing: {
+    // Validation functions
+    validatePrepare: (
+      payload: CreateTransferDto,
+      headers: any,
+      isFx: boolean,
+      determiningTransferCheckResult: TransferCheckResult,
+      proxyObligation: ProxyObligation
+    ) => Promise<ValidationResult>;
+    validateParticipantByName: (participantName: string) => Promise<boolean>;
+    validatePositionAccountByNameAndCurrency: (
+      participantName: string,
+      currency: string
+    ) => Promise<boolean>;
+    validateParticipantTransferId: (participantName: string, transferId: string) => Promise<boolean>;
+    validateFulfilCondition: (fulfilment: string, condition: string) => boolean;
+    validationReasons: string[];
 
-  // Utility functions
-  transformTransferToFulfil: (transfer: any, isFx: boolean) => any;
-  duplicateCheckComparator: (transferId: string, payload: any, getCheck: any, saveCheck: any) => Promise<any>;
-  checkDuplication: (args: {
-    payload: CreateTransferDto,
-    isFx: boolean,
-    ID: string,
-    location: Location
-  }) => Promise<DuplicationCheckResult>;
-  savePreparedRequest: (args: {
-    validationPassed: boolean,
-    reasons: string[],
-    payload: CreateTransferDto,
-    isFx: boolean,
-    functionality: any,
-    params: any,
-    location: Location,
-    determiningTransferCheckResult: TransferCheckResult,
-    proxyObligation: ProxyObligation
-  }) => Promise<void>;
-  getByIDAndCurrency: (
-    participantId: number,
-    currencyId: string,
-    ledgerAccountTypeId: number,
-    isCurrencyActive?: boolean
-  ) => Promise<ParticipantWithCurrency | null>;
-  calculatePreparePositionsBatch: (
-    transferList: PositionKafkaMessage[]
-  ) => Promise<PreparePositionsBatchResult>;
-  changeParticipantPosition: (
-    participantCurrencyId: number,
-    isReversal: boolean,
-    amount: string,
-    transferStateChange: TransferStateChange
-  ) => Promise<void>;
-  getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>;
+    // Transfer service functions
+    handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any) => Promise<TransformredTransfer>;
+    getTransferById: (transferId: string) => Promise<TransferReadModel | null>;
+    getTransferInfoToChangePosition: (transferId: string, roleType: any, entryType: any) => Promise<TransferParticipantInfo | null>;
+    getTransferFulfilmentDuplicateCheck: any;
+    saveTransferFulfilmentDuplicateCheck: any;
+
+    // Utility functions
+    transformTransferToFulfil: (transfer: any, isFx: boolean) => any;
+    duplicateCheckComparator: (transferId: string, payload: any, getCheck: any, saveCheck: any) => Promise<any>;
+    checkDuplication: (args: {
+      payload: CreateTransferDto,
+      isFx: boolean,
+      ID: string,
+      location: Location
+    }) => Promise<DuplicationCheckResult>;
+    savePreparedRequest: (args: {
+      validationPassed: boolean,
+      reasons: string[],
+      payload: CreateTransferDto,
+      isFx: boolean,
+      functionality: any,
+      params: any,
+      location: Location,
+      determiningTransferCheckResult: TransferCheckResult,
+      proxyObligation: ProxyObligation
+    }) => Promise<void>;
+    getByIDAndCurrency: (
+      participantId: number,
+      currencyId: string,
+      ledgerAccountTypeId: number,
+      isCurrencyActive?: boolean
+    ) => Promise<ParticipantWithCurrency | null>;
+    calculatePreparePositionsBatch: (
+      transferList: PositionKafkaMessage[]
+    ) => Promise<PreparePositionsBatchResult>;
+    changeParticipantPosition: (
+      participantCurrencyId: number,
+      isReversal: boolean,
+      amount: string,
+      transferStateChange: TransferStateChange
+    ) => Promise<void>;
+    getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>;
+  }
 }
 
+export interface CreateDFSPCommand {
+  dfspId: string,
+  currencies: Array<string>
+  initialLimits: Array<number>
+}
+
+export interface CreateDFSPResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface CreateDFSPResponseAlreadyExists {
+  type: 'ALREADY_EXISTS'
+}
+
+export interface CreateDFSPResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type CreateDFSPResponse = CreateDFSPResponseSuccess
+  | CreateDFSPResponseAlreadyExists
+  | CreateDFSPResponseFailed
+
+
+export interface DepositCollateralCommand {
+  // TODO: should this be named idempotenceId? Or depositId?
+  transferId: string,
+  dfspId: string,
+
+  // TODO: make this a Mojaloop number to make things easier?
+  currency: string,
+  amount: number
+}
+
+export interface DepositCollateralResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface DepositCollateralResponseAlreadyExists {
+  type: 'ALREADY_EXISTS'
+}
+
+export interface DepositCollateralResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type DepositCollateralResponse = DepositCollateralResponseSuccess
+  | DepositCollateralResponseAlreadyExists
+  | DepositCollateralResponseFailed
 
 // TODO(LD): TODO
 export interface SettlementModel {
@@ -120,8 +190,99 @@ export default class LegacyCompatibleLedger {
 
   }
 
-  public async createDfsp(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
+  /**
+   * @description Create the dfsp accounts. Returns a duplicate response if the dfsp is already
+   *   created.
+   */
+  public async createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> {
+    assert(cmd.dfspId)
+    assert(cmd.currencies)
+    assert(cmd.currencies.length > 0)
+    assert(cmd.currencies.length < 16, 'Cannot register more than 16 currencies for a DFSP')
+    assert(cmd.initialLimits)
+    assert.equal(cmd.currencies.length, cmd.initialLimits.length, 'Expected currencies and intiial limits to have the same length')
+
+    try {
+      const participant = await this.deps.lifecycle.participantService.getByName(cmd.dfspId);
+      if (participant) {
+        return {
+          type: 'ALREADY_EXISTS'
+        }
+      }
+
+      // Create the account
+
+      // Mock callback to suit the handler expectations
+      const mockCallback = {
+        response: (body: any) => {
+          return {
+            code: (code: number) => { }
+          }
+        }
+      };
+      const positionAccountRequests = cmd.currencies.map(currency => {
+        return {
+          payload: {
+            name: cmd.dfspId,
+            currency
+          }
+        }
+      })
+      await Promise.all(positionAccountRequests.map(
+        req => this.deps.lifecycle.participantsHandler.create(req, mockCallback)
+      ))
+
+      // Set the initial limits
+      for (let i = 0; i < cmd.currencies.length; i++) {
+        const currency = cmd.currencies[i];
+        const initialLimit = cmd.initialLimits[i]
+        assert(currency)
+        assert(initialLimit)
+        assert(initialLimit >= 0)
+
+        // Get participant accounts to get the participantCurrencyIds needed by the facade
+        const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+          cmd.dfspId,
+          currency,
+          Enum.Accounts.LedgerAccountType.POSITION
+        );
+        assert(positionAccount)
+        const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+          cmd.dfspId,
+          currency,
+          Enum.Accounts.LedgerAccountType.SETTLEMENT
+        );
+        assert(settlementAccount)
+
+        const limitPayload = {
+          limit: {
+            type: 'NET_DEBIT_CAP',
+            value: initialLimit,
+            thresholdAlarmPercentage: 10
+          },
+          initialPosition: 0
+        };
+
+        // Call facade directly to bypass Kafka messaging
+        await this.deps.lifecycle.participantFacade.addLimitAndInitialPosition(
+          positionAccount.participantCurrencyId,
+          settlementAccount.participantCurrencyId,
+          limitPayload,
+          true
+        );
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+
+
+    } catch (err) {
+      return {
+        type: 'FAILED',
+        error: err
+      }
+    }
   }
 
   public async disableDfsp(thing: unknown): Promise<unknown> {
@@ -132,18 +293,65 @@ export default class LegacyCompatibleLedger {
     throw new Error('not implemented')
   }
 
-  public async fundsIn(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
+  public async depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse> {
+    assert(cmd.amount)
+    assert(cmd.amount > 0, 'depositCollateral amount must be greater than 0')
+    assert(cmd.dfspId)
+    assert(cmd.currency)
+    assert(cmd.dfspId)
+
+    try {      
+      const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.SETTLEMENT
+      );
+      assert(settlementAccount);
+      const now = new Date()
+      const payload = {
+        transferId: cmd.transferId,
+        participantCurrencyId: settlementAccount.participantCurrencyId,
+        action: 'recordFundsIn',
+        reason: 'Initial funding for testing',
+        externalReference: `funding-${cmd.dfspId}`,
+        amount: {
+          amount: cmd.amount.toString(),
+          currency: cmd.currency
+        }
+      };
+
+      // Create duplicate check entry first (required by foreign key constraint)
+      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, payload);
+
+      // Call the transfer service directly
+      await this.deps.lifecycle.transferService.recordFundsIn(
+        payload, 
+        Time.getUTCString(now),
+        this.deps.lifecycle.enums
+      );
+
+      return {
+        type: 'SUCCESS'
+      }
+
+    } catch (err) {
+      // TODO: catch the duplicate error
+
+      return {
+        type: 'FAILED',
+        error: err
+      }
+    }
   }
 
-  public async fundsOut(thing: unknown): Promise<unknown> {
+  public async withdrawCollateral(thing: unknown): Promise<unknown> {
     throw new Error('not implemented')
   }
 
   /**
-   * Transfer Methods
+   * Clearing Methods
    */
-  
+
   public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
     const { payload, transferId, headers } = input;
     logger.debug(`prepare() - transferId: ${transferId}`)
@@ -151,7 +359,7 @@ export default class LegacyCompatibleLedger {
     const duplicateResult = await this.checkPrepareDuplicate(payload, transferId)
     switch (duplicateResult) {
       case PrepareDuplicateResult.DUPLICATED: {
-        const transfer = await this.deps.getTransferById(transferId)
+        const transfer = await this.deps.clearing.getTransferById(transferId)
         assert(transfer.transferStateEnumeration)
         const finalizedStates = [
           Enum.Transfers.TransferState.COMMITTED,
@@ -160,7 +368,7 @@ export default class LegacyCompatibleLedger {
         ].map(e => e.toString())
 
         if (finalizedStates.includes(transfer.transferStateEnumeration)) {
-          const payload = this.deps.transformTransferToFulfil(transfer, false)
+          const payload = this.deps.clearing.transformTransferToFulfil(transfer, false)
           return {
             type: PrepareResultType.DUPLICATE_FINAL,
             finalisedTransfer: payload,
@@ -269,20 +477,20 @@ export default class LegacyCompatibleLedger {
     }
 
     // save the fulfil response
-    await this.deps.handlePayeeResponse(transferId, payload, input.action);
+    await this.deps.clearing.handlePayeeResponse(transferId, payload, input.action);
 
     // Update the positions
     logger.info(`Processing position commit for transfer: ${transferId}`);
     try {
       // Get transfer info to change position for PAYEE
-      const transferInfo = await this.deps.getTransferInfoToChangePosition(
+      const transferInfo = await this.deps.clearing.getTransferInfoToChangePosition(
         transferId,
         Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
         Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
       );
 
       // Get participant currency info
-      const participantCurrency = await this.deps.getByIDAndCurrency(
+      const participantCurrency = await this.deps.clearing.getByIDAndCurrency(
         transferInfo.participantId,
         transferInfo.currencyId,
         Enum.Accounts.LedgerAccountType.POSITION
@@ -315,7 +523,7 @@ export default class LegacyCompatibleLedger {
         transferStateId: Enum.Transfers.TransferState.COMMITTED
       };
 
-      await this.deps.changeParticipantPosition(
+      await this.deps.clearing.changeParticipantPosition(
         participantCurrency.participantCurrencyId,
         isReversal,
         transferInfo.amount,
@@ -347,6 +555,7 @@ export default class LegacyCompatibleLedger {
   /**
    * Settlement Methods
    */
+
   public async closeSettlementWindow(thing: unknown): Promise<unknown> {
     throw new Error('not implemented')
   }
@@ -361,17 +570,17 @@ export default class LegacyCompatibleLedger {
     const { transferId, payload, message: { value: { from } }, headers } = input;
 
     // make sure the sender exists
-    if (!await this.deps.validateParticipantByName(from)) {
+    if (!await this.deps.clearing.validateParticipantByName(from)) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND, 'Participant not found');
     }
 
     // Get transfer details
-    const transfer = await this.deps.getTransferById(transferId);
+    const transfer = await this.deps.clearing.getTransferById(transferId);
     if (!transfer) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND, 'Transfer ID not found');
     }
 
-    if (!await this.deps.validateParticipantTransferId(from, transferId)) {
+    if (!await this.deps.clearing.validateParticipantTransferId(from, transferId)) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant not associated with transfer');
     }
 
@@ -384,7 +593,7 @@ export default class LegacyCompatibleLedger {
     }
 
     assert(payload.fulfilment, 'payload.fulfilment not found')
-    if (!this.deps.validateFulfilCondition(payload.fulfilment, transfer.condition)) {
+    if (!this.deps.clearing.validateFulfilCondition(payload.fulfilment, transfer.condition)) {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'Invalid fulfilment');
     }
   }
@@ -393,7 +602,7 @@ export default class LegacyCompatibleLedger {
    * Shim Methods to improve usability before refactoring
    */
   private async checkPrepareDuplicate(payload: CreateTransferDto, transferId: string): Promise<PrepareDuplicateResult> {
-    const checkDuplicateResult = await this.deps.checkDuplication({
+    const checkDuplicateResult = await this.deps.clearing.checkDuplication({
       payload,
       isFx: false,
       ID: transferId,
@@ -414,11 +623,11 @@ export default class LegacyCompatibleLedger {
   }
 
   private async checkFulfilDuplicate(payload: CommitTransferDto, transferId: string): Promise<FulfilDuplicateResult> {
-    const checkDuplicateResult = await this.deps.duplicateCheckComparator(
+    const checkDuplicateResult = await this.deps.clearing.duplicateCheckComparator(
       transferId,
       payload,
-      this.deps.getTransferFulfilmentDuplicateCheck,
-      this.deps.saveTransferFulfilmentDuplicateCheck
+      this.deps.clearing.getTransferFulfilmentDuplicateCheck,
+      this.deps.clearing.saveTransferFulfilmentDuplicateCheck
     )
 
     if (checkDuplicateResult.hasDuplicateHash && checkDuplicateResult.hasDuplicateId) {
@@ -445,8 +654,8 @@ export default class LegacyCompatibleLedger {
     const currency = payload.amount.currency
 
     // First check if participants exist and are active
-    const payerValid = await this.deps.validateParticipantByName(payerId);
-    const payeeValid = await this.deps.validateParticipantByName(payeeId);
+    const payerValid = await this.deps.clearing.validateParticipantByName(payerId);
+    const payeeValid = await this.deps.clearing.validateParticipantByName(payeeId);
 
     if (!payerValid || !payeeValid) {
       return {
@@ -455,14 +664,14 @@ export default class LegacyCompatibleLedger {
       };
     }
 
-    const payerAccountValid = await this.deps.validatePositionAccountByNameAndCurrency(payerId, currency)
-    const payeeAccountValid = await this.deps.validatePositionAccountByNameAndCurrency(payeeId, currency)
+    const payerAccountValid = await this.deps.clearing.validatePositionAccountByNameAndCurrency(payerId, currency)
+    const payeeAccountValid = await this.deps.clearing.validatePositionAccountByNameAndCurrency(payeeId, currency)
 
     if (!payerAccountValid || !payeeAccountValid) {
       return {
         validationPassed: false,
         // TODO(LD): nasty globals here
-        reasons: [this.deps.validationReasons[0]]
+        reasons: [this.deps.clearing.validationReasons[0]]
       }
     }
 
@@ -477,7 +686,7 @@ export default class LegacyCompatibleLedger {
     const determiningTransferCheckResult = this.createMinimalTransferCheckResult()
     const proxyObligation = this.createMinimalProxyObligation(payload)
 
-    return await this.deps.validatePrepare(
+    return await this.deps.clearing.validatePrepare(
       payload,
       headers,
       isFx,
@@ -492,7 +701,7 @@ export default class LegacyCompatibleLedger {
     const determiningTransferCheckResult = this.createMinimalTransferCheckResult()
     const proxyObligation = this.createMinimalProxyObligation(payload)
 
-    return await this.deps.savePreparedRequest({
+    return await this.deps.clearing.savePreparedRequest({
       validationPassed: validation.validationPassed,
       reasons: validation.reasons,
       payload,
@@ -512,7 +721,7 @@ export default class LegacyCompatibleLedger {
     // this.deps.calculatePreparePositionsBatch expects a whole kafka message
     // so transform the payload to one:
     const message = LegacyCompatibleLedger.createMinimalPositionKafkaMessage(payload, messageContext)
-    return this.deps.calculatePreparePositionsBatch([message])
+    return this.deps.clearing.calculatePreparePositionsBatch([message])
   }
 
   // Helper methods to create minimal objects for validation compatibility
