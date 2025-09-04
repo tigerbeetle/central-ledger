@@ -1,4 +1,6 @@
 // Mock Kafka before any imports
+// We will be able to remove this when we've tidied up the business logic and don't always broadcast
+// to global kafkas
 const mockKafkaProducer = {
   produceGeneralMessage: async () => ({ success: true }),
   connect: async () => { },
@@ -59,7 +61,8 @@ describe('LegacyCompatibleLedger', () => {
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
         port: 3307,
-        migration: { type: 'knex' }
+        // migration: { type: 'knex' }
+        migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
       });
 
       dbConfig = await harness.start();
@@ -196,10 +199,6 @@ describe('LegacyCompatibleLedger', () => {
     ledger = new LegacyCompatibleLedger(deps);
   });
 
-  afterEach(async () => {
-    // Clean up database connection
-    // await Db.disconnect();
-  });
 
   describe('happy path prepare and fulfill', () => {
     const transferId = randomUUID()
@@ -339,4 +338,19 @@ describe('LegacyCompatibleLedger', () => {
       assert.equal(result.type, PrepareResultType.PASS);
     });
   });
+
+  /**
+   * Test scenarios to implement:
+   * 
+   * - payer insufficent liquidity
+   * - closed account payer
+   * - closed account payee
+   * - invalid fulfilment
+   * - unsupported currency
+   * - reuse existing id, different body
+   * - duplicate prepare while transfer in progress
+   * - duplicate prepare while transfer in finalized state
+   * - duplicate fulfilment
+   * - fulfilment from 3rd party dfsp
+   */
 });

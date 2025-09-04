@@ -4,6 +4,7 @@ import { readFile } from 'fs/promises';
 import { createServer } from 'net';
 import { logger } from '../shared/logger';
 import assert from 'assert';
+import path from 'path';
 
 const execAsync = promisify(exec);
 
@@ -234,13 +235,13 @@ export class IntegrationHarness {
    */
   private async migrateWithSqlFile(sqlFilePath: string): Promise<void> {
     try {
-      const sqlContent = await readFile(sqlFilePath, 'utf-8');
+      // const sqlContent = await readFile(sqlFilePath, 'utf-8');
+      logger.debug('restoreFromCheckpoint()')
+      const fullFilePath = path.join(__dirname, sqlFilePath)
+      const cmd = `docker cp ${fullFilePath} ${this.containerId}:/tmp/checkpoint.sql && \
+      docker exec -i ${this.containerId} sh -c 'mysql -u root -ppassword ${this.config.databaseName} < /tmp/checkpoint.sql'`
+      const { stdout, stderr } = await execAsync(cmd);
       
-      // Execute SQL file against the MySQL container
-      const mysqlCommand = `docker exec -i ${this.containerId} mysql -u root -ppassword ${this.config.databaseName}`;
-      
-      const { stdout, stderr } = await execAsync(`echo "${sqlContent.replace(/"/g, '\\"')}" | ${mysqlCommand}`);
-
       if (stderr && !stderr.includes('warning')) {
         logger.warn('SQL migration warnings:', stderr);
       }
