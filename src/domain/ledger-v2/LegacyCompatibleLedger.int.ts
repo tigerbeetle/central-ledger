@@ -1,14 +1,14 @@
 // Mock Kafka before any imports
 const mockKafkaProducer = {
   produceGeneralMessage: async () => ({ success: true }),
-  connect: async () => {},
-  disconnect: async () => {}
+  connect: async () => { },
+  disconnect: async () => { }
 };
 
 // Simple module patching approach
 const Module = require('module');
 const originalRequire = Module.prototype.require;
-Module.prototype.require = function(id: string) {
+Module.prototype.require = function (id: string) {
   if (id === '@mojaloop/central-services-stream') {
     return {
       Util: {
@@ -42,6 +42,8 @@ import { IntegrationHarness, DatabaseConfig } from '../../testing/integration-ha
 import Provisioner, { ProvisionerDependencies, ProvisioningConfig } from '../../shared/provisioner';
 import { logger } from '../../shared/logger';
 import DFSPProvisioner, { DFSPProvisionerConfig } from '../../testing/dfsp-provisioner';
+import { randomUUID } from 'node:crypto';
+import { MojaloopMockQuoteILPResponse, TestUtils } from '../../testing/testutils';
 
 describe('LegacyCompatibleLedger', () => {
   let ledger: LegacyCompatibleLedger;
@@ -199,10 +201,24 @@ describe('LegacyCompatibleLedger', () => {
     // await Db.disconnect();
   });
 
-  describe('prepare()', () => {
-    it('should return PASS result for valid prepare request', async () => {
+  describe('happy path prepare and fulfill', () => {
+    const transferId = randomUUID()
+    const mockQuoteResponse: MojaloopMockQuoteILPResponse = {
+      quoteId: '00001',
+      // TODO: how do we get this determinitically?
+      transactionId: '00001',
+      transactionType: 'unknown',
+      payerId: 'dfsp_a',
+      payeeId: 'dfsp_b',
+      transferId,
+      amount: 100,
+      currency: 'USD',
+      expiration: new Date(Date.now() + 60000).toISOString()
+    }
+    const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+    it('01. prepare transfer', async () => {
       // Arrange
-      const transferId = `test-transfer-${Date.now()}`;
       const payload: CreateTransferDto = {
         transferId,
         payerFsp: 'dfsp_a',
@@ -211,8 +227,8 @@ describe('LegacyCompatibleLedger', () => {
           amount: '100',
           currency: 'USD'
         },
-        ilpPacket: 'AYIBgQAAAAAAAASwNGxldmVsb25lLmRmc3AxLm1lci45T2RTOF81MDdqUUZERmZlakgyOVc4bXFmNEpLMHlGTFGCAUBQU0svNTVHZkh2UjBQNjdHMUQrOVVlUzNaSXlLSTlqRnBLK1BkOWNZMTMxTzZka3dpR2o3SUZWMnJkaUozeERTVDk5Z2pON1NjMGc2WENGMXViQm9YdCtnZ1FnNzJqM1E2cGFCWjhFNGIwVy9kNEhVYnRsWnBNM2czUnQ4SS9QWnZ6cTl6a21jcFlEOGpqaUM4VDBLKzVLb0FvaTB4SVNVOXVjaXhuN2FkQ3VacEU5ejVXbWQ4bllUSDJ3R2VEQkhBczNSakF2YzEwczZLVm4rVGhUMUJLU1pGRm1ZTlVKUGFYWHh1R04xc0JmZXlVZHVaM2lOTnRSdmNsRzBPbUQ5c3BCR2tnZjdVWUM3MXVmUWY5bC8yb2U0eFp5WVBITzg2ZWNIOUlBaVY3aVQyaUdGMHRuWVlRYW1IMm5iRzY3R3VZaGE1V0lteWc2cXh0Q3ViSW5sQW1KdUhjQjFqSGVhN3ZXUW1VN3prcVV5Rmc5SWg0dm16TWViMTFZWGN6T2ZaSDZPMCtJOE1HUXNVdz09',
-        condition: 'YlK5TZyhflbXaDRPtR3oKqTjqNMj2SsjXbTbP8PFJKE',
+        ilpPacket,
+        condition,
         expiration: new Date(Date.now() + 60000).toISOString()
       };
 
@@ -232,8 +248,8 @@ describe('LegacyCompatibleLedger', () => {
             type: 'application/json',
             content: {
               headers: {
-                'fspiop-source': 'payerfsp',
-                'fspiop-destination': 'payeefsp'
+                'fspiop-source': 'dfsp_a',
+                'fspiop-destination': 'dfsp_b'
               },
               payload,
               uriParams: { id: transferId }
@@ -265,15 +281,12 @@ describe('LegacyCompatibleLedger', () => {
       assert.ok(result);
       assert.equal(result.type, PrepareResultType.PASS);
     });
-  });
 
-  describe.skip('fulfil()', () => {
-    it('should return result for fulfil request', async () => {
-      const transferId = `test-transfer-${Date.now()}`;
-
+    it('02 fulfill transfer', async () => {
+      // Arrange
       const payload: CommitTransferDto = {
         transferState: 'COMMITTED',
-        fulfilment: 'UNlJ98hZTY_dsw0cAqw4i_UN3v4utt7CZFB4yfLbVFA',
+        fulfilment,
         completedTimestamp: new Date().toISOString()
       };
 
@@ -281,20 +294,20 @@ describe('LegacyCompatibleLedger', () => {
         payload,
         transferId,
         headers: {
-          'fspiop-source': 'payeefsp',
-          'fspiop-destination': 'payerfsp',
+          'fspiop-source': 'dfsp_b',
+          'fspiop-destination': 'dfsp_a',
           'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
         },
         message: {
           value: {
-            from: 'payeefsp',
-            to: 'payerfsp',
+            from: 'dfsp_b',
+            to: 'dfsp_a',
             id: `msg-${transferId}`,
             type: 'application/json',
             content: {
               headers: {
-                'fspiop-source': 'payeefsp',
-                'fspiop-destination': 'payerfsp'
+                'fspiop-source': 'dfsp_b',
+                'fspiop-destination': 'dfsp_a',
               },
               payload,
               uriParams: { id: transferId }
@@ -318,21 +331,12 @@ describe('LegacyCompatibleLedger', () => {
         kafkaTopic: 'topic-transfer-fulfil'
       };
 
-      try {
-        const result: FulfilResult = await ledger.fulfil(input);
+      // Act
+      const result = await ledger.fulfil(input);
 
-        // The test should handle expected validation failures gracefully
-        assert.ok(result);
-        assert.ok(Object.values(FulfilResultType).includes(result.type));
-
-        // Log the result for debugging
-        console.log('Fulfil result:', result);
-
-      } catch (error) {
-        // Integration tests may fail due to missing test data
-        console.log('Expected integration test error:', error.message);
-        assert.ok(error);
-      }
+      // Assert
+      assert.ok(result);
+      assert.equal(result.type, PrepareResultType.PASS);
     });
   });
 });
