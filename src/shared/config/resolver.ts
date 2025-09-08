@@ -133,10 +133,10 @@ const validateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfi
   unsafeConfig.HUB_ACCOUNTS.forEach(unsafeAccountStr => assert(unsafeAccountStr))
   assertBoolean(unsafeConfig.INSTRUMENTATION_METRICS_DISABLED)
 
-  console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_LABELS`')
-  console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_CONFIG`')
-  console.warn('TODO(LD): validateConfig() still need to validate `DATABASE`')
-  console.warn('TODO(LD): validateConfig() still need to coerce values from `EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS`')
+  // console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_LABELS`')
+  // console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_CONFIG`')
+  // console.warn('TODO(LD): validateConfig() still need to validate `DATABASE`')
+  // console.warn('TODO(LD): validateConfig() still need to coerce values from `EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS`')
   
   // TODO: assert INSTRUMENTATION_METRICS_LABELS
   // TODO: assert INSTRUMENTATION_METRICS_CONFIG

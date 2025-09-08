@@ -1,10 +1,15 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile } from 'fs/promises';
-import { createServer } from 'net';
 import { logger } from '../shared/logger';
 import assert from 'assert';
 import path from 'path';
+import { TestUtils } from './testutils';
+
+import { spawn } from 'child_process';
+import { randomBytes } from 'crypto';
+const fs = require('fs').promises;
+import os from 'os';
 
 const execAsync = promisify(exec);
 
@@ -27,6 +32,11 @@ export interface MigrationOptionsSql {
 
 export type MigrationOptions = MigrationOptionsKnex | MigrationOptionsSql;
 
+export interface IntegrationHarness {
+  start(): Promise<any>;
+  teardown(): Promise<void>;
+}
+
 export interface IntegrationHarnessConfig {
   databaseName: string;
   mysqlImage: string;
@@ -35,7 +45,7 @@ export interface IntegrationHarnessConfig {
   migration: MigrationOptions;
 }
 
-export class IntegrationHarness {
+export class IntegrationHarnessDatabase implements IntegrationHarness {
   private containerId: string | null = null;
   private config: IntegrationHarnessConfig;
   private port: number = 0;
@@ -50,11 +60,11 @@ export class IntegrationHarness {
    */
   async start(): Promise<DatabaseConfig> {
     const containerName = `cl-test-mysql-${Date.now()}`;
-    
+
     // Find an available port starting from the configured port
-    const availablePort = await this.findAvailablePort(this.config.port);
+    const availablePort = await TestUtils.findAvailablePort(this.config.port);
     this.port = availablePort;
-    
+
     try {
       // Launch MySQL container with tmpfs for in-memory storage
       const dockerCommand = [
@@ -197,7 +207,7 @@ export class IntegrationHarness {
         if (attempt === maxAttempts) {
           throw new Error(`MySQL failed to start after ${maxAttempts} attempts: ${error.message}`);
         }
-        
+
         logger.debug(`Waiting for MySQL database (attempt ${attempt}/${maxAttempts})...`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
@@ -241,7 +251,7 @@ export class IntegrationHarness {
       const cmd = `docker cp ${fullFilePath} ${this.containerId}:/tmp/checkpoint.sql && \
       docker exec -i ${this.containerId} sh -c 'mysql -u root -ppassword ${this.config.databaseName} < /tmp/checkpoint.sql'`
       const { stdout, stderr } = await execAsync(cmd);
-      
+
       if (stderr && !stderr.includes('warning')) {
         logger.warn('SQL migration warnings:', stderr);
       }
@@ -253,35 +263,174 @@ export class IntegrationHarness {
     }
   }
 
-  /**
-   * Find an available port starting from the given port number
-   */
-  private async findAvailablePort(startPort: number): Promise<number> {
-    for (let port = startPort; port < startPort + 100; port++) {
-      if (await this.isPortAvailable(port)) {
-        logger.debug(`Found available port: ${port}`);
-        return port;
-      }
-    }
-    throw new Error(`No available ports found in range ${startPort}-${startPort + 99}`);
+}
+
+export interface IntegrationHarnessTigerBeetleConfig {
+  tigerbeetleBinaryPath: string;
+}
+
+export interface TigerBeetleConfig {
+  clusterId: bigint,
+  address: Array<string>
+}
+
+export class IntegrationHarnessTigerBeetle implements IntegrationHarness {
+  private process: import('child_process').ChildProcess | null = null;
+  private config: IntegrationHarnessTigerBeetleConfig;
+  private dataFilePath: string | null = null;
+
+  constructor(config: IntegrationHarnessTigerBeetleConfig) {
+    this.config = config;
   }
 
-  /**
-   * Check if a port is available
-   */
-  private async isPortAvailable(port: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      const server = createServer();
-      
-      server.listen(port, () => {
-        server.close(() => {
-          resolve(true);
+  public async start(): Promise<TigerBeetleConfig> {
+    const clusterId = 0n;
+    const port = await TestUtils.findAvailablePort(10243)
+
+    // Create temporary data file for TigerBeetle
+    const tempDir = os.tmpdir();
+    const randomSuffix = randomBytes(8).toString('hex');
+    this.dataFilePath = path.join(tempDir, `tigerbeetle-test-${randomSuffix}.tigerbeetle`);
+
+    try {
+      // Format the data file
+      logger.info(`Formatting TigerBeetle data file: ${this.dataFilePath}`);
+      const formatProcess = spawn(this.config.tigerbeetleBinaryPath, [
+        'format',
+        `--cluster=${clusterId}`,
+        `--replica=0`,
+        `--replica-count=1`,
+        this.dataFilePath
+      ]);
+
+      await new Promise<void>((resolve, reject) => {
+        let stdout = '';
+        let stderr = '';
+        
+        formatProcess.stdout?.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        formatProcess.stderr?.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        formatProcess.on('close', (code) => {
+          logger.info(`TigerBeetle format process closed with code: ${code}`);
+          if (stdout) logger.info(`TigerBeetle format stdout: ${stdout}`);
+          if (stderr) logger.info(`TigerBeetle format stderr: ${stderr}`);
+          
+          if (code === 0) {
+            logger.info('TigerBeetle format completed successfully');
+            resolve();
+          } else {
+            reject(new Error(`TigerBeetle format failed with code ${code}. stderr: ${stderr}, stdout: ${stdout}`));
+          }
+        });
+        
+        formatProcess.on('error', (error) => {
+          logger.error(`TigerBeetle format process error: ${error.message}`);
+          reject(error);
         });
       });
-      
-      server.on('error', () => {
-        resolve(false);
+
+      // Start TigerBeetle server
+      logger.info(`Starting TigerBeetle server on port ${port}`);
+      this.process = spawn(this.config.tigerbeetleBinaryPath, [
+        'start',
+        `--addresses=127.0.0.1:${port}`,
+        this.dataFilePath
+      ]);
+
+      // Add logging for the server process
+      this.process.stdout?.on('data', (data) => {
+        logger.debug(`[tigerbeetle stdout] ${data.toString()}`);
       });
-    });
+
+      this.process.stderr?.on('data', (data) => {
+        logger.debug(`[tigerbeetle stderr] ${data.toString()}`);
+      });
+
+      this.process.on('error', (error) => {
+        logger.error(`[tigerbeetle error] ${error.message}`);
+      });
+
+      this.process.on('exit', (code, signal) => {
+        logger.info(`TigerBeetle server process exited with code ${code} and signal ${signal}`);
+      });
+
+      return {
+        clusterId,
+        address: [`${port}`],
+      };
+
+    } catch (error) {
+      throw new Error(`Failed to start TigerBeetle: ${error.message}`);
+    }
+  }
+
+  public async teardown(): Promise<void> {
+    if (this.process) {
+      try {
+        this.process.kill('SIGTERM');
+        await new Promise<void>((resolve) => {
+          if (this.process) {
+            this.process.on('close', () => resolve());
+            setTimeout(() => {
+              if (this.process && !this.process.killed) {
+                this.process.kill('SIGKILL');
+              }
+              resolve();
+            }, 5000);
+          } else {
+            resolve();
+          }
+        });
+        logger.info('TigerBeetle process terminated');
+      } catch (error) {
+        logger.error(`Failed to terminate TigerBeetle process: ${error.message}`);
+      }
+      this.process = null;
+    }
+
+    // Clean up data file
+    if (this.dataFilePath) {
+      try {
+        const fs = require('fs').promises;
+        await fs.unlink(this.dataFilePath);
+        logger.info(`Cleaned up TigerBeetle data file: ${this.dataFilePath}`);
+      } catch (error) {
+        logger.warn(`Failed to cleanup data file: ${error.message}`);
+      }
+      this.dataFilePath = null;
+    }
+  }
+
+  private async waitForTigerBeetleReady(port: number, maxAttempts: number = 100, delayMs: number = 50): Promise<void> {
+    const net = require('net');
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const socket = net.createConnection(port, '127.0.0.1');
+          socket.on('connect', () => {
+            socket.end();
+            resolve();
+          });
+          socket.on('error', reject);
+          setTimeout(() => reject(new Error('Connection timeout')), 1000);
+        });
+
+        logger.info('TigerBeetle server is ready');
+        return;
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          throw new Error(`TigerBeetle failed to start after ${maxAttempts} attempts: ${error.message}`);
+        }
+
+        logger.debug(`Waiting for TigerBeetle server (attempt ${attempt}/${maxAttempts})...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
   }
 }

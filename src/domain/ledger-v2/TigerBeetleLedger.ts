@@ -42,7 +42,7 @@ export default class TigerBeetleLedger implements Ledger {
     // We will however need to set up:
     // 1. Settlement Models/Configuration
     // 2. Enable certain currencies
-    logger.warn('depositCollaterl() - noop')
+    logger.warn('depositCollateral() - noop')
 
     return {
       type: 'SUCCESS'
@@ -173,7 +173,7 @@ export default class TigerBeetleLedger implements Ledger {
         reserved: 0,
         ledger: LedgerIdUSD,
         code: AccountType.Settlement_Multilateral,
-        flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
+        flags: AccountFlags.debits_must_not_exceed_credits,
         timestamp: 0n,
       }
     ]
@@ -276,7 +276,7 @@ export default class TigerBeetleLedger implements Ledger {
   // TODO(LD): Come back to the design on this one. I'm a little unsure about how to handle the
   // mismatch between single entry accounting in the original ledger, and double entry here.
   public async depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse> {
-    logger.warn('depositCollaterl() - noop')
+    logger.warn('depositCollateral() - noop')
 
     return {
       type: 'SUCCESS'
@@ -320,7 +320,7 @@ export default class TigerBeetleLedger implements Ledger {
           ),
         }
       }
-      const payeeMetadata = await this.deps.metadataStore.getDfspAccountMetadata(payer, currency)
+      const payeeMetadata = await this.deps.metadataStore.getDfspAccountMetadata(payee, currency)
       if (payeeMetadata.type === 'DfspAccountMetadataNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,

@@ -2,6 +2,7 @@ import assert from "assert";
 import { randomUUID } from 'crypto';
 import LegacyCompatibleLedger from "../domain/ledger-v2/LegacyCompatibleLedger";
 import { logger } from '../shared/logger';
+import { Ledger } from "src/domain/ledger-v2/Ledger";
 
 
 export interface DFSPProvisionerConfig {
@@ -23,7 +24,7 @@ export interface DFSPProvisionerConfig {
 }
 
 export interface DFSPProvisionerDependencies {
-  ledger: LegacyCompatibleLedger
+  ledger: Ledger
 }
 
 /**

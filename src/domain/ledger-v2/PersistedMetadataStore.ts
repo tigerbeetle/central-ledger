@@ -14,7 +14,13 @@ interface DatabaseRecord {
 }
 
 interface Database {
-  from(tableName: string): any;
+  from(tableName: string): {
+    where(conditions: any): any;
+    orderBy(column: string, direction: 'asc' | 'desc'): any;
+    first(): Promise<any>;
+    insert(data: any): Promise<any>;
+    update(data: any): Promise<any>;
+  };
 }
 
 export class PersistedMetadataStore implements MetadataStore {

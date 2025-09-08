@@ -1,26 +1,3 @@
-// Mock Kafka before any imports
-// We will be able to remove this when we've tidied up the business logic and don't always broadcast
-// to global kafkas
-const mockKafkaProducer = {
-  produceGeneralMessage: async () => ({ success: true }),
-  connect: async () => { },
-  disconnect: async () => { }
-};
-
-// Simple module patching approach
-const Module = require('module');
-const originalRequire = Module.prototype.require;
-Module.prototype.require = function (id: string) {
-  if (id === '@mojaloop/central-services-stream') {
-    return {
-      Util: {
-        Producer: mockKafkaProducer
-      }
-    };
-  }
-  return originalRequire.apply(this, arguments);
-};
-
 import { Enum } from '@mojaloop/central-services-shared';
 import assert from 'node:assert';
 import { randomUUID } from 'node:crypto';
@@ -28,43 +5,50 @@ import { after, before, describe, it } from 'node:test';
 import { FusedFulfilHandlerInput } from '../../handlers-v2/FusedFulfilHandler';
 import { FusedPrepareHandlerInput } from '../../handlers-v2/FusedPrepareHandler';
 import { CommitTransferDto, CreateTransferDto } from '../../handlers-v2/types';
-import Cache from '../../lib/cache';
 import Db from '../../lib/db';
-import EnumCached from '../../lib/enumCached';
-import externalParticipantCached from '../../models/participant/externalParticipantCached';
-import ParticipantCached from '../../models/participant/participantCached';
-import ParticipantCurrencyCached from '../../models/participant/participantCurrencyCached';
-import ParticipantLimitCached from '../../models/participant/participantLimitCached';
-import BatchPositionModelCached from '../../models/position/batchCached';
-import SettlementModelCached from '../../models/settlement/settlementModelCached';
 import { ApplicationConfig } from '../../shared/config';
 import { makeConfig } from '../../shared/config/resolver';
 import { logger } from '../../shared/logger';
-import Provisioner, { ProvisionerDependencies, ProvisioningConfig } from '../../shared/provisioner';
+import Provisioner, { ProvisioningConfig } from '../../shared/provisioner';
 import DFSPProvisioner, { DFSPProvisionerConfig } from '../../testing/dfsp-provisioner';
-import { DatabaseConfig, IntegrationHarnessDatabase } from '../../testing/integration-harness';
+import { DatabaseConfig, IntegrationHarnessDatabase, IntegrationHarnessTigerBeetle, TigerBeetleConfig } from '../../testing/integration-harness';
 import { MojaloopMockQuoteILPResponse, TestUtils } from '../../testing/testutils';
-import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from './LegacyCompatibleLedger';
 import { PrepareResultType } from './types';
 
-describe('LegacyCompatibleLedger', () => {
-  let ledger: LegacyCompatibleLedger;
+import { Client, createClient } from 'tigerbeetle-node';
+import { PersistedMetadataStore } from './PersistedMetadataStore';
+import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "./TigerBeetleLedger";
+import { TransferBatcher } from './TransferBatcher';
+
+describe('TigerBeetleLedger', () => {
+  let ledger: TigerBeetleLedger
+  let client: Client
   let config: ApplicationConfig;
-  let harness: IntegrationHarnessDatabase;
+  let dbHarness: IntegrationHarnessDatabase;
   let dbConfig: DatabaseConfig;
+  let tbHarness: IntegrationHarnessTigerBeetle;
+  let tbConfig: TigerBeetleConfig
 
   before(async () => {
     try {
       // Set up Docker MySQL container for integration testing
-      harness = new IntegrationHarnessDatabase({
+      // TODO: add Tigerbeetle in memory binary to harness
+      dbHarness = new IntegrationHarnessDatabase({
         databaseName: 'central_ledger_test',
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
         port: 3307,
-        migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
+        migration: { type: 'knex' }
+        // migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
       });
+      dbConfig = await dbHarness.start();
 
-      dbConfig = await harness.start();
+      tbHarness = new IntegrationHarnessTigerBeetle({
+        // tigerbeetleBinaryPath: '../../.bin/tigerbeetle'
+        tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
+      })
+      tbConfig = await tbHarness.start()
+
       config = makeConfig();
 
       // Override database config to use the test container
@@ -85,60 +69,17 @@ describe('LegacyCompatibleLedger', () => {
       assert(Db._tables, 'expected Db._tables to be defined')
       assert(Db._tables.length)
 
-      // Initialize all cached models (same as in setup-new.ts)
-      await EnumCached.initialize();
-      await ParticipantCached.initialize();
-      await ParticipantCurrencyCached.initialize();
-      await ParticipantLimitCached.initialize();
-      await BatchPositionModelCached.initialize();
-      await SettlementModelCached.initialize();
-      externalParticipantCached.initialize();
-      await Cache.initCache();
-
-      // Initialize ledger with real dependencies (same as initializeLedger in setup-new.ts)
-      const Validator = require('../../handlers/transfers/validator');
-      const TransferService = require('../../domain/transfer/index');
-      const Participant = require('../../domain/participant');
-      const participantFacade = require('../../models/participant/facade');
-      const Comparators = require('@mojaloop/central-services-shared').Util.Comparators;
-      const TransferObjectTransform = require('../../domain/transfer/transform');
-      const PositionService = require('../../domain/position');
-      const prepareModule = require('../../handlers/transfers/prepare');
-
-      const deps: LegacyCompatibleLedgerDependencies = {
+      client = createClient({
+        cluster_id: tbConfig.clusterId,
+        replica_addresses: tbConfig.address,
+      })
+      const deps: TigerBeetleLedgerDependencies = {
         config,
-        lifecycle: {
-          participantsHandler: require('../../api/participants/handler'),
-          participantService: require('../../domain/participant'),
-          participantFacade: require('../../models/participant/facade'),
-          transferService: require('../../domain/transfer'),
-          enums: await require('../../lib/enumCached').getEnums('all'),
-          settlementModelDomain: require('../../domain/settlement'),
-        },
-        clearing: {
-          validatePrepare: Validator.validatePrepare,
-          validateParticipantByName: Validator.validateParticipantByName,
-          validatePositionAccountByNameAndCurrency: Validator.validatePositionAccountByNameAndCurrency,
-          validateParticipantTransferId: Validator.validateParticipantTransferId,
-          validateFulfilCondition: Validator.validateFulfilCondition,
-          validationReasons: Validator.reasons,
-          handlePayeeResponse: TransferService.handlePayeeResponse,
-          getTransferById: TransferService.getById,
-          getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
-          getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
-          saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
-          transformTransferToFulfil: TransferObjectTransform.toFulfil,
-          duplicateCheckComparator: Comparators.duplicateCheckComparator,
-          checkDuplication: prepareModule.checkDuplication,
-          savePreparedRequest: prepareModule.savePreparedRequest,
-          calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
-          changeParticipantPosition: PositionService.changeParticipantPosition,
-          getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
-          getByIDAndCurrency: participantFacade.getByIDAndCurrency,
-        }
-      };
-
-      ledger = new LegacyCompatibleLedger(deps);
+        client,
+        metadataStore: new PersistedMetadataStore(Db.getKnex()),
+        transferBatcher: new TransferBatcher(client, 100, 1),
+      }
+      ledger = new TigerBeetleLedger(deps)
 
       // Provision the switch
       const provisionConfig: ProvisioningConfig = {
@@ -165,7 +106,6 @@ describe('LegacyCompatibleLedger', () => {
       })
       await dfspProvisioner.run(dfspAConfig)
       await dfspProvisioner.run(dfspBConfig)
-
     } catch (err) {
       logger.error(`before() - failed with error: ${err.message}`)
       if (err.stack) {
@@ -174,25 +114,32 @@ describe('LegacyCompatibleLedger', () => {
 
       // Clean up database connection and cache
       await Db.disconnect();
-      await Cache.destroyCache();
+      if (client) {
+        client.destroy()
+      }
 
-      // Clean up Docker container
-      if (harness) {
-        await harness.teardown();
+      // Clean up containers and tigerbeetle
+      if (tbHarness) {
+        await tbHarness.teardown();
+      }
+      if (dbHarness) {
+        await dbHarness.teardown();
       }
 
       throw err
     }
-  });
+  })
 
   after(async () => {
-    // Clean up database connection and cache
     await Db.disconnect();
-    await Cache.destroyCache();
+    client.destroy()
 
-    // Clean up Docker container
-    if (harness) {
-      await harness.teardown();
+    // Clean up containers and tigerbeetle
+    if (tbHarness) {
+      await tbHarness.teardown();
+    }
+    if (dbHarness) {
+      await dbHarness.teardown();
     }
   });
 
@@ -212,7 +159,7 @@ describe('LegacyCompatibleLedger', () => {
     }
     const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
 
-    it('01. prepare transfer', async () => {
+    it('01 prepare transfer', async () => {
       // Arrange
       const payload: CreateTransferDto = {
         transferId,
@@ -334,26 +281,4 @@ describe('LegacyCompatibleLedger', () => {
       assert.equal(result.type, PrepareResultType.PASS);
     });
   });
-
-  /**
-   * Test scenarios to implement:
-   * 
-   * Lifecycle:
-   * - createDfsp
-   * - createDfsp which already exists
-   * - createDfsp with bad parameters
-   * - depositCollateral
-   * 
-   * Clearing:
-   * - payer insufficent liquidity
-   * - closed account payer
-   * - closed account payee
-   * - invalid fulfilment
-   * - unsupported currency
-   * - reuse existing id, different body
-   * - duplicate prepare while transfer in progress
-   * - duplicate prepare while transfer in finalized state
-   * - duplicate fulfilment
-   * - fulfilment from 3rd party dfsp
-   */
-});
+})

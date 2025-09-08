@@ -1,3 +1,5 @@
+import { createServer } from 'net';
+
 const MojaloopLogger = require('@mojaloop/central-services-logger')
 const { ilpFactory, ILP_VERSIONS } = require('@mojaloop/sdk-standard-components').Ilp
 // Don't use in production!
@@ -22,7 +24,7 @@ export interface QuoteIlpResponse {
 }
 
 export class TestUtils {
-  
+
   static generateQuoteILPResponse(params: MojaloopMockQuoteILPResponse): QuoteIlpResponse {
     // Build an imaginary Quote Request/Response to generate the ILP packet, fulfilment and condition
     // not for use in production!
@@ -63,5 +65,36 @@ export class TestUtils {
     return {
       fulfilment, ilpPacket, condition
     }
+  }
+
+  /**
+   * Find an available port starting from the given port number
+   */
+  public static async findAvailablePort(startPort: number): Promise<number> {
+    for (let port = startPort; port < startPort + 100; port++) {
+      if (await this.isPortAvailable(port)) {
+        return port;
+      }
+    }
+    throw new Error(`No available ports found in range ${startPort}-${startPort + 99}`);
+  }
+
+  /**
+   * Check if a port is available
+   */
+  private static async isPortAvailable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = createServer();
+
+      server.listen(port, () => {
+        server.close(() => {
+          resolve(true);
+        });
+      });
+
+      server.on('error', () => {
+        resolve(false);
+      });
+    });
   }
 }
