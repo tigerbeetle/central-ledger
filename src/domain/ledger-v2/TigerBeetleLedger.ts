@@ -7,49 +7,14 @@ import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTr
 import assert, { fail } from "assert";
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import { TransferBatcher } from "./TransferBatcher";
-import fspiopErrorFactory from "src/shared/fspiopErrorFactory";
-
+import { Ledger } from "./Ledger";
+import { DfspAccountIds, MetadataStore } from "./MetadataStore";
 
 export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
   client: Client
   metadataStore: MetadataStore
   transferBatcher: TransferBatcher
-}
-
-export interface DfspAccountIds {
-  collateral: bigint,
-  liquidity: bigint,
-  clearing: bigint,
-  settlementMultilateral: bigint,
-}
-
-export interface DfspAccountMetadata extends DfspAccountIds {
-  readonly type: 'DfspAccountMetadata'
-  dfspId: string,
-  currency: string,
-}
-
-export interface DfspAccountMetadataNone {
-  type: 'DfspAccountMetadataNone'
-}
-
-export interface MetadataStore {
-
-  /**
-   * Gets the account metadata for a DFSP + Currency
-   */
-  getDfspAccountMetadata(dfspId: string, currency: string): Promise<DfspAccountMetadata | DfspAccountMetadataNone>
-
-  /**
-   * Stores the account association between the DFSP + Currency + TigerBeetle Account IDs
-   */
-  associateDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void>
-
-  /**
-   * Marks the previous account association between DFSP + Currency and TigerBeetle AccountIds as invalid
-   */
-  tombstoneDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void>
 }
 
 // reserved for USD
@@ -62,14 +27,7 @@ export enum AccountType {
   Settlement_Multilateral = 4,
 }
 
-// export const AccountType = Object.freeze({
-//   Collateral: 1,
-//   Reserve: 2,
-//   Clearing: 3,
-//   Settlement_Multilateral: 4,
-// })
-
-export default class TigerBeetleLedger {
+export default class TigerBeetleLedger implements Ledger {
   constructor(private deps: TigerBeetleLedgerDependencies) {
 
   }

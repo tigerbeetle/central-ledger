@@ -10,6 +10,7 @@ import { CommitTransferDto } from './types';
 
 import * as EventSdk from '@mojaloop/event-sdk';
 import { FulfilResult, FulfilResultType } from 'src/domain/ledger-v2/types';
+import { Ledger } from 'src/domain/ledger-v2/Ledger';
 
 const { decodePayload } = Util.StreamingProtocol
 const rethrow = Util.rethrow;
@@ -20,7 +21,7 @@ export interface FusedFulfilHandlerDependencies {
   notificationProducer: INotificationProducer
   committer: IMessageCommitter
   config: ApplicationConfig
-  ledger: LegacyCompatibleLedger
+  ledger: Ledger
 }
 
 export type SupportedFulfilHandlerAction = EventActionEnum.ABORT 

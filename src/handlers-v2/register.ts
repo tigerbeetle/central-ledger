@@ -16,6 +16,7 @@ import { TimeoutHandler, TimeoutHandlerDependencies } from './TimeoutHandler'
 import { FusedPrepareHandler, FusedPrepareHandlerDependencies } from './FusedPrepareHandler'
 import LegacyCompatibleLedger from 'src/domain/ledger-v2/LegacyCompatibleLedger'
 import { FusedFulfilHandler, FusedFulfilHandlerDependencies } from './FusedFulfilHandler'
+import { Ledger } from 'src/domain/ledger-v2/Ledger'
 const { createLock } = require('../lib/distLock');
 
 const rethrow = Util.rethrow
@@ -190,7 +191,7 @@ export const createFusedPrepareHandler = (
   consumer: Kafka.Consumer,
   positionProducer: Kafka.Producer,
   notificationProducer: Kafka.Producer,
-  ledger: LegacyCompatibleLedger
+  ledger: Ledger
 ) => {
   const deps: FusedPrepareHandlerDependencies = {
     positionProducer: new PositionProducer(positionProducer, config),
@@ -208,7 +209,7 @@ export const registerFusedPrepareHandler = async (
   consumer: Kafka.Consumer,
   positionProducer: Kafka.Producer,
   notificationProducer: Kafka.Producer,
-  ledger: LegacyCompatibleLedger
+  ledger: Ledger
 ): Promise<void> => {
   try {
     logger.debug(`registerFusedPrepareHandler registering`)
@@ -335,7 +336,7 @@ export const createFusedFulfilHandler = (
   consumer: Kafka.Consumer,
   positionProducer: Kafka.Producer,
   notificationProducer: Kafka.Producer,
-  ledger: LegacyCompatibleLedger
+  ledger: Ledger
 ) => {
   const deps: FusedFulfilHandlerDependencies = {
     positionProducer: new PositionProducer(positionProducer, config),
@@ -353,7 +354,7 @@ export const registerFusedFulfilHandler = async (
   consumer: Kafka.Consumer,
   positionProducer: Kafka.Producer,
   notificationProducer: Kafka.Producer,
-  ledger: LegacyCompatibleLedger
+  ledger: Ledger
 ): Promise<void> => {
   try {
     logger.debug(`registerFusedFulfilHandler registering`)

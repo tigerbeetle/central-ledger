@@ -1,5 +1,7 @@
 import assert from "node:assert"
-import LegacyCompatibleLedger, { CreateHubAccountCommand } from "src/domain/ledger-v2/LegacyCompatibleLedger"
+import { Ledger } from "src/domain/ledger-v2/Ledger"
+import LegacyCompatibleLedger from "src/domain/ledger-v2/LegacyCompatibleLedger"
+import { CreateHubAccountCommand } from "src/domain/ledger-v2/types"
 
 const logger = require('../logger').logger
 
@@ -11,7 +13,7 @@ export interface ProvisioningConfig {
 }
 
 export interface ProvisionerDependencies {
-  ledger: LegacyCompatibleLedger,
+  ledger: Ledger,
 }
 
 

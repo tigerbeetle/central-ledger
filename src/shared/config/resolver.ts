@@ -4,6 +4,7 @@ import RC from 'rc'
 import { ApplicationConfig } from './types'
 import { assertBoolean, assertKafkaConfig, assertNumber, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo } from './util'
 import assert from 'node:assert'
+import { raw } from 'mysql'
 
 type UnsafeApplicationConfig = Partial<ApplicationConfig>
 
@@ -74,7 +75,8 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
         TIGERBEETLE_METADATA_STORE: defaultTo(rawConfig.EXPERIMENTAL?.LEDGER?.TIGERBEETLE_METADATA_STORE, 'SQLITE'),
       },
       TIGERBEETLE: {
-        ADDRESS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.ADDRESS, '3000'),
+        CLUSTER_ID: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.CLUSTER_ID, 0n),
+        ADDRESS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.ADDRESS, ['3000']),
         UNSAFE_SKIP_TIGERBEETLE: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.UNSAFE_SKIP_TIGERBEETLE, false),
         CURRENCY_LEDGERS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.CURRENCY_LEDGERS, [])
       },

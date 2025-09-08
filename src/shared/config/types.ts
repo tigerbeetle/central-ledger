@@ -302,13 +302,21 @@ export interface ApplicationConfig {
 
     TIGERBEETLE: {
 
+       /**
+       * The TigerBeetle cluster id
+       * See: https://docs.tigerbeetle.com/coding/clients/node/#creating-a-client
+       * 
+       * @default 0n
+       */
+      CLUSTER_ID: bigint
+
       /**
        * The TigerBeetle Address String
        * See: https://docs.tigerbeetle.com/coding/clients/node/#creating-a-client
        * 
-       * @default '3000'
+       * @default ['3000']
        */
-      ADDRESS: string,
+      ADDRESS: Array<string>,
 
       /**
        * When using the TIGERBEETLE Ledger, setting this option to true will skip writing to

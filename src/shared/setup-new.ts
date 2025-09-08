@@ -13,6 +13,10 @@ const Logger = require('../shared/logger').logger
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../domain/ledger-v2/LegacyCompatibleLedger';
+import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from '../domain/ledger-v2/TigerBeetleLedger';
+import { PersistedMetadataStore } from '../domain/ledger-v2/PersistedMetadataStore';
+import { TransferBatcher } from '../domain/ledger-v2/TransferBatcher';
+import { createClient } from 'tigerbeetle-node';
 import {
   registerAdminHandlerV2,
   registerFulfilHandlerV2,
@@ -37,6 +41,7 @@ import BatchPositionModelCached from '../models/position/batchCached';
 import Plugins from './plugins';
 import Provisioner, { ProvisionerDependencies } from './provisioner';
 import { getAccountByNameAndCurrency } from 'src/domain/participant';
+import { Ledger } from 'src/domain/ledger-v2/Ledger';
 
 
 const USE_NEW_HANDLERS = true
@@ -148,6 +153,7 @@ export async function initialize({
     const legacyHandlers = await initializeHandlers(handlerTypes)
 
     // ledger
+    // TODO(LD): pass in Db instead  relying on global here.
     const ledger = initializeLedger(config)
 
     // Initialize new V2 handlers with dependency injection
@@ -165,9 +171,7 @@ export async function initialize({
     // Provision from scratch on first start, or update provisioning to match static config
     if (config.EXPERIMENTAL.PROVISIONING.enabled) {
       const provisionerDependencies: ProvisionerDependencies = {
-        participantsHandler: require('../../api/participants/handler'),
-        participantService: require('../../domain/participant'),
-        settlementModelDomain: require('../../domain/settlement'),
+        ledger,
       }
       const provisioner = new Provisioner(config.EXPERIMENTAL.PROVISIONING, provisionerDependencies)
       await provisioner.run();
@@ -222,7 +226,38 @@ export async function initialize({
   }
 }
 
-function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
+function initializeLedger(config: ApplicationConfig): Ledger {
+  // TODO: Configure the ledgers to run side-by-side
+  switch (config.EXPERIMENTAL.LEDGER.PRIMARY) {
+    case 'SQL': return initializeLegacyCompatibleLedger(config)
+    case 'TIGERBEETLE': return initializeTigerBeetleLedger(config)
+    default:
+      throw new Error(`initializeLedger uknnown ledger type: ${config.EXPERIMENTAL.LEDGER.PRIMARY}`)
+  }
+}
+
+function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedger {
+  const client = createClient({
+    cluster_id: config.EXPERIMENTAL.TIGERBEETLE.CLUSTER_ID,
+    replica_addresses: config.EXPERIMENTAL.TIGERBEETLE.ADDRESS
+  })
+  const metadataStore = new PersistedMetadataStore(Db)
+  const transferBatcher = new TransferBatcher(
+    client,
+    100, // batch size - TODO: make configurable
+    100  // batch interval ms - TODO: make configurable
+  )
+
+  const tigerBeetleDeps: TigerBeetleLedgerDependencies = {
+    config,
+    client,
+    metadataStore,
+    transferBatcher
+  }
+  return new TigerBeetleLedger(tigerBeetleDeps)
+}
+
+function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyCompatibleLedger {
   // Existing business logic modules
   const Validator = require('../handlers/transfers/validator')
   const TransferService = require('../domain/transfer/index')
@@ -235,35 +270,48 @@ function initializeLedger(config: ApplicationConfig): LegacyCompatibleLedger {
   const PositionService = require('../domain/position')
   const prepareModule = require('../handlers/transfers/prepare')
 
+
   const deps: LegacyCompatibleLedgerDependencies = {
     config,
-    
-    // Validation functions (flattened from validator)
-    validatePrepare: Validator.validatePrepare,
-    validateParticipantByName: Validator.validateParticipantByName,
-    validatePositionAccountByNameAndCurrency: Validator.validatePositionAccountByNameAndCurrency,
-    validateParticipantTransferId: Validator.validateParticipantTransferId,
-    validateFulfilCondition: Validator.validateFulfilCondition,
-    validationReasons: Validator.reasons,
-    
-    // Transfer service functions (flattened from transferService)
-    handlePayeeResponse: TransferService.handlePayeeResponse,
-    getTransferById: TransferService.getById,
-    getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
-    getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
-    saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
-    
-    // Utility functions (flattened from nested objects)
-    transformTransferToFulfil: TransferObjectTransform.toFulfil,
-    duplicateCheckComparator: Comparators.duplicateCheckComparator,
-    
-    // Existing top-level functions
-    checkDuplication: prepareModule.checkDuplication,
-    savePreparedRequest: prepareModule.savePreparedRequest,
-    calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
-    changeParticipantPosition: PositionService.changeParticipantPosition,
-    getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
-    getByIDAndCurrency: participantFacade.getByIDAndCurrency,
+    lifecycle: {
+      participantsHandler: require('../api/participants/handler'),
+      participantService: require('../domain/participant'),
+      participantFacade: require('../models/participant/facade'),
+      transferService: require('../domain/transfer'),
+      // TODO(LD): fix me!
+      enums: undefined,
+      // enums: await require('../lib/enumCached').getEnums('all'),
+      settlementModelDomain: require('../domain/settlement'),
+    },
+    clearing: {
+      // Validation functions (flattened from validator)
+      validatePrepare: Validator.validatePrepare,
+      validateParticipantByName: Validator.validateParticipantByName,
+      validatePositionAccountByNameAndCurrency: Validator.validatePositionAccountByNameAndCurrency,
+      validateParticipantTransferId: Validator.validateParticipantTransferId,
+      validateFulfilCondition: Validator.validateFulfilCondition,
+      validationReasons: Validator.reasons,
+
+      // Transfer service functions (flattened from transferService)
+      handlePayeeResponse: TransferService.handlePayeeResponse,
+      getTransferById: TransferService.getById,
+      getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
+      getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
+      saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
+
+      // Utility functions (flattened from nested objects)
+      transformTransferToFulfil: TransferObjectTransform.toFulfil,
+      duplicateCheckComparator: Comparators.duplicateCheckComparator,
+
+      // Existing top-level functions
+      checkDuplication: prepareModule.checkDuplication,
+      savePreparedRequest: prepareModule.savePreparedRequest,
+      calculatePreparePositionsBatch: PositionService.calculatePreparePositionsBatch,
+      changeParticipantPosition: PositionService.changeParticipantPosition,
+      getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
+      getByIDAndCurrency: participantFacade.getByIDAndCurrency,
+
+    }
   }
   return new LegacyCompatibleLedger(deps)
 }
@@ -444,7 +492,7 @@ async function initializeHandlersV2(
   handlerTypes: Array<HandlerType>,
   consumers: Consumers,
   producers: Producers,
-  ledger: LegacyCompatibleLedger
+  ledger: Ledger
 ): Promise<{ timeoutScheduler?: TimeoutScheduler }> {
   let timeoutScheduler: TimeoutScheduler | undefined;
 
@@ -587,7 +635,7 @@ async function initializeHandlers(handlers: Array<HandlerType>): Promise<unknown
         break
       }
       // ignore newer handlers
-      case 'fusedprepare': 
+      case 'fusedprepare':
       case 'fusedfulfil': {
         break;
       }
