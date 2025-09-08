@@ -10,6 +10,12 @@ import { ProxyObligation } from "src/handlers/transfers/prepare";
 import { ApplicationConfig } from "src/shared/config";
 import { logger } from '../../shared/logger';
 import {
+  CreateDFSPCommand,
+  CreateDFSPResponse,
+  CreateHubAccountCommand,
+  CreateHubAccountResponse,
+  DepositCollateralCommand,
+  DepositCollateralResponse,
   FulfilDuplicateResult,
   FulfilResult,
   FulfilResultType,
@@ -27,8 +33,10 @@ import {
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
 
-  // TODO(LD): Collect these into "transferDependencies"
-
+  /**
+   * Legacy functions used for Onboarding the Hub, DFSP, Setting up the switch and Settlement
+   * models.
+   */
   lifecycle: {
     participantsHandler: {
       create: (request: { payload: { name: string, currency: string } }, callback: any) => Promise<void>
@@ -51,8 +59,10 @@ export interface LegacyCompatibleLedgerDependencies {
     enums: any
   },
 
+  /**
+   * Legacy functions used for clearing payments.
+   */
   clearing: {
-    // Validation functions
     validatePrepare: (
       payload: CreateTransferDto,
       headers: any,
@@ -68,15 +78,11 @@ export interface LegacyCompatibleLedgerDependencies {
     validateParticipantTransferId: (participantName: string, transferId: string) => Promise<boolean>;
     validateFulfilCondition: (fulfilment: string, condition: string) => boolean;
     validationReasons: string[];
-
-    // Transfer service functions
     handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any) => Promise<TransformredTransfer>;
     getTransferById: (transferId: string) => Promise<TransferReadModel | null>;
     getTransferInfoToChangePosition: (transferId: string, roleType: any, entryType: any) => Promise<TransferParticipantInfo | null>;
     getTransferFulfilmentDuplicateCheck: any;
     saveTransferFulfilmentDuplicateCheck: any;
-
-    // Utility functions
     transformTransferToFulfil: (transfer: any, isFx: boolean) => any;
     duplicateCheckComparator: (transferId: string, payload: any, getCheck: any, saveCheck: any) => Promise<any>;
     checkDuplication: (args: {
@@ -115,92 +121,6 @@ export interface LegacyCompatibleLedgerDependencies {
   }
 }
 
-export interface CreateHubAccountCommand {
-  currency: string,
-  settlementModel: SettlementModel
-}
-
-export interface CreateHubAccountResponseSuccess {
-  type: 'SUCCESS'
-}
-
-export interface CreateHubAccountResponseAlreadyExists {
-  type: 'ALREADY_EXISTS'
-}
-
-export interface CreateHubAccountResponseFailed {
-  type: 'FAILED',
-  error: Error
-}
-
-export type CreateHubAccountResponse = CreateHubAccountResponseSuccess
-  | CreateHubAccountResponseAlreadyExists
-  | CreateHubAccountResponseFailed
-
-
-export interface CreateDFSPCommand {
-  dfspId: string,
-  currencies: Array<string>
-  initialLimits: Array<number>
-}
-
-export interface CreateDFSPResponseSuccess {
-  type: 'SUCCESS'
-}
-
-export interface CreateDFSPResponseAlreadyExists {
-  type: 'ALREADY_EXISTS'
-}
-
-export interface CreateDFSPResponseFailed {
-  type: 'FAILED',
-  error: Error
-}
-
-export type CreateDFSPResponse = CreateDFSPResponseSuccess
-  | CreateDFSPResponseAlreadyExists
-  | CreateDFSPResponseFailed
-
-
-export interface DepositCollateralCommand {
-  // TODO: should this be named idempotenceId? Or depositId?
-  transferId: string,
-  dfspId: string,
-
-  // TODO: make this a Mojaloop number to make things easier?
-  currency: string,
-  amount: number
-}
-
-export interface DepositCollateralResponseSuccess {
-  type: 'SUCCESS'
-}
-
-export interface DepositCollateralResponseAlreadyExists {
-  type: 'ALREADY_EXISTS'
-}
-
-export interface DepositCollateralResponseFailed {
-  type: 'FAILED',
-  error: Error
-}
-
-export type DepositCollateralResponse = DepositCollateralResponseSuccess
-  | DepositCollateralResponseAlreadyExists
-  | DepositCollateralResponseFailed
-
-// TODO(LD): TODO
-export interface SettlementModel {
-  name: string,
-  settlementGranularity: string,
-  settlementInterchange: string,
-  settlementDelay: string,
-  currency: string,
-  requireLiquidityCheck: boolean,
-  ledgerAccountType: string,
-  settlementAccountType: string,
-  autoPositionReset: boolean
-}
 
 /**
  * @class LegacyCompatibleLedger
@@ -263,7 +183,7 @@ export default class LegacyCompatibleLedger {
       } catch (err) {
         // catch this early, since we can't know if the settlementModel has also already been created
         if ((err as ErrorHandler.FSPIOPError).message === 'Hub account has already been registered.') {
-          logger.warn('createHubAccount', {error: err})
+          logger.warn('createHubAccount', { error: err })
         } else {
           throw err
         }

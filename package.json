@@ -125,7 +125,8 @@
     "mongo-uri-builder": "^4.0.0",
     "parse-strings-in-object": "2.0.0",
     "rc": "1.2.8",
-    "require-glob": "^4.1.0"
+    "require-glob": "^4.1.0",
+    "tigerbeetle-node": "0.16.57"
   },
   "optionalDependencies": {
     "mysql": "2.18.1"

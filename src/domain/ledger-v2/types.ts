@@ -260,3 +260,90 @@ export interface FulfilResultFailOther {
   type: FulfilResultType.FAIL_OTHER,
   fspiopError: FSPIOPError,
 }
+
+
+export interface CreateHubAccountCommand {
+  currency: string,
+  settlementModel: SettlementModel
+}
+
+export interface CreateHubAccountResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface CreateHubAccountResponseAlreadyExists {
+  type: 'ALREADY_EXISTS'
+}
+
+export interface CreateHubAccountResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type CreateHubAccountResponse = CreateHubAccountResponseSuccess
+  | CreateHubAccountResponseAlreadyExists
+  | CreateHubAccountResponseFailed
+
+
+export interface CreateDFSPCommand {
+  dfspId: string,
+  currencies: Array<string>
+  initialLimits: Array<number>
+}
+
+export interface CreateDFSPResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface CreateDFSPResponseAlreadyExists {
+  type: 'ALREADY_EXISTS'
+}
+
+export interface CreateDFSPResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type CreateDFSPResponse = CreateDFSPResponseSuccess
+  | CreateDFSPResponseAlreadyExists
+  | CreateDFSPResponseFailed
+
+
+export interface DepositCollateralCommand {
+  // TODO: should this be named idempotenceId? Or depositId?
+  transferId: string,
+  dfspId: string,
+
+  // TODO: make this a Mojaloop number to make things easier?
+  currency: string,
+  amount: number
+}
+
+export interface DepositCollateralResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface DepositCollateralResponseAlreadyExists {
+  type: 'ALREADY_EXISTS'
+}
+
+export interface DepositCollateralResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type DepositCollateralResponse = DepositCollateralResponseSuccess
+  | DepositCollateralResponseAlreadyExists
+  | DepositCollateralResponseFailed
+
+export interface SettlementModel {
+  name: string,
+  settlementGranularity: string,
+  settlementInterchange: string,
+  settlementDelay: string,
+  currency: string,
+  requireLiquidityCheck: boolean,
+  ledgerAccountType: string,
+  settlementAccountType: string,
+  autoPositionReset: boolean
+}
