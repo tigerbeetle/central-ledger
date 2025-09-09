@@ -1,6 +1,7 @@
+import assert from "node:assert";
 import { DfspAccountIds, DfspAccountMetadata, DfspAccountMetadataNone, MetadataStore } from "./MetadataStore";
 
-interface DatabaseRecord {
+interface AccountMetadataRecord {
   id: number;
   dfspId: string;
   currency: string;
@@ -23,10 +24,66 @@ interface Database {
   };
 }
 
+type CacheHit<T> = {
+  type: 'HIT',
+  contents: T
+}
+
+type CacheMiss<T> = {
+  type: 'MISS'
+}
+
+type CacheMissOrHit<T> = CacheHit<T> | CacheMiss<T>
+
+class MetadataStoreCache {
+  private cacheMap: Record<string, DfspAccountMetadata> = {}
+
+  get(dfspId: string, currency: string): CacheMissOrHit<DfspAccountMetadata> {
+    const key = this.key(dfspId, currency)
+    if (!this.cacheMap[key]) {
+      return { type: 'MISS' }
+    }
+
+    return {
+      type: 'HIT',
+      contents: this.cacheMap[key]
+    }
+  }
+
+  put(dfspId: string, currency: string, metadata: DfspAccountMetadata): void {
+    assert.equal(dfspId, metadata.dfspId)
+    assert.equal(currency, metadata.currency)
+
+    const key = this.key(dfspId, currency)
+    this.cacheMap[key] = metadata
+  }
+
+  delete(dfspId: string, currency: string) {
+    const key = this.key(dfspId, currency)
+    if (this.cacheMap[key]) {
+      delete this.cacheMap[key]
+    }
+  }
+
+  private key(dfspId: string, currency: string): string {
+    return `${dfspId}+${currency}`
+  }
+}
+
 export class PersistedMetadataStore implements MetadataStore {
-  constructor(private db: Database) {}
+  private cache: MetadataStoreCache
+
+  constructor(private db: Database) {
+    this.cache = new MetadataStoreCache()
+  }
 
   async getDfspAccountMetadata(dfspId: string, currency: string): Promise<DfspAccountMetadata | DfspAccountMetadataNone> {
+    // These values do't change very often, so it's safe to cache them
+    const cacheResult = this.cache.get(dfspId, currency)
+    if (cacheResult.type === 'HIT') {
+      return cacheResult.contents
+    }
+
     const result = await this.db.from('tigerBeetleAccountMetadata')
       .where({
         dfspId,
@@ -40,7 +97,8 @@ export class PersistedMetadataStore implements MetadataStore {
       return { type: 'DfspAccountMetadataNone' };
     }
 
-    const record = result as DatabaseRecord;
+    const record = result as AccountMetadataRecord;
+    this.cache.put(dfspId, currency, result)
     
     return {
       type: 'DfspAccountMetadata',
@@ -54,6 +112,8 @@ export class PersistedMetadataStore implements MetadataStore {
   }
 
   async associateDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
+    this.cache.delete(dfspId, currency)
+
     await this.db.from('tigerBeetleAccountMetadata').insert({
       dfspId,
       currency,
@@ -79,5 +139,7 @@ export class PersistedMetadataStore implements MetadataStore {
         isTombstoned: true,
         updatedDate: new Date()
       });
+
+    this.cache.delete(dfspId, currency)
   }
 }

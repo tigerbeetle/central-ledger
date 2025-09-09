@@ -31,4 +31,10 @@ export interface MetadataStore {
    * Marks the previous account association between DFSP + Currency and TigerBeetle AccountIds as invalid
    */
   tombstoneDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void>
+
+
+  // Ok now we also need to store the following metadata:
+  // 1. transfer conditions (for validating the fulfil stage)
+  // 2. Some subset of the payloads, so we can implement the GET -> PUT for duplicate requests
+  // 3. What else? Need to scour
 }

@@ -9,6 +9,7 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import { TransferBatcher } from "./TransferBatcher";
 import { Ledger } from "./Ledger";
 import { DfspAccountIds, MetadataStore } from "./MetadataStore";
+import Crypto from 'node:crypto'
 
 export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
@@ -26,6 +27,18 @@ export enum AccountType {
   Clearing = 3,
   Settlement_Multilateral = 4,
 }
+
+interface InterledgerValidationPass {
+  type: 'PASS'
+}
+
+interface InterledgerValidationFail {
+  type: 'FAIL',
+  reason: string
+}
+
+export type InterledgerValidationResult = InterledgerValidationPass
+  | InterledgerValidationFail
 
 export default class TigerBeetleLedger implements Ledger {
   constructor(private deps: TigerBeetleLedgerDependencies) {
@@ -400,6 +413,20 @@ export default class TigerBeetleLedger implements Ledger {
       const prepareId = TigerBeetleLedger.fromMojaloopId(input.transferId)
 
       // TODO(LD): Validate that the fulfilment matches the condition
+      // for now, we're just putting this in here to simulate the peformance of doing this
+      // from a condition that is already in memory
+      const dummyFulfilment = 'V-IalzIzy-zxy0SrlY1Ku2OE9aS4KgGZ0W-Zq5_BeC01'
+      const dummyCondition = 'GIxd5xcohkmnnXolpTv_OxwpyaH__Oiq49JTvCo8pyA'
+      const fulfilmentAndConditionResult = TigerBeetleLedger.validateFulfilmentAndCondition(dummyFulfilment, dummyCondition)
+      if (fulfilmentAndConditionResult.type === 'FAIL') {
+        return {
+          type: FulfilResultType.FAIL_VALIDATION,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `fulfilment failed validation with error: ${fulfilmentAndConditionResult.reason}`
+          )
+        }
+      }
 
       /**
        * Dr Payer_Clearing
@@ -492,5 +519,52 @@ export default class TigerBeetleLedger implements Ledger {
     const combinedStr = integerPart + normalizedDecimal;
 
     return BigInt(combinedStr);
+  }
+
+  /**
+   * Checks that the fulfilment matches the preimage
+   * 
+   * From the Mojaloop FSPIOP Specification v1.1:
+   * https://docs.mojaloop.io/api/fspiop/v1.1/api-definition.html#interledger-payment-request-2
+   * 
+   * > The fulfilment is submitted to the Payee FSP ledger to instruct the ledger to commit the 
+   * > reservation in favor of the Payee. The ledger will validate that the SHA-256 hash of the
+   * > fulfilment matches the condition attached to the transfer. If it does, it commits the 
+   * > reservation of the transfer. If not, it rejects the transfer and the Payee FSP rejects the 
+   * > payment and cancels the previously-performed reservation.
+   * 
+   */
+  public static validateFulfilmentAndCondition(fulfilment: string, condition: string): InterledgerValidationResult {
+    try {
+      assert(fulfilment)
+      assert(condition)
+      const preimage = Buffer.from(fulfilment, 'base64url')
+      if (preimage.length !== 32) {
+        return {
+          type: 'FAIL',
+          reason: 'Interledger preimages must be exactly 32 bytes'
+        }
+      }
+
+      const calculatedCondition = Crypto.createHash('sha256')
+        .update(preimage)
+        .digest('base64url')
+
+      if (calculatedCondition !== condition) {
+        return {
+          type: 'FAIL',
+          reason: 'Condition and Fulfulment mismatch'
+        }
+      }
+
+      return {
+        type: 'PASS'
+      }
+    } catch (err) {
+      return {
+        type: "FAIL",
+        reason: err.message
+      }
+    }
   }
 }
