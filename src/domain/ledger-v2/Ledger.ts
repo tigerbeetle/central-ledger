@@ -20,10 +20,10 @@ export interface Ledger {
    */
   createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse>;
   createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse>;
-  disableDfsp(thing: unknown): Promise<unknown>;
-  enableDfsp(thing: unknown): Promise<unknown>;
+  disableDfsp(cmd: unknown): Promise<unknown>;
+  enableDfsp(cmd: unknown): Promise<unknown>;
   depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
-  withdrawCollateral(thing: unknown): Promise<unknown>;
+  withdrawCollateral(cmd: unknown): Promise<unknown>;
   /**
    * Clearing Methods
    */
@@ -32,6 +32,6 @@ export interface Ledger {
   /**
    * Settlement Methods
    */
-  closeSettlementWindow(thing: unknown): Promise<unknown>;
-  settleClosedWindows(thing: unknown): Promise<unknown>;
+  closeSettlementWindow(cmd: unknown): Promise<unknown>;
+  settleClosedWindows(cmd: unknown): Promise<unknown>;
 }

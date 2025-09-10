@@ -29,6 +29,7 @@ import {
   TransferStateChange,
   TransformredTransfer
 } from './types';
+import { Ledger } from './Ledger';
 
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
@@ -127,7 +128,7 @@ export interface LegacyCompatibleLedgerDependencies {
  * @description Collects the business logic from all ledger-related activites into a common 
  *   interface which can be abstracted out and reimplemented with TigerBeetle
  */
-export default class LegacyCompatibleLedger {
+export default class LegacyCompatibleLedger implements Ledger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) {
 
   }
