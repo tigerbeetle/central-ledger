@@ -6,8 +6,8 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import assert from 'assert';
 import { CreateTransferDto } from './types';
 import { ApplicationConfig } from '../shared/config';
-import { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from 'src/domain/ledger-v2/types';
-import { Ledger } from 'src/domain/ledger-v2/Ledger';
+import { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from '../domain/ledger-v2/types';
+import { Ledger } from '../domain/ledger-v2/Ledger';
 
 
 const { decodePayload } = Util.StreamingProtocol

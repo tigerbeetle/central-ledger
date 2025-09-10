@@ -2,15 +2,13 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as Metrics from '@mojaloop/central-services-metrics';
 import { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
 import assert from 'assert';
-import LegacyCompatibleLedger from '../domain/ledger-v2/LegacyCompatibleLedger';
 import { IMessageCommitter, INotificationProducer, IPositionProducer } from '../messaging/types';
 import { ApplicationConfig } from '../shared/config';
 import { logger } from '../shared/logger';
 import { CommitTransferDto } from './types';
 
-import * as EventSdk from '@mojaloop/event-sdk';
-import { FulfilResult, FulfilResultType } from 'src/domain/ledger-v2/types';
-import { Ledger } from 'src/domain/ledger-v2/Ledger';
+import { Ledger } from '../domain/ledger-v2/Ledger';
+import { FulfilResult, FulfilResultType } from '../domain/ledger-v2/types';
 
 const { decodePayload } = Util.StreamingProtocol
 const rethrow = Util.rethrow;

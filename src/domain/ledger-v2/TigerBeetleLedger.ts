@@ -415,7 +415,7 @@ export default class TigerBeetleLedger implements Ledger {
       // TODO(LD): Validate that the fulfilment matches the condition
       // for now, we're just putting this in here to simulate the peformance of doing this
       // from a condition that is already in memory
-      const dummyFulfilment = 'V-IalzIzy-zxy0SrlY1Ku2OE9aS4KgGZ0W-Zq5_BeC01'
+      const dummyFulfilment = 'V-IalzIzy-zxy0SrlY1Ku2OE9aS4KgGZ0W-Zq5_BeC0'
       const dummyCondition = 'GIxd5xcohkmnnXolpTv_OxwpyaH__Oiq49JTvCo8pyA'
       const fulfilmentAndConditionResult = TigerBeetleLedger.validateFulfilmentAndCondition(dummyFulfilment, dummyCondition)
       if (fulfilmentAndConditionResult.type === 'FAIL') {

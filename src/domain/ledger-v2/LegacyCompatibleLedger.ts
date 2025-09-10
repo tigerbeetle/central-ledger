@@ -1,13 +1,13 @@
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 const { Enum, Util: { Time } } = require('@mojaloop/central-services-shared');
 import assert from "assert";
-import { FusedFulfilHandlerInput } from 'src/handlers-v2/FusedFulfilHandler';
+import { FusedFulfilHandlerInput } from '../../handlers-v2/FusedFulfilHandler';
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { MessageContext, PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult } from "src/handlers-v2/PositionHandler";
 import { DuplicationCheckResult, Location, TransferCheckResult, ValidationResult } from "src/handlers-v2/PrepareHandler";
 import { CommitTransferDto, CreateTransferDto } from "src/handlers-v2/types";
 import { ProxyObligation } from "src/handlers/transfers/prepare";
-import { ApplicationConfig } from "src/shared/config";
+import { ApplicationConfig } from "../../shared/config";
 import { logger } from '../../shared/logger';
 import {
   CreateDFSPCommand,
