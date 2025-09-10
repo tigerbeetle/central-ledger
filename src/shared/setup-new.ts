@@ -38,6 +38,8 @@ import ParticipantCached from '../models/participant/participantCached';
 import ParticipantCurrencyCached from '../models/participant/participantCurrencyCached';
 import ParticipantLimitCached from '../models/participant/participantLimitCached';
 import BatchPositionModelCached from '../models/position/batchCached';
+import SettlementModelCached from '../models/settlement/settlementModelCached';
+
 import Plugins from './plugins';
 import Provisioner, { ProvisionerDependencies } from './provisioner';
 import { getAccountByNameAndCurrency } from 'src/domain/participant';
@@ -360,6 +362,8 @@ async function initializeCache(): Promise<void> {
   await ParticipantCurrencyCached.initialize()
   await ParticipantLimitCached.initialize()
   await BatchPositionModelCached.initialize()
+  await SettlementModelCached.initialize();
+  
   // all cached models initialize-methods are SYNC!!
   externalParticipantCached.initialize()
   await Cache.initCache()
