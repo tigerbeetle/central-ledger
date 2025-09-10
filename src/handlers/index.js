@@ -34,11 +34,12 @@
  */
 
 const Logger = require('../shared/logger').logger
-const Config = require('../lib/config')
-const Setup = require('../shared/setup')
+// const Config = require('../lib/config')
+const Config = require('../shared/config').default
+const { initialize, JS_HANDLER_TYPES } = require('../shared/setup-new')
 const PJson = require('../../package.json')
 const Plugin = require('./api/plugin')
-const MetricPlugin = require('@mojaloop/central-services-metrics').plugin
+const MetricsPlugin = require('@mojaloop/central-services-metrics').plugin
 
 const { Command } = require('commander')
 
@@ -62,111 +63,33 @@ Program.command('handler') // sub-command name, coffeeType = type, required
   .option('--bulkfulfil', 'Start the Bulk Fulfil Handler')
   .option('--bulkprocessing', 'Start the Bulk Processing Handler')
   .option('--bulkget', 'Start the Bulk Get Handler')
+  .option('--fusedprepare', 'Start the fused prepare handler')
+  .option('--fusedfulfil', 'Start the fused fulfil handler')
   // .option('--reject', 'Start the Reject Handler')
 
   // function to execute when command is uses
   .action(async (args) => {
     const handlerList = []
-    if (args.prepare) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --prepare')
-      const handler = {
-        type: 'prepare',
-        enabled: true
+
+    const unverifiedHandlers = Object.keys(args);
+    for (const unverifiedHandler of unverifiedHandlers) {
+      if (JS_HANDLER_TYPES.indexOf(unverifiedHandler) === -1) {
+        throw new Error(`handler/index.js found unexpected handler: ${unverifiedHandler}`)
       }
-      handlerList.push(handler)
-    }
-    if (args.position) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --position')
-      const handler = {
-        type: 'position',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.positionbatch) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --positionbatch')
-      const handler = {
-        type: 'positionbatch',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.get) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --get')
-      const handler = {
-        type: 'get',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.fulfil) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --fulfil')
-      const handler = {
-        type: 'fulfil',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.timeout) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --timeout')
-      const handler = {
-        type: 'timeout',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.admin) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --admin')
-      const handler = {
-        type: 'admin',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.bulkprepare) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --bulkprepare')
-      const handler = {
-        type: 'bulkprepare',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.bulkfulfil) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --bulkfulfil')
-      const handler = {
-        type: 'bulkfulfil',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.bulkprocessing) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --bulkprocessing')
-      const handler = {
-        type: 'bulkprocessing',
-        enabled: true
-      }
-      handlerList.push(handler)
-    }
-    if (args.bulkget) {
-      Logger.isDebugEnabled && Logger.debug('CLI: Executing --bulkget')
-      const handler = {
-        type: 'bulkget',
-        enabled: true
-      }
-      handlerList.push(handler)
+
+      const verifiedHandler = unverifiedHandler
+      Logger.debug(`CLI: Running '${verifiedHandler}' handler`)
+      handlerList.push(verifiedHandler)
     }
 
-    module.exports = Setup.initialize({
+    module.exports = initialize({
+      config: Config,
       service: 'handler',
       port: Config.PORT,
-      modules: [Plugin, MetricPlugin],
+      modules: [Plugin, MetricsPlugin],
       runMigrations: false,
-      handlers: handlerList,
-      runHandlers: true
+      handlerTypes: handlerList,
     })
-    // } else {
-    //   Program.help()
-    // }
   })
 
 if (Array.isArray(process.argv) && process.argv.length > 2) {

@@ -42,6 +42,7 @@ import Plugins from './plugins';
 import Provisioner, { ProvisionerDependencies } from './provisioner';
 import { getAccountByNameAndCurrency } from 'src/domain/participant';
 import { Ledger } from 'src/domain/ledger-v2/Ledger';
+import { logger } from './logger';
 
 
 const USE_NEW_HANDLERS = true
@@ -90,6 +91,9 @@ export enum HandlerType {
   bulkprocessing = 'bulkprocessing',
   bulkget = 'bulkget',
 }
+
+// export as a list for js to use
+export const JS_HANDLER_TYPES = Object.values(HandlerType);
 
 export async function initialize({
   config,
@@ -148,24 +152,31 @@ export async function initialize({
     }
 
     // TODO: we need to be able to initialize the message handlers and api separately
-
-    // Initialize legacy handlers
-    const legacyHandlers = await initializeHandlers(handlerTypes)
-
+    // in a better fashion
     // ledger
     // TODO(LD): pass in Db instead  relying on global here.
     const ledger = initializeLedger(config)
 
-    // Initialize new V2 handlers with dependency injection
-    consumers = await createConsumers(config)
-    producers = await createProducers(config)
+    // TODO(LD): type
+    let legacyHandlers: undefined | unknown
     let timeoutScheduler: TimeoutScheduler | undefined
-    // TODO: rename handlers here to handlerTypes or something
-    if (USE_NEW_HANDLERS) {
-      const v2Handlers = await initializeHandlersV2(
-        config, handlerTypes, consumers, producers, ledger
-      )
-      timeoutScheduler = v2Handlers.timeoutScheduler
+
+    if (config.HANDLERS.DISABLED === false) {
+      // Initialize legacy handlers
+      legacyHandlers = await initializeHandlers(handlerTypes)
+      // Initialize new V2 handlers with dependency injection
+      consumers = await createConsumers(config)
+      producers = await createProducers(config)
+
+      // TODO: rename handlers here to handlerTypes or something
+      if (USE_NEW_HANDLERS) {
+        const v2Handlers = await initializeHandlersV2(
+          config, handlerTypes, consumers, producers, ledger
+        )
+        timeoutScheduler = v2Handlers.timeoutScheduler
+      }
+    } else {
+      logger.warn('config.HANDLERS.DISABLED === true, skipping running of handlers')
     }
 
     // Provision from scratch on first start, or update provisioning to match static config
@@ -179,7 +190,9 @@ export async function initialize({
 
     return {
       server,
-      handlers: [legacyHandlers],
+      handlers: [
+        legacyHandlers
+      ],
       consumers: consumers,
       producers: producers,
       proxyCache,
@@ -187,7 +200,8 @@ export async function initialize({
       timeoutScheduler,
     }
   } catch (err) {
-    Logger.isErrorEnabled && Logger.error(`setup.initialize() - error while initializing ${err}`)
+    Logger.error(`setup.initialize() - error while initializing ${err}`, { stack: err.stack })
+
 
     await Db.disconnect()
 

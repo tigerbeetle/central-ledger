@@ -2,7 +2,6 @@
 
 import Config from '../shared/config'
 import Routes from './routes'
-// import { initialize } from '../shared/setup'
 import { HandlerType, initialize, Service } from '../shared/setup-new'
 import { plugin as MetricsPlugin } from '@mojaloop/central-services-metrics'
 import Migrator from '../lib/migrator'

@@ -212,6 +212,7 @@ export interface ApplicationConfig {
   },
   HANDLERS: {
     // TODO:
+    DISABLED: boolean
   },
   HANDLERS_DISABLED: boolean
   HANDLERS_API: {
