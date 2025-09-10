@@ -97,7 +97,7 @@
     "@mojaloop/central-services-logger": "11.9.0",
     "@mojaloop/central-services-metrics": "12.6.0",
     "@mojaloop/central-services-shared": "github:tigerbeetle/central-services-shared#main",
-    "@mojaloop/central-services-stream": "11.8.2",
+    "@mojaloop/central-services-stream": "github:tigerbeetle/central-services-stream#lewis/kafka-improvements",
     "@mojaloop/database-lib": "11.3.2",
     "@mojaloop/event-sdk": "14.6.1",
     "@mojaloop/inter-scheme-proxy-cache-lib": "2.6.0",

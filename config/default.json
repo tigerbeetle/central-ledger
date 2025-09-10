@@ -21,7 +21,7 @@
   },
   "MAX_FULFIL_TIMEOUT_DURATION_SECONDS": 300,
   "MIGRATIONS": {
-    "DISABLED": true,
+    "DISABLED": false,
     "RUN_DATA_MIGRATIONS": true
   },
   "AMOUNT": {
