@@ -44,15 +44,14 @@ import config from '../../shared/config'
 
 // TODO(LD): I'm no longer sure this is where we want to make the distinction.
 // We could be targeting 1 or 2 or more ledgers behind scenes here.
-const resolveHandler = () => {
-  switch (config.EXPERIMENTAL.LEDGER.PRIMARY) {
-    case 'SQL': return require('./handler')
-    case 'TIGERBEETLE': return newHandler.makeHandlers()
-  }
+// const resolveHandler = () => {
+//   switch (config.EXPERIMENTAL.LEDGER.PRIMARY) {
+//     case 'SQL': return require('./handler')
+//     case 'TIGERBEETLE': return newHandler.makeHandlers()
+//   }
+// }
 
-}
-
-const Handler = resolveHandler(config)
+const Handler = require('./handler')
 
 module.exports = [
   {
