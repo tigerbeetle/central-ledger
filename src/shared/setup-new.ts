@@ -46,6 +46,13 @@ import { getAccountByNameAndCurrency } from 'src/domain/participant';
 import { Ledger } from 'src/domain/ledger-v2/Ledger';
 import { logger } from './logger';
 
+// Extend Hapi's ServerApplicationState to include our ledger
+declare module '@hapi/hapi' {
+  interface ServerApplicationState {
+    ledger: Ledger;
+  }
+}
+
 
 const USE_NEW_HANDLERS = true
 
@@ -133,17 +140,23 @@ export async function initialize({
       proxyCache = await ProxyCache.connect()
     }
 
+    // TODO: we need to be able to initialize the message handlers and api separately
+    // in a better fashion
+    // ledger
+    // TODO(LD): pass in Db instead  relying on global here.
+    const ledger = initializeLedger(config)
+
     let server
     switch (service) {
       case Service.api:
       case Service.admin: {
-        server = await initializeServer(config.PORT, modules)
+        server = await initializeServer(config.PORT, modules, ledger)
         break
       }
       case Service.handler: {
         // Special case - when we're running in `handler` mode, we can still run an api
         if (config.HANDLERS_API_DISABLED === false) {
-          server = await initializeServer(config.PORT, modules)
+          server = await initializeServer(config.PORT, modules, ledger)
         }
         break
       }
@@ -152,12 +165,6 @@ export async function initialize({
         throw ErrorHandler.Factory.createInternalServerFSPIOPError(`No valid service type ${service} found!`)
       }
     }
-
-    // TODO: we need to be able to initialize the message handlers and api separately
-    // in a better fashion
-    // ledger
-    // TODO(LD): pass in Db instead  relying on global here.
-    const ledger = initializeLedger(config)
 
     // TODO(LD): type
     let legacyHandlers: undefined | unknown
@@ -257,7 +264,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
     cluster_id: config.EXPERIMENTAL.TIGERBEETLE.CLUSTER_ID,
     replica_addresses: config.EXPERIMENTAL.TIGERBEETLE.ADDRESS
   })
-  const metadataStore = new PersistedMetadataStore(Db)
+  const metadataStore = new PersistedMetadataStore(Db.getKnex())
   const transferBatcher = new TransferBatcher(
     client,
     100, // batch size - TODO: make configurable
@@ -372,7 +379,7 @@ async function initializeCache(): Promise<void> {
 /**
  * @function Initialize the Hapi server at port with modules
  */
-async function initializeServer(port: number, modules: Array<Plugin<any>>): Promise<Hapi.Server<Hapi.ServerApplicationState>> {
+async function initializeServer(port: number, modules: Array<Plugin<any>>, ledger: Ledger): Promise<Hapi.Server<Hapi.ServerApplicationState>> {
   return (async () => {
     const server = await new Hapi.Server({
       port,
@@ -385,6 +392,9 @@ async function initializeServer(port: number, modules: Array<Plugin<any>>): Prom
         }
       }
     })
+
+    // Pass through ledger in app state
+    server.app.ledger = ledger
 
     await Plugins.registerPlugins(server)
     await server.register(modules)

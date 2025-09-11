@@ -53,6 +53,10 @@ class MetadataStoreCache {
   put(dfspId: string, currency: string, metadata: DfspAccountMetadata): void {
     assert.equal(dfspId, metadata.dfspId)
     assert.equal(currency, metadata.currency)
+    assert(typeof metadata.clearing === 'bigint')
+    assert(typeof metadata.collateral === 'bigint')
+    assert(typeof metadata.liquidity === 'bigint')
+    assert(typeof metadata.settlementMultilateral === 'bigint')
 
     const key = this.key(dfspId, currency)
     this.cacheMap[key] = metadata
@@ -98,9 +102,7 @@ export class PersistedMetadataStore implements MetadataStore {
     }
 
     const record = result as AccountMetadataRecord;
-    this.cache.put(dfspId, currency, result)
-    
-    return {
+    const metadata: DfspAccountMetadata = {
       type: 'DfspAccountMetadata',
       dfspId: record.dfspId,
       currency: record.currency,
@@ -108,7 +110,10 @@ export class PersistedMetadataStore implements MetadataStore {
       liquidity: BigInt(record.liquidityAccountId),
       clearing: BigInt(record.clearingAccountId),
       settlementMultilateral: BigInt(record.settlementMultilateralAccountId)
-    };
+    }
+    this.cache.put(dfspId, currency, metadata)
+    
+    return metadata
   }
 
   async associateDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {

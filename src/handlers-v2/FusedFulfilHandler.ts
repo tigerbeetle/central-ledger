@@ -59,7 +59,7 @@ export class FusedFulfilHandler {
 
     const message = messages[0];
     const input = this.extractMessageData(message);
-    logger.debug(`FusedFulfilHandler.handle() - extracted message is: ${input}`)
+    logger.debug(`FusedFulfilHandler.handle() - extracted message is: ${JSON.stringify(input)}`)
 
     try {
       assert.equal(input.eventType, Enum.Events.Event.Type.FULFIL, 'Expected event type to be `FULFIL`')

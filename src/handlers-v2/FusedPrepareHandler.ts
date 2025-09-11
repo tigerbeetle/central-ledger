@@ -53,7 +53,7 @@ export class FusedPrepareHandler {
     assert.equal(messages.length, 1, 'Expected exactly only 1 message from consumers')
     const message = messages[0]
     const input = this.extractMessageData(message);
-    logger.debug(`FusedPrepareHandler.handle() - extracted message is: ${input}`)
+    logger.debug(`FusedPrepareHandler.handle() - extracted message is: ${JSON.stringify(input)}`)
 
     const histTimerEnd = Metrics.getHistogram(
       input.metric,
