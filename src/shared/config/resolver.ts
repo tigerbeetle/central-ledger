@@ -179,8 +179,8 @@ const printConfigWarnings = (config: ApplicationConfig): void => {
 }
 
 const makeConfig = (): ApplicationConfig => {
-  const PATH_TO_CONFIG = defaultEnvString('PATH_TO_CONFIG', path.join(__dirname, '../../..', 'config/default.json'))
-  const raw = parseStringsInObject(RC('CLEDG', require(PATH_TO_CONFIG)))
+  const PATH_TO_CONFIG_FILE = defaultEnvString('PATH_TO_CONFIG_FILE', path.join(__dirname, '../../..', 'config/default.json'))
+  const raw = parseStringsInObject(RC('CLEDG', require(PATH_TO_CONFIG_FILE)))
   const resolved = resolveConfig(raw)
   const validated = validateConfig(resolved)
 
