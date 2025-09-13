@@ -110,6 +110,7 @@ export async function initialize({
   modules,
   handlerTypes
 }: { config: ApplicationConfig, service: Service, modules: Array<Plugin<any>>, handlerTypes: Array<HandlerType> }): Promise<Initialized> {
+  logger.debug('setup.initialize()')
 
   let consumers: Consumers
   let producers: Producers
@@ -210,7 +211,6 @@ export async function initialize({
     }
   } catch (err) {
     Logger.error(`setup.initialize() - error while initializing ${err}`, { stack: err.stack })
-
 
     await Db.disconnect()
 

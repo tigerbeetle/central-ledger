@@ -5,6 +5,7 @@ import { ApplicationConfig } from './types'
 import { assertBoolean, assertKafkaConfig, assertNumber, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo } from './util'
 import assert from 'node:assert'
 import { raw } from 'mysql'
+import { logger } from '../logger'
 
 type UnsafeApplicationConfig = Partial<ApplicationConfig>
 
@@ -133,6 +134,10 @@ const validateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfi
   unsafeConfig.HUB_ACCOUNTS.forEach(unsafeAccountStr => assert(unsafeAccountStr))
   assertBoolean(unsafeConfig.INSTRUMENTATION_METRICS_DISABLED)
 
+  assert(unsafeConfig.DATABASE)
+  assert(unsafeConfig.DATABASE.connection)
+  assertString(unsafeConfig.DATABASE.connection.host)
+
   // console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_LABELS`')
   // console.warn('TODO(LD): validateConfig() still need to validate `INSTRUMENTATION_METRICS_CONFIG`')
   // console.warn('TODO(LD): validateConfig() still need to validate `DATABASE`')
@@ -180,6 +185,7 @@ const printConfigWarnings = (config: ApplicationConfig): void => {
 
 const makeConfig = (): ApplicationConfig => {
   const PATH_TO_CONFIG_FILE = defaultEnvString('PATH_TO_CONFIG_FILE', path.join(__dirname, '../../..', 'config/default.json'))
+  logger.warn(`makeConfig() - loading config from: ${PATH_TO_CONFIG_FILE}`)
   const raw = parseStringsInObject(RC('CLEDG', require(PATH_TO_CONFIG_FILE)))
   const resolved = resolveConfig(raw)
   const validated = validateConfig(resolved)
