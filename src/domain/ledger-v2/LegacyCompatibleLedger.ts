@@ -238,17 +238,23 @@ export default class LegacyCompatibleLedger implements Ledger {
           }
         }
       };
+      // TODO: this is so hacky
       const positionAccountRequests = cmd.currencies.map(currency => {
         return {
           payload: {
             name: cmd.dfspId,
             currency
+          },
+          server: {
+            app: {
+              ledger: this
+            }
           }
         }
       })
-      await Promise.all(positionAccountRequests.map(
-        req => this.deps.lifecycle.participantsHandler.create(req, mockCallback)
-      ))
+      // await Promise.all(positionAccountRequests.map(
+      //   req => this.deps.lifecycle.participantsHandler.create(req, mockCallback)
+      // ))
 
       // Set the initial limits
       for (let i = 0; i < cmd.currencies.length; i++) {

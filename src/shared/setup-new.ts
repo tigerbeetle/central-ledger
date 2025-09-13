@@ -210,6 +210,7 @@ export async function initialize({
       timeoutScheduler,
     }
   } catch (err) {
+    
     Logger.error(`setup.initialize() - error while initializing ${err}`, { stack: err.stack })
 
     await Db.disconnect()

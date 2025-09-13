@@ -47,7 +47,8 @@ const LocalEnum = {
 }
 
 const getLedger = (request) => {
-  assert(request.server && request.server.app, 'Server app not available')
+  assert(request, 'request is undefined')  
+  assert(request.server.app, 'request.server.app is undefined')
   assert(request.server.app.ledger, 'Ledger not available in server app state')
   return request.server.app.ledger
 }
@@ -86,6 +87,14 @@ const handleMissingRecord = (entity) => {
 
 const create = async function (request, h) {
   try {
+    Logger.debug('create handler called', {
+      hasRequest: !!request,
+      hasServer: !!request?.server,
+      hasH: !!h,
+      requestType: typeof request,
+      serverType: typeof request?.server
+    })
+    
     assert(request)
     assert(request.payload)
     assert(request.payload.currency)
@@ -276,6 +285,14 @@ const getEndpoint = async function (request) {
 
 const addLimitAndInitialPosition = async function (request, h) {
   try {
+    Logger.debug('addLimitAndInitialPosition handler called', {
+      hasRequest: !!request,
+      hasServer: !!request?.server,
+      hasH: !!h,
+      requestType: typeof request,
+      serverType: typeof request?.server
+    })
+    
     assert(request)
     assert(request.params)
     assert(request.params.name)
