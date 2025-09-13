@@ -151,7 +151,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-prepare",
               "group.id": "cl-group-bulk-prepare",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -175,7 +175,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-processing",
               "group.id": "cl-group-bulk-processing",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -199,7 +199,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-fulfil",
               "group.id": "cl-group-bulk-fulfil",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -223,7 +223,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-get",
               "group.id": "cl-group-bulk-get",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -249,7 +249,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-prepare",
               "group.id": "cl-group-transfer-prepare",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -273,7 +273,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-get",
               "group.id": "cl-group-transfer-get",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -297,7 +297,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-fulfil",
               "group.id": "cl-group-transfer-fulfil",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -321,7 +321,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-position",
               "group.id": "cl-group-transfer-position",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true,
               "enable.auto.commit": false
@@ -346,7 +346,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-position-batch",
               "group.id": "cl-group-transfer-position-batch",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true,
               "enable.auto.commit": false
@@ -373,7 +373,7 @@
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-admin",
               "group.id": "cl-group-transfer-admin",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -399,7 +399,7 @@
             "rdkafkaConf": {
               "client.id": "TESTONLY",
               "group.id": "TESTONLY",
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true
             },
@@ -418,7 +418,7 @@
               "messageCharset": "utf8"
             },
             "rdkafkaConf": {
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "client.id": "cl-prod-bulk-processing",
               "event_cb": true,
               "dr_cb": true,
@@ -439,7 +439,7 @@
               "messageCharset": "utf8"
             },
             "rdkafkaConf": {
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "client.id": "cl-prod-transfer-prepare",
               "event_cb": true,
               "dr_cb": true,
@@ -458,7 +458,7 @@
               "messageCharset": "utf8"
             },
             "rdkafkaConf": {
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "client.id": "cl-prod-transfer-fulfil",
               "event_cb": true,
               "dr_cb": true,
@@ -477,7 +477,7 @@
               "messageCharset": "utf8"
             },
             "rdkafkaConf": {
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "client.id": "cl-prod-transfer-position",
               "event_cb": true,
               "dr_cb": true,
@@ -498,7 +498,7 @@
               "messageCharset": "utf8"
             },
             "rdkafkaConf": {
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "client.id": "cl-prod-notification-event",
               "event_cb": true,
               "dr_cb": true,
@@ -519,7 +519,7 @@
               "messageCharset": "utf8"
             },
             "rdkafkaConf": {
-              "metadata.broker.list": "localhost:9092",
+              "metadata.broker.list": "192.168.100.3:9092",
               "client.id": "cl-prod-transfer-admin",
               "event_cb": true,
               "dr_cb": true,
