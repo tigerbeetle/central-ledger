@@ -48,34 +48,62 @@ export class FusedPrepareHandler {
       rethrow.rethrowAndCountFspiopError(error, { operation: 'PrepareHandler.handle' });
     }
 
-    // TODO(LD): how should we deal with errors related to message validation?
     assert(Array.isArray(messages))
-    assert.equal(messages.length, 1, 'Expected exactly only 1 message from consumers')
-    const message = messages[0]
-    const input = this.extractMessageData(message);
-    logger.debug(`FusedPrepareHandler.handle() - extracted message is: ${JSON.stringify(input)}`)
 
-    const histTimerEnd = Metrics.getHistogram(
-      input.metric,
-      `Consume a ${input.metric} message from the kafka topic and process it accordingly`,
-      ['success', 'fspId']
-    ).startTimer();
-
-    try {
-      // Process the transfer business logic
-      const result = await this.deps.ledger.prepare(input)
-      await this.deps.committer.commit(message);
-      await this.handleResult(result, input);
-
-      histTimerEnd({ success: true, fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId });
-      return
-    } catch (err) {
-      histTimerEnd({ success: false, fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId });
-
-      await this.deps.committer.commit(message);
-      await this.handleError(err, input, message);
-      return
+    if (messages.length === 0) {
+      logger.debug('FusedPrepareHandler.handle() - received empty batch, nothing to process');
+      return;
     }
+
+    logger.debug(`FusedPrepareHandler.handle() - processing batch of ${messages.length} messages`)
+
+    // Extract message data for all messages
+    const inputs = messages.map(message => ({
+      message,
+      input: this.extractMessageData(message)
+    }));
+
+    // Process all ledger operations in parallel
+    const results = await Promise.allSettled(
+      inputs.map(async ({ input }) => this.deps.ledger.prepare(input))
+    );
+
+    // Combine inputs with their results
+    const processedResults = inputs.map(({ message, input }, index) => ({
+      message,
+      input,
+      result: results[index].status === 'fulfilled' ? results[index].value : undefined,
+      error: results[index].status === 'rejected' ? results[index].reason : undefined
+    }));
+
+    // Commit all messages at once
+    try {
+      await Promise.all(processedResults.map(({ message }) => this.deps.committer.commit(message)));
+    } catch (commitError) {
+      logger.error('Failed to commit batch of messages', {
+        batchSize: messages.length,
+        error: commitError
+      });
+      throw commitError;
+    }
+
+    // Send responses in parallel after successful commits
+    await Promise.allSettled(
+      processedResults.map(async ({ message, input, result, error }) => {
+        try {
+          if (error) {
+            await this.handleError(error, input, message);
+          } else {
+            await this.handleResult(result, input);
+          }
+        } catch (responseError) {
+          logger.error('Failed to send response for message', {
+            transferId: input.transferId,
+            error: responseError
+          });
+        }
+      })
+    );
   }
 
   private extractMessageData(message: any): FusedPrepareHandlerInput {

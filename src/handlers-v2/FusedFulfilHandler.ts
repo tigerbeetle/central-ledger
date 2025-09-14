@@ -42,50 +42,72 @@ export class FusedFulfilHandler {
   }
 
   async handle(error: any, messages: any): Promise<void> {
-    const histTimerEnd = Metrics.getHistogram(
-      'transfer_fulfil',
-      'Consume a fulfil transfer message from the kafka topic and process it accordingly',
-      ['success', 'fspId', 'action']
-    ).startTimer();
-
     if (error) {
-      histTimerEnd({ success: false, fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId, action: 'error' });
       rethrow.rethrowAndCountFspiopError(error, { operation: 'fulfilHandler' });
       return;
     }
 
     assert(Array.isArray(messages));
-    assert.equal(messages.length, 1, 'Expected exactly only 1 message from consumers');
 
-    const message = messages[0];
-    const input = this.extractMessageData(message);
-    logger.debug(`FusedFulfilHandler.handle() - extracted message is: ${JSON.stringify(input)}`)
-
-    try {
-      assert.equal(input.eventType, Enum.Events.Event.Type.FULFIL, 'Expected event type to be `FULFIL`')
-            
-      // Process the fulfil message
-      const result = await this.deps.ledger.fulfil(input)
-      await this.deps.committer.commit(message);
-
-      // Handle the result
-      await this.handleResult(result, input);
-
-      histTimerEnd({
-        success: true,
-        fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId,
-        action: input.action
-      });
-    } catch (err) {
-      histTimerEnd({
-        success: false,
-        fspId: this.deps.config.INSTRUMENTATION_METRICS_LABELS.fspId,
-        action: input.action
-      });
-
-      await this.deps.committer.commit(message);
-      await this.handleError(err, input, message);
+    if (messages.length === 0) {
+      logger.debug('FusedFulfilHandler.handle() - received empty batch, nothing to process');
+      return;
     }
+
+    logger.debug(`FusedFulfilHandler.handle() - processing batch of ${messages.length} messages`)
+
+    // Extract message data for all messages
+    const inputs = messages.map(message => ({
+      message,
+      input: this.extractMessageData(message)
+    }));
+
+    // Validate all messages have FULFIL event type
+    for (const { input } of inputs) {
+      assert.equal(input.eventType, Enum.Events.Event.Type.FULFIL, 'Expected event type to be `FULFIL`')
+    }
+
+    // Process all ledger operations in parallel
+    const results = await Promise.allSettled(
+      inputs.map(async ({ input }) => this.deps.ledger.fulfil(input))
+    );
+
+    // Combine inputs with their results
+    const processedResults = inputs.map(({ message, input }, index) => ({
+      message,
+      input,
+      result: results[index].status === 'fulfilled' ? results[index].value : undefined,
+      error: results[index].status === 'rejected' ? results[index].reason : undefined
+    }));
+
+    // Commit all messages at once
+    try {
+      await Promise.all(processedResults.map(({ message }) => this.deps.committer.commit(message)));
+    } catch (commitError) {
+      logger.error('Failed to commit batch of messages', {
+        batchSize: messages.length,
+        error: commitError
+      });
+      throw commitError;
+    }
+
+    // Send responses in parallel after successful commits
+    await Promise.allSettled(
+      processedResults.map(async ({ message, input, result, error }) => {
+        try {
+          if (error) {
+            await this.handleError(error, input, message);
+          } else {
+            await this.handleResult(result, input);
+          }
+        } catch (responseError) {
+          logger.error('Failed to send response for message', {
+            transferId: input.transferId,
+            error: responseError
+          });
+        }
+      })
+    );
   }
 
   private extractMessageData(message: any): FusedFulfilHandlerInput {
