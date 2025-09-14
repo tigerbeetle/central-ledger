@@ -257,6 +257,11 @@ export default class TigerBeetleLedger implements Ledger {
         timestamp: 0n,
       }
     ]
+    if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
+      return {
+        type: 'SUCCESS'
+      }
+    }
     const createTransferErrors = await this.deps.client.createTransfers(transfers);
 
     for (const error of createTransferErrors) {
@@ -373,6 +378,12 @@ export default class TigerBeetleLedger implements Ledger {
         code: 1,
         flags: TransferFlags.pending,
         timestamp: 0n
+      }
+
+      if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
+        return {
+          type: PrepareResultType.PASS
+        }
       }
 
       const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
