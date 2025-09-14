@@ -236,11 +236,11 @@
               "mode": 2,
               "batchSize": 1000,
               "pollFrequency": 1,
-              "recursiveTimeout": 10,
+              "recursiveTimeout": 25,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 10
+              "consumeTimeout": 25
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-prepare",
@@ -282,11 +282,11 @@
               "mode": 2,
               "batchSize": 1000,
               "pollFrequency": 1,
-              "recursiveTimeout": 10,
+              "recursiveTimeout": 25,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 10
+              "consumeTimeout": 25
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-fulfil",
