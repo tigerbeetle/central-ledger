@@ -80,7 +80,7 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
       },
       TIGERBEETLE: {
         CLUSTER_ID: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.CLUSTER_ID, 0n),
-        ADDRESS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.ADDRESS.split(','), ['3000']),
+        ADDRESS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.ADDRESS?.split(','), ['3000']),
         UNSAFE_SKIP_TIGERBEETLE: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.UNSAFE_SKIP_TIGERBEETLE, false),
         CURRENCY_LEDGERS: defaultTo(rawConfig.EXPERIMENTAL?.TIGERBEETLE?.CURRENCY_LEDGERS, [])
       },

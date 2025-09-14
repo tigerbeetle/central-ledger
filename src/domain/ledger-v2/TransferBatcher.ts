@@ -1,4 +1,5 @@
-import { Client, CreateTransferError, CreateTransfersError, Transfer } from 'tigerbeetle-node';
+import { logger } from '../../shared/logger';
+import { Client, Transfer } from 'tigerbeetle-node';
 
 interface QueueItem {
   transfer: Transfer;
@@ -28,7 +29,7 @@ export class TransferBatcher {
       this._transferQueue.push({ transfer, resolve});
 
       if (this._transferQueue.length >= this._batchSize) {
-        console.log('transfer Queue ready to ship!');
+        logger.info(`TransferBatcher.enqueueTransfer() reached queue length of: ${this._transferQueue.length} - shipping transfers`)
         this.flushQueue();
       }
     });
@@ -40,8 +41,8 @@ export class TransferBatcher {
     }
 
     const batch = this._transferQueue.splice(0, this._batchSize);
-    // console.log(`LD TransferBatcher.flushQueue() shipping batch of size: ${batch.length} to TigerBeetle.`);
-    
+    logger.info(`TransferBatcher.enqueueTransfer() shipping batch of size: ${batch.length} - to TigerBeetle`)
+  
     const errors = await this._client.createTransfers(batch.map(t => t.transfer));
     
     const errorIndices: Record<number, number> = errors.reduce((acc, curr) => {
