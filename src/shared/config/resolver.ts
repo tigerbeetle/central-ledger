@@ -2,7 +2,7 @@ import path from 'node:path'
 import parseStringsInObject from 'parse-strings-in-object'
 import RC from 'rc'
 import { ApplicationConfig } from './types'
-import { assertBoolean, assertKafkaConfig, assertNumber, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo } from './util'
+import { assertBoolean, assertKafkaConfig, assertNumber, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo, kafkaWithBrokerOverrides } from './util'
 import assert from 'node:assert'
 import { raw } from 'mysql'
 import { logger } from '../logger'
@@ -10,6 +10,9 @@ import { logger } from '../logger'
 type UnsafeApplicationConfig = Partial<ApplicationConfig>
 
 const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
+  const defaultBroker = defaultTo(rawConfig.KAFKA.DEFAULT_BROKER, 'localhost:9092')
+  const kafka = kafkaWithBrokerOverrides(rawConfig.KAFKA, defaultBroker)
+
   const unsafeConfig: UnsafeApplicationConfig = {
     HOSTNAME: rawConfig.HOSTNAME.replace(/\/$/, ''),
     PORT: rawConfig.PORT,
@@ -33,7 +36,7 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
     HANDLERS_TIMEOUT_TIMEZONE: rawConfig.HANDLERS.TIMEOUT.TIMEZONE,
     CACHE_CONFIG: rawConfig.CACHE,
     PROXY_CACHE_CONFIG: rawConfig.PROXY_CACHE,
-    KAFKA_CONFIG: rawConfig.KAFKA,
+    KAFKA_CONFIG: kafka,
     PARTICIPANT_INITIAL_POSITION: rawConfig.PARTICIPANT_INITIAL_POSITION,
     RUN_MIGRATIONS: !rawConfig.MIGRATIONS.DISABLED,
     RUN_DATA_MIGRATIONS: rawConfig.MIGRATIONS.RUN_DATA_MIGRATIONS,
@@ -185,7 +188,7 @@ const printConfigWarnings = (config: ApplicationConfig): void => {
 
 const makeConfig = (): ApplicationConfig => {
   const PATH_TO_CONFIG_FILE = defaultEnvString('PATH_TO_CONFIG_FILE', path.join(__dirname, '../../..', 'config/default.json'))
-  logger.warn(`makeConfig() - loading config from: ${PATH_TO_CONFIG_FILE}`)
+  logger.warn(`makeConfig() - Loading config from: ${PATH_TO_CONFIG_FILE}`)
   const raw = parseStringsInObject(RC('CLEDG', require(PATH_TO_CONFIG_FILE)))
   const resolved = resolveConfig(raw)
   const validated = validateConfig(resolved)

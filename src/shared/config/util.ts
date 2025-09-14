@@ -1,5 +1,6 @@
 import assert from 'assert'
 import { KafkaConfig, KafkaConsumerConfig, KafkaProducerConfig } from './types'
+import { logger } from '../logger'
 
 class ConfigValidationError extends Error {
   constructor(message) {
@@ -181,6 +182,7 @@ export const defaultEnvString = (envName: string, defaultValue: string): string 
   let processEnvValue = process.env[envName]
   // need to protect for cases where the value may intentionally false!
   if (processEnvValue === undefined) {
+    logger.warn(`defaultEnvString - ${envName} not set - defaulting to: ${defaultValue}`)
     return defaultValue
   }
 
@@ -188,10 +190,53 @@ export const defaultEnvString = (envName: string, defaultValue: string): string 
     processEnvValue = processEnvValue[0]
   }
   if (processEnvValue === undefined) {
+    logger.warn(`defaultEnvString - ${envName} not set - defaulting to: ${defaultValue}`)
     return defaultValue
   }
 
+  logger.warn(`defaultEnvString - ${envName} is  set - resolved   to: ${processEnvValue}`)
   return processEnvValue
 }
 
 
+/**
+ * @function kafkaWithBrokerOverrides
+ * @description Allows us to easily configure the metadata.broker.list without needing to touch
+ *   each config file. If config.rdkafkaConf['metadata.broker.list'] is already set, then this
+ *   doesn't modify it.
+ */
+export const kafkaWithBrokerOverrides = (input: KafkaConfig, defaultBroker: string): KafkaConfig => {
+  assert(defaultBroker)
+  assert(input.CONSUMER)
+  assert(input.PRODUCER)
+
+  Object.keys(input).filter(groupKey => {
+    if (groupKey === 'CONSUMER') {
+      return true
+    }
+    if (groupKey === 'PRODUCER') {
+      return true
+    }
+    return false
+  }).forEach(groupKey => {
+    const group = input[groupKey]
+
+    Object.keys(group).forEach(key => {
+      const topic = input[groupKey][key]
+      Object.keys(topic).forEach(topicKey => {
+        const leafConfig = topic[topicKey]
+        const path = `input.${groupKey}.${key}.${topicKey}`
+        console.log(`kafkaWithBrokerOverrides path: ${path}`)
+        if (leafConfig.config 
+          && leafConfig.config.rdkafkaConf
+          && !leafConfig.config.rdkafkaConf['metadata.broker.list']
+        ) {
+          logger.info(`Config kafkaWithBrokerOverrides() overriding: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
+          input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
+        }
+      })
+    })
+  })
+
+  return input
+}
