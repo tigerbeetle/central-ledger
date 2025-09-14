@@ -198,14 +198,13 @@ export const defaultEnvString = (envName: string, defaultValue: string): string 
   return processEnvValue
 }
 
-
 /**
- * @function kafkaWithBrokerOverrides
+ * @function kafkaWithBrokerDefaults
  * @description Allows us to easily configure the metadata.broker.list without needing to touch
  *   each config file. If config.rdkafkaConf['metadata.broker.list'] is already set, then this
  *   doesn't modify it.
  */
-export const kafkaWithBrokerOverrides = (input: KafkaConfig, defaultBroker: string): KafkaConfig => {
+export const kafkaWithBrokerDefaults = (input: KafkaConfig, defaultBroker: string): KafkaConfig => {
   assert(defaultBroker)
   assert(input.CONSUMER)
   assert(input.PRODUCER)
@@ -226,12 +225,11 @@ export const kafkaWithBrokerOverrides = (input: KafkaConfig, defaultBroker: stri
       Object.keys(topic).forEach(topicKey => {
         const leafConfig = topic[topicKey]
         const path = `input.${groupKey}.${key}.${topicKey}`
-        console.log(`kafkaWithBrokerOverrides path: ${path}`)
         if (leafConfig.config 
           && leafConfig.config.rdkafkaConf
           && !leafConfig.config.rdkafkaConf['metadata.broker.list']
         ) {
-          logger.info(`Config kafkaWithBrokerOverrides() overriding: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
+          logger.info(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
           input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
         }
       })

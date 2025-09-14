@@ -2,7 +2,7 @@ import path from 'node:path'
 import parseStringsInObject from 'parse-strings-in-object'
 import RC from 'rc'
 import { ApplicationConfig } from './types'
-import { assertBoolean, assertKafkaConfig, assertNumber, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo, kafkaWithBrokerOverrides } from './util'
+import { assertBoolean, assertKafkaConfig, assertNumber, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo, kafkaWithBrokerDefaults } from './util'
 import assert from 'node:assert'
 import { raw } from 'mysql'
 import { logger } from '../logger'
@@ -11,7 +11,7 @@ type UnsafeApplicationConfig = Partial<ApplicationConfig>
 
 const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
   const defaultBroker = defaultTo(rawConfig.KAFKA.DEFAULT_BROKER, 'localhost:9092')
-  const kafka = kafkaWithBrokerOverrides(rawConfig.KAFKA, defaultBroker)
+  const kafka = kafkaWithBrokerDefaults(rawConfig.KAFKA, defaultBroker)
 
   const unsafeConfig: UnsafeApplicationConfig = {
     HOSTNAME: rawConfig.HOSTNAME.replace(/\/$/, ''),
