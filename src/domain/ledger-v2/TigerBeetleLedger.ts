@@ -16,6 +16,10 @@ export interface TigerBeetleLedgerDependencies {
   client: Client
   metadataStore: MetadataStore
   transferBatcher: TransferBatcher
+  participantService: {
+    create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
+    getById: (id: number) => Promise<{ participantId: number, name: string, isActive: boolean, createdDate: Date, currencyList: any[], isProxy?: boolean }>
+  }
 }
 
 // reserved for USD
@@ -278,6 +282,10 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     assert.strictEqual(createTransferErrors.length, 0)
+
+    // Create the participant in the legacy system
+    await this.deps.participantService.create({ name: cmd.dfspId })
+
     return {
       type: 'SUCCESS'
     }

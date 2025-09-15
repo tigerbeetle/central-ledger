@@ -44,10 +44,16 @@ export interface LegacyCompatibleLedgerDependencies {
       createHubAccount: (request: { params: { name: string }, payload: { type: string, currency: string } }, callback: any) => Promise<void>
     }
     participantService: {
-      getByName: (name: string) => Promise<{ currencyList: any[] }>
+      getByName: (name: string) => Promise<{ currencyList: any[], participantId: number }>
+      getById: (id: number) => Promise<{ currencyList: any[], participantId: number }>
+      create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
+      createParticipantCurrency: (participantId: number, currency: string, ledgerAccountTypeId: number, isActive?: boolean) => Promise<number>
+      getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
+      validateHubAccounts: (currency: string) => Promise<void>
     },
     settlementModelDomain: {
       createSettlementModel: (model: { name: string, settlementGranularity: string, settlementInterchange: string, settlementDelay: string, currency: string, requireLiquidityCheck: boolean, ledgerAccountType: string, settlementAccountType: string, autoPositionReset: boolean }) => Promise<void>
+      getAll: () => Promise<Array<{ currencyId: string | null, ledgerAccountTypeId: number, settlementAccountTypeId: number }>>
     },
     participantFacade: {
       getByNameAndCurrency: (name: string, currency: string, accountType: any) => Promise<{ participantCurrencyId: number }>
@@ -228,6 +234,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         }
       }
 
+
       // Create the account
 
       // Mock callback to suit the handler expectations
@@ -252,9 +259,10 @@ export default class LegacyCompatibleLedger implements Ledger {
           }
         }
       })
-      // await Promise.all(positionAccountRequests.map(
-      //   req => this.deps.lifecycle.participantsHandler.create(req, mockCallback)
-      // ))
+      // Create participant and currency accounts directly (bypassing handler to avoid circular dependency)
+      for (const currency of cmd.currencies) {
+        await this.createParticipantWithCurrency(cmd.dfspId, currency);
+      }
 
       // Set the initial limits
       for (let i = 0; i < cmd.currencies.length; i++) {
@@ -348,10 +356,11 @@ export default class LegacyCompatibleLedger implements Ledger {
       await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, payload);
 
       // Call the transfer service directly
+      const enums = await require('../../lib/enumCached').getEnums('all')
       await this.deps.lifecycle.transferService.recordFundsIn(
         payload,
         Time.getUTCString(now),
-        this.deps.lifecycle.enums
+        enums
       );
 
       return {
@@ -827,5 +836,65 @@ export default class LegacyCompatibleLedger implements Ledger {
         }
       }
     };
+  }
+
+  /**
+   * Create participant and currency accounts directly (bypassing handler to avoid circular dependency)
+   * This extracts the core logic from the participants handler create method
+   */
+  private async createParticipantWithCurrency(dfspId: string, currency: string): Promise<void> {
+    const Enums = require('../../lib/enumCached')
+    const Util = require('@mojaloop/central-services-shared').Util
+
+    // Validate hub accounts first
+    await this.deps.lifecycle.participantService.validateHubAccounts(currency)
+
+    let participant = await this.deps.lifecycle.participantService.getByName(dfspId)
+    if (participant) {
+      const currencyExists = participant.currencyList.find((curr: any) => {
+        return curr.currencyId === currency
+      })
+      if (currencyExists) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
+          'Participant currency has already been registered'
+        )
+      }
+    } else {
+      const participantId = await this.deps.lifecycle.participantService.create({ name: dfspId })
+      participant = await this.deps.lifecycle.participantService.getById(participantId)
+    }
+
+    const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
+    const allSettlementModels = await this.deps.lifecycle.settlementModelDomain.getAll()
+    let settlementModels = allSettlementModels.filter(model => model.currencyId === currency)
+    if (settlementModels.length === 0) {
+      settlementModels = allSettlementModels.filter(model => model.currencyId === null) // Default settlement model
+      if (settlementModels.length === 0) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.GENERIC_SETTLEMENT_ERROR,
+          'Unable to find a matching or default, Settlement Model'
+        )
+      }
+    }
+
+    for (const settlementModel of settlementModels) {
+      const [participantCurrencyId1, participantCurrencyId2] = await Promise.all([
+        this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.ledgerAccountTypeId, false),
+        this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.settlementAccountTypeId, false)
+      ])
+
+      if (Array.isArray(participant.currencyList)) {
+        participant.currencyList = participant.currencyList.concat([
+          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId1),
+          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId2)
+        ])
+      } else {
+        participant.currencyList = await Promise.all([
+          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId1),
+          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId2)
+        ])
+      }
+    }
   }
 }

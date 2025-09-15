@@ -276,7 +276,8 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
     config,
     client,
     metadataStore,
-    transferBatcher
+    transferBatcher,
+    participantService: require('../domain/participant')
   }
   return new TigerBeetleLedger(tigerBeetleDeps)
 }
@@ -302,9 +303,7 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
       participantService: require('../domain/participant'),
       participantFacade: require('../models/participant/facade'),
       transferService: require('../domain/transfer'),
-      // TODO(LD): fix me!
-      enums: undefined,
-      // enums: await require('../lib/enumCached').getEnums('all'),
+      enums: undefined, // Will be initialized separately
       settlementModelDomain: require('../domain/settlement'),
     },
     clearing: {

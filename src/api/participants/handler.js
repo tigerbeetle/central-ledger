@@ -102,7 +102,6 @@ const create = async function (request, h) {
 
     const { currency, name } = request.payload
     const ledger = getLedger(request)
-    // const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
     const createDfspResult = await ledger.createDfsp({
       dfspId: name,
       currencies: [currency],
@@ -121,46 +120,13 @@ const create = async function (request, h) {
       throw createDfspResult.error
     }
 
-    // still need to create this elsewhere in the db, e.g. to register callbacks
-    const participantId = await ParticipantService.create(request.payload)
-    let participant = await ParticipantService.getById(participantId)
 
+    // Get the participant that was created by the ledger's createDfsp method
+    let participant = await ParticipantService.getByName(request.payload.name)
+    const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
+    const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
 
-
-    // // await ParticipantService.validateHubAccounts(request.payload.currency)
-    // let participant = await ParticipantService.getByName(request.payload.name)
-    // if (participant) {
-    //   const currencyExists = participant.currencyList.find(currency => {
-    //     return currency.currencyId === request.payload.currency
-    //   })
-    //   if (currencyExists) {
-    //     throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
-    //   }
-    // } else {
-    //   const participantId = await ParticipantService.create(request.payload)
-    //   participant = await ParticipantService.getById(participantId)
-    // }
-    // const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
-    // const allSettlementModels = await SettlementService.getAll()
-    // let settlementModels = allSettlementModels.filter(model => model.currencyId === request.payload.currency)
-    // if (settlementModels.length === 0) {
-    //   settlementModels = allSettlementModels.filter(model => model.currencyId === null) // Default settlement model
-    //   if (settlementModels.length === 0) {
-    //     throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.GENERIC_SETTLEMENT_ERROR, 'Unable to find a matching or default, Settlement Model')
-    //   }
-    // }
-    // for (const settlementModel of settlementModels) {
-    //   const [participantCurrencyId1, participantCurrencyId2] = await Promise.all([
-    //     ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.ledgerAccountTypeId, false),
-    //     ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)])
-    //   if (Array.isArray(participant.currencyList)) {
-    //     participant.currencyList = participant.currencyList.concat([await ParticipantService.getParticipantCurrencyById(participantCurrencyId1), await ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
-    //   } else {
-    //     participant.currencyList = await Promise.all([ParticipantService.getParticipantCurrencyById(participantCurrencyId1), ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
-    //   }
-    // }
-    // return h.response(entityItem(participant, ledgerAccountIds)).code(201)
-    return h.response(entityItem(participant)).code(201)
+    return h.response(entityItem(participant, ledgerAccountIds)).code(201)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
   }

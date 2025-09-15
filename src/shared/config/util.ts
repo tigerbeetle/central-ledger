@@ -229,7 +229,7 @@ export const kafkaWithBrokerDefaults = (input: KafkaConfig, defaultBroker: strin
           && leafConfig.config.rdkafkaConf
           && !leafConfig.config.rdkafkaConf['metadata.broker.list']
         ) {
-          logger.info(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
+          logger.debug(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
           input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
         }
       })

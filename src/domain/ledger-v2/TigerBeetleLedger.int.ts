@@ -78,6 +78,7 @@ describe('TigerBeetleLedger', () => {
         client,
         metadataStore: new PersistedMetadataStore(Db.getKnex()),
         transferBatcher: new TransferBatcher(client, 100, 1),
+        participantService: require('../../domain/participant')
       }
       ledger = new TigerBeetleLedger(deps)
 
