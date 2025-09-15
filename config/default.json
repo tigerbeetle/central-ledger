@@ -234,7 +234,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 100,
+              "batchSize": 1,
               "pollFrequency": 1,
               "recursiveTimeout": 10,
               "messageCharset": "utf8",
@@ -280,7 +280,7 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 100,
+              "batchSize": 1,
               "pollFrequency": 1,
               "recursiveTimeout": 10,
               "messageCharset": "utf8",
