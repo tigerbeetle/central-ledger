@@ -140,13 +140,13 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 100,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-prepare",
@@ -186,13 +186,13 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
+              "batchSize": 100,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 1000
+              "consumeTimeout": 10
             },
             "rdkafkaConf": {
               "client.id": "cl-con-bulk-fulfil",
@@ -234,8 +234,8 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
-              "pollFrequency": 1,
+              "batchSize": 100,
+              "pollFrequency": 10,
               "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
@@ -280,8 +280,8 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 1,
-              "pollFrequency": 1,
+              "batchSize": 100,
+              "pollFrequency": 10,
               "recursiveTimeout": 10,
               "messageCharset": "utf8",
               "messageAsJSON": true,
