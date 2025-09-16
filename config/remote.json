@@ -316,7 +316,8 @@
               "group.id": "cl-group-transfer-position",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true,
-              "enable.auto.commit": false
+              "enable.auto.commit": true,
+              "auto.commit.interval.ms": 100
             },
             "topicConf": {
               "auto.offset.reset": "earliest"
@@ -340,7 +341,8 @@
               "group.id": "cl-group-transfer-position-batch",
               "socket.keepalive.enable": true,
               "allow.auto.create.topics": true,
-              "enable.auto.commit": false
+              "enable.auto.commit": true,
+              "auto.commit.interval.ms": 100
             },
             "topicConf": {
               "auto.offset.reset": "earliest"

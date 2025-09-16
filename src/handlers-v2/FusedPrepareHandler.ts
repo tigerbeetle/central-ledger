@@ -81,18 +81,9 @@ export class FusedPrepareHandler {
       error: results[index].status === 'rejected' ? results[index].reason : undefined
     }));
 
-    // Commit all messages at once
+    // Auto-commit is enabled - no manual commits needed
     const commitStart = process.hrtime.bigint();
-    try {
-      await Promise.all(processedResults.map(({ message }) => this.deps.committer.commit(message)));
-    } catch (commitError) {
-      logger.error('Failed to commit batch of messages', {
-        batchSize: messages.length,
-        error: commitError
-      });
-      throw commitError;
-    }
-    const commitEnd = process.hrtime.bigint();
+    const commitEnd = commitStart; // No actual commit time since auto-commit is enabled
 
     // Send responses in parallel after successful commits
     const responseStart = process.hrtime.bigint();
