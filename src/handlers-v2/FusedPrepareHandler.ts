@@ -44,6 +44,7 @@ export class FusedPrepareHandler {
   }
 
   async handle(error: any, messages: any): Promise<void> {
+    const startTime = process.hrtime.bigint();
     if (error) {
       rethrow.rethrowAndCountFspiopError(error, { operation: 'PrepareHandler.handle' });
     }
@@ -58,15 +59,19 @@ export class FusedPrepareHandler {
     logger.debug(`FusedPrepareHandler.handle() - processing batch of ${messages.length} messages`)
 
     // Extract message data for all messages
+    const extractStart = process.hrtime.bigint();
     const inputs = messages.map(message => ({
       message,
       input: this.extractMessageData(message)
     }));
+    const extractEnd = process.hrtime.bigint();
 
     // Process all ledger operations in parallel
+    const ledgerStart = process.hrtime.bigint();
     const results = await Promise.allSettled(
       inputs.map(async ({ input }) => this.deps.ledger.prepare(input))
     );
+    const ledgerEnd = process.hrtime.bigint();
 
     // Combine inputs with their results
     const processedResults = inputs.map(({ message, input }, index) => ({
@@ -77,6 +82,7 @@ export class FusedPrepareHandler {
     }));
 
     // Commit all messages at once
+    const commitStart = process.hrtime.bigint();
     try {
       await Promise.all(processedResults.map(({ message }) => this.deps.committer.commit(message)));
     } catch (commitError) {
@@ -86,8 +92,10 @@ export class FusedPrepareHandler {
       });
       throw commitError;
     }
+    const commitEnd = process.hrtime.bigint();
 
     // Send responses in parallel after successful commits
+    const responseStart = process.hrtime.bigint();
     await Promise.allSettled(
       processedResults.map(async ({ message, input, result, error }) => {
         try {
@@ -104,6 +112,26 @@ export class FusedPrepareHandler {
         }
       })
     );
+    const responseEnd = process.hrtime.bigint();
+
+    // Sample performance metrics (log every 10th batch)
+    if (Math.random() < 0.1) {
+      const totalTime = Number(responseEnd - startTime) / 1_000_000;
+      const extractTime = Number(extractEnd - extractStart) / 1_000_000;
+      const ledgerTime = Number(ledgerEnd - ledgerStart) / 1_000_000;
+      const commitTime = Number(commitEnd - commitStart) / 1_000_000;
+      const responseTime = Number(responseEnd - responseStart) / 1_000_000;
+
+      logger.info('FusedPrepareHandler performance sample', {
+        batchSize: messages.length,
+        totalTime_ms: totalTime.toFixed(2),
+        extractTime_ms: extractTime.toFixed(2),
+        ledgerTime_ms: ledgerTime.toFixed(2),
+        commitTime_ms: commitTime.toFixed(2),
+        responseTime_ms: responseTime.toFixed(2),
+        avgPerMessage_ms: (totalTime / messages.length).toFixed(2)
+      });
+    }
   }
 
   private extractMessageData(message: any): FusedPrepareHandlerInput {
