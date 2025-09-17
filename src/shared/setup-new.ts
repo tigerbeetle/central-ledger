@@ -268,7 +268,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
   const metadataStore = new PersistedMetadataStore(Db.getKnex())
   const transferBatcher = new TransferBatcher(
     client,
-    100, // batch size - TODO: make configurable
+    8000,
     100  // batch interval ms - TODO: make configurable
   )
 
