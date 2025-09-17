@@ -34,6 +34,6 @@ export class MessageCommitter implements IMessageCommitter {
       offset: (parseInt(tp.offset) + 1).toString() // Kafka commits next offset to process
     }));
 
-    await this.consumer.commitSync(topicPartitions);
+    (this.consumer as any).commitSync(topicPartitions);
   }
 }
