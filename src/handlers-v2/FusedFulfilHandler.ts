@@ -85,9 +85,18 @@ export class FusedFulfilHandler {
       error: results[index].status === 'rejected' ? results[index].reason : undefined
     }));
 
-    // Auto-commit is enabled - no manual commits needed
+    // Commit batch using highest offset per partition
     const commitStart = process.hrtime.bigint();
-    const commitEnd = commitStart; // No actual commit time since auto-commit is enabled
+    try {
+      await this.deps.committer.commitBatch(processedResults.map(({ message }) => message));
+    } catch (commitError) {
+      logger.error('Failed to commit batch of messages', {
+        batchSize: messages.length,
+        error: commitError
+      });
+      throw commitError;
+    }
+    const commitEnd = process.hrtime.bigint();
 
     // Send responses in parallel after successful commits
     const responseStart = process.hrtime.bigint();

@@ -54,6 +54,7 @@ export interface INotificationProducer {
 
 export interface IMessageCommitter {
   commit(message: any): Promise<void>;
+  commitBatch(messages: any[]): Promise<void>;
 }
 
 export interface KafkaMessage {
