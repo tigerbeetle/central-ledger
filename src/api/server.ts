@@ -17,10 +17,10 @@ const server = {
       handlerTypes: [
         // HandlerType.prepare,
         HandlerType.fusedprepare,
-        HandlerType.position,
+        // HandlerType.position,
         // HandlerType.fulfil,
         HandlerType.fusedfulfil,
-        HandlerType.timeout,
+        // HandlerType.timeout,
         HandlerType.admin,
         HandlerType.get,
       ]

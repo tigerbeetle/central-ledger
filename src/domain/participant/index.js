@@ -792,7 +792,7 @@ const setPayerPayeeFundsInOut = (fspName, payload, enums) => {
 }
 
 const recordFundsInOut = async (payload, params, enums) => {
-  const log = logger.child({ payload, params, enums })
+  const log = logger.child({ payload })
   try {
     log.debug('recording funds in/out')
     const { name, id, transferId } = params
@@ -818,7 +818,7 @@ const recordFundsInOut = async (payload, params, enums) => {
       enums
     }
     // Skip Kafka message for now - just log and continue
-    log.warn('Skipping Kafka message production for recordFundsIn due to broker connectivity issues')
+    log.warn('recordFundsInOut() - Skipping Kafka message LD need to refactor')
     return { success: true, kafkaSkipped: true }
   } catch (err) {
     log.error('error recording funds in/out', err)
