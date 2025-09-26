@@ -8,10 +8,14 @@ const { resourceVersions } = Util;
 
 export interface TimeoutHandlerDependencies {
   notificationProducer: INotificationProducer;
-  positionProducer: IPositionProducer;
   config: any;
   timeoutService: any;
   distLock?: any;
+
+  // FUSED dependencies - position handling services
+  transferService: any;
+  participantFacade: any;
+  positionService: any;
 }
 
 export interface TimedOutTransfer {
@@ -150,50 +154,49 @@ export class TimeoutHandler {
               payload: message.content.payload
             });
           } else if (TT.transferStateId === Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT) {
-            // Transfer expired after funds were reserved - need to rollback
+            // Reverse the position
+            await this.handleReservedTimeoutPositionReversal(TT);
 
-            // Create position message for reserved timeouts
-            message.from = this.deps.config.HUB_NAME;
-            message.metadata.event.type = Enum.Events.Event.Type.POSITION;
-            message.metadata.event.action = Enum.Events.Event.Action.TIMEOUT_RESERVED;
-            const error = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED);
+            // Send error notifications
+            const timeoutError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED);
+            const timeoutErrorObject = timeoutError.toApiErrorObject(this.deps.config.ERROR_HANDLING);
+            const timeoutMetadata = this.createTimeoutMetadata(TT.transferId, Enum.Events.Event.Action.TIMEOUT_RESERVED,
+              Util.StreamingProtocol.createEventState('failure', timeoutErrorObject.errorInformation.errorCode, timeoutErrorObject.errorInformation.errorDescription)
+            );
 
-            await this.deps.positionProducer.sendAbort({
-              transferId: TT.transferId,
-              participantCurrencyId: TT.effectedParticipantCurrencyId?.toString() || '',
-              amount: '0',
-              currency: '',
-              action: 'ABORT',
-              from: this.deps.config.HUB_NAME,
-              to: destination,
+            await this.sendTimeoutErrorNotificationsToBothParticipants(
+              TT.transferId,
+              TT.payerFsp,
+              TT.payeeFsp,
+              timeoutErrorObject,
+              Enum.Events.Event.Action.TIMEOUT_RESERVED,
               headers,
-              payload: JSON.stringify(error.toApiErrorObject()),
-              metadata: message.metadata
-            });
+              timeoutMetadata
+            );
           }
         } else { // individual transfer from a bulk
           if (TT.transferStateId === Enum.Transfers.TransferInternalState.EXPIRED_PREPARED) {
             // Handle bulk timeout - would need bulk producer
             logger.info(`Bulk timeout for transfer ${TT.transferId} - bulk handling not yet implemented`);
           } else if (TT.transferStateId === Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT) {
-            // Handle bulk reserved timeout
-            message.from = this.deps.config.HUB_NAME;
-            message.metadata.event.type = Enum.Events.Event.Type.POSITION;
-            message.metadata.event.action = Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED;
+            // Reverse the position
+            await this.handleReservedTimeoutPositionReversal(TT);
+            const timeoutError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED);
+            const timeoutErrorObject = timeoutError.toApiErrorObject(this.deps.config.ERROR_HANDLING);
+            const timeoutMetadata = this.createTimeoutMetadata(TT.transferId, Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED,
+              Util.StreamingProtocol.createEventState('failure', timeoutErrorObject.errorInformation.errorCode, timeoutErrorObject.errorInformation.errorDescription)
+            );
 
-            const error = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED);
-            await this.deps.positionProducer.sendAbort({
-              transferId: TT.transferId,
-              participantCurrencyId: TT.payerParticipantCurrencyId?.toString() || '',
-              amount: '0',
-              currency: '',
-              action: 'TIMEOUT_RESERVED',
-              from: this.deps.config.HUB_NAME,
-              to: destination,
+            // Send error notifications
+            await this.sendTimeoutErrorNotificationsToBothParticipants(
+              TT.transferId,
+              TT.payerFsp,
+              TT.payeeFsp,
+              timeoutErrorObject,
+              Enum.Events.Event.Action.BULK_TIMEOUT_RESERVED,
               headers,
-              payload: JSON.stringify(error.toApiErrorObject()),
-              metadata: message.metadata
-            });
+              timeoutMetadata
+            );
           }
         }
       } catch (err) {
@@ -269,23 +272,26 @@ export class TimeoutHandler {
             payload: fxMessage.content.payload
           });
         } else if (fTT.transferStateId === Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT) {
-          // Create FX position message for reserved timeouts
-          fxMessage.from = this.deps.config.HUB_NAME;
-          fxMessage.metadata.event.type = Enum.Events.Event.Type.POSITION;
-          fxMessage.metadata.event.action = Enum.Events.Event.Action.FX_TIMEOUT_RESERVED;
 
-          await this.deps.positionProducer.sendAbort({
-            transferId: fTT.commitRequestId,
-            participantCurrencyId: fTT.effectedParticipantCurrencyId?.toString() || '',
-            amount: '0',
-            currency: '',
-            action: 'ABORT',
-            from: this.deps.config.HUB_NAME,
-            to: destination,
+          // Reverse the position
+          await this.handleFxReservedTimeoutPositionReversal(fTT);
+
+          // Send FX error notifications to participants
+          const timeoutError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED);
+          const timeoutErrorObject = timeoutError.toApiErrorObject(this.deps.config.ERROR_HANDLING);
+          const timeoutMetadata = this.createTimeoutMetadata(fTT.commitRequestId, Enum.Events.Event.Action.FX_TIMEOUT_RESERVED,
+            Util.StreamingProtocol.createEventState('failure', timeoutErrorObject.errorInformation.errorCode, timeoutErrorObject.errorInformation.errorDescription)
+          );
+
+          await this.sendTimeoutErrorNotificationsToBothParticipants(
+            fTT.commitRequestId,
+            fTT.initiatingFsp,
+            fTT.counterPartyFsp,
+            timeoutErrorObject,
+            Enum.Events.Event.Action.FX_TIMEOUT_RESERVED,
             headers,
-            payload: '',
-            metadata: fxMessage.metadata
-          });
+            timeoutMetadata
+          );
         }
       } catch (err) {
         logger.error('error in processFxTimedOutTransfers:', err);
@@ -361,5 +367,166 @@ export class TimeoutHandler {
       }
     }
     this.running = false;
+  }
+
+  /**
+   * FUSED: Handle position reversal for reserved timeout transfers directly
+   * This replaces the need to send a message to PositionHandler via positionProducer
+   */
+  private async handleReservedTimeoutPositionReversal(TT: TimedOutTransfer): Promise<void> {
+    try {
+      // 1. Get transfer participants
+      const transfer = await this.deps.transferService.getById(TT.transferId);
+      if (!transfer) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR, 'Transfer not found');
+      }
+
+      // 2. Get transfer info for PAYER (who had funds reserved)
+      const transferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
+        TT.transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      if (!transferInfo) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR, 'Transfer info not found');
+      }
+
+      // 3. Get participant currency info
+      const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
+        transferInfo.participantId,
+        transferInfo.currencyId,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // 4. Reverse the position (add back reserved funds)
+      const isReversal = true;
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferInternalState.EXPIRED_RESERVED,
+        reason: ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED).message
+      };
+
+      await this.deps.positionService.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      logger.debug(`Successfully reversed position for timed out transfer: ${TT.transferId}`, {
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount
+      });
+
+    } catch (err) {
+      logger.error(`Failed to reverse position for timed out transfer: ${TT.transferId}`, err);
+      throw ErrorHandler.Factory.reformatFSPIOPError(err);
+    }
+  }
+
+  /**
+   * FUSED: Handle position reversal for FX reserved timeout transfers directly
+   */
+  private async handleFxReservedTimeoutPositionReversal(fTT: TimedOutFxTransfer): Promise<void> {
+    try {
+      // 1. Get FX transfer participants
+      const fxTransfer = await this.deps.transferService.getById(fTT.commitRequestId);
+      if (!fxTransfer) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR, 'FX Transfer not found');
+      }
+
+      // 2. Get FX transfer info for INITIATING FSP (who had funds reserved)
+      const fxTransferInfo = await this.deps.transferService.getTransferInfoToChangePosition(
+        fTT.commitRequestId,
+        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP, // Initiating FSP acts as payer in FX
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      if (!fxTransferInfo) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR, 'FX Transfer info not found');
+      }
+
+      // 3. Get participant currency info
+      const participantCurrency = await this.deps.participantFacade.getByIDAndCurrency(
+        fxTransferInfo.participantId,
+        fxTransferInfo.currencyId,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // 4. Reverse the FX position (add back reserved funds)
+      const isReversal = true;
+      const transferStateChange = {
+        transferId: fxTransferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferInternalState.EXPIRED_RESERVED,
+        reason: ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED).message
+      };
+
+      await this.deps.positionService.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        fxTransferInfo.amount,
+        transferStateChange
+      );
+
+      logger.debug(`Successfully reversed FX position for timed out transfer: ${fTT.commitRequestId}`, {
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: fxTransferInfo.amount
+      });
+
+    } catch (err) {
+      logger.error(`Failed to reverse FX position for timed out transfer: ${fTT.commitRequestId}`, err);
+      throw ErrorHandler.Factory.reformatFSPIOPError(err);
+    }
+  }
+
+  /**
+   * Send timeout error notifications to both payer and payee FSPs
+   * This replicates the behavior from PositionHandler.sendTimeoutErrorNotifications
+   */
+  private async sendTimeoutErrorNotificationsToBothParticipants(
+    transferId: string,
+    payerFsp: string,
+    payeeFsp: string,
+    timeoutErrorObject: ErrorHandler.FSPIOPApiErrorObject,
+    action: string,
+    headers: any,
+    metadata: any
+  ): Promise<void> {
+    try {
+      // Send timeout error to payer FSP
+      await this.deps.notificationProducer.sendError({
+        transferId,
+        fspiopError: timeoutErrorObject,
+        action,
+        to: payerFsp,
+        from: this.deps.config.HUB_NAME,
+        headers,
+        metadata,
+        payload: JSON.stringify(timeoutErrorObject)
+      });
+
+      // Send timeout error to payee FSP
+      await this.deps.notificationProducer.sendError({
+        transferId,
+        fspiopError: timeoutErrorObject,
+        action,
+        to: payeeFsp,
+        from: this.deps.config.HUB_NAME,
+        headers,
+        metadata,
+        payload: JSON.stringify(timeoutErrorObject)
+      });
+
+      logger.debug(`Timeout error notifications sent to both participants for transfer: ${transferId}`, {
+        payerFsp,
+        payeeFsp,
+        action
+      });
+
+    } catch (err) {
+      logger.error(`Failed to send timeout error notifications for transfer: ${transferId}`, err);
+      throw ErrorHandler.Factory.reformatFSPIOPError(err);
+    }
   }
 }

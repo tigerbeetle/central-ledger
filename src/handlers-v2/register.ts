@@ -14,7 +14,6 @@ import { PositionHandler, PositionHandlerDependencies } from './PositionHandler'
 import { PrepareHandler, PrepareHandlerDependencies } from './PrepareHandler'
 import { TimeoutHandler, TimeoutHandlerDependencies } from './TimeoutHandler'
 import { FusedPrepareHandler, FusedPrepareHandlerDependencies } from './FusedPrepareHandler'
-import LegacyCompatibleLedger from 'src/domain/ledger-v2/LegacyCompatibleLedger'
 import { FusedFulfilHandler, FusedFulfilHandlerDependencies } from './FusedFulfilHandler'
 import { Ledger } from 'src/domain/ledger-v2/Ledger'
 const { createLock } = require('../lib/distLock');
@@ -119,8 +118,11 @@ export function createTimeoutHandler(
   notificationProducer: INotificationProducer,
   positionProducer: IPositionProducer
 ): TimeoutHandler {
-  // TODO(LD): inject the timeout service
+  // Import existing business logic modules for FUSED operation
   const TimeoutService = require('../domain/timeout');
+  const TransferService = require('../domain/transfer/index')
+  const PositionService = require('../domain/position')
+  const ParticipantFacade = require('../models/participant/facade')
 
   // Initialize distributed lock if enabled
   let distLock;
@@ -131,10 +133,12 @@ export function createTimeoutHandler(
 
   const deps: TimeoutHandlerDependencies = {
     notificationProducer,
-    positionProducer,
     config,
     timeoutService: TimeoutService,
-    distLock
+    distLock,
+    transferService: TransferService,
+    participantFacade: ParticipantFacade,
+    positionService: PositionService
   };
 
   return new TimeoutHandler(deps);
@@ -165,7 +169,7 @@ export async function registerTimeoutHandlerV2(
       onTick: async () => {
         try {
           const result = await timeoutHandler.processTimeouts();
-          logger.debug('Timeout processing completed', result);
+          logger.debug('Timeout v2 processing completed', result);
           return result;
         } catch (err) {
           logger.error('Error in timeout processing:', err);

@@ -13,14 +13,10 @@ const server = {
       config: Config,
       service: Service.api,
       modules: [Routes, !Config.INSTRUMENTATION_METRICS_DISABLED && MetricsPlugin].filter(Boolean),
-      // TODO: specify which handlers to run in config
       handlerTypes: [
-        // HandlerType.prepare,
         HandlerType.fusedprepare,
-        // HandlerType.position,
-        // HandlerType.fulfil,
         HandlerType.fusedfulfil,
-        // HandlerType.timeout,
+        HandlerType.timeout,
         HandlerType.admin,
         HandlerType.get,
       ]

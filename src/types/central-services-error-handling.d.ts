@@ -1,6 +1,18 @@
 // Type definitions for @mojaloop/central-services-error-handling
 
 declare module '@mojaloop/central-services-error-handling' {
+  export interface FSPIOPApiErrorObject {
+    errorInformation: {
+      errorCode: string;
+      errorDescription: string;
+      extensionList?: {
+        extension: Array<{
+          key: string;
+          value: string;
+        }>;
+      };
+    };
+  }
   export class FSPIOPError extends Error {
     apiErrorCode: any;
     message: string;
@@ -11,18 +23,7 @@ declare module '@mojaloop/central-services-error-handling' {
     
     constructor(cause: any, message: string, replyTo: string, apiErrorCode: any, extensions?: any, useMessageAsDescription?: boolean);
     
-    toApiErrorObject(options?: { includeCauseExtension?: boolean; truncateExtensions?: boolean }): {
-      errorInformation: {
-        errorCode: string;
-        errorDescription: string;
-        extensionList?: {
-          extension: Array<{
-            key: string;
-            value: string;
-          }>;
-        };
-      };
-    };
+    toApiErrorObject(options?: { includeCauseExtension?: boolean; truncateExtensions?: boolean }): FSPIOPApiErrorObject;
     
     toFullErrorObject(): any;
   }
