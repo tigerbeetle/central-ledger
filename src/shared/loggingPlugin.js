@@ -50,7 +50,13 @@ const loggingPlugin = {
         const requestId = request.info.id = `${request.info.id}__${headers.traceid}`
         asyncStorage.enterWith({ requestId })
 
-        logger.isInfoEnabled && logger.info(`[==> req] ${method.toUpperCase()} ${path}`, { headers, payload, query, remoteAddress })
+        // logger.isInfoEnabled && logger.info(`[==> req] ${method.toUpperCase()} ${path}`, { headers, payload, query, remoteAddress })
+        // TODO(LD): simplified this
+        if (method.toUpperCase() === 'POST') {
+          logger.info(`[==> req] POST ${path} ${request.payload.transferId}`, { payload, query})
+          return h.continue  
+        }
+        logger.info(`[==> req] ${method.toUpperCase()} ${path}`, { payload, query})
         return h.continue
       }
     })
