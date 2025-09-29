@@ -11,8 +11,6 @@ export interface TimeoutHandlerDependencies {
   config: any;
   timeoutService: any;
   distLock?: any;
-
-  // FUSED dependencies - position handling services
   transferService: any;
   participantFacade: any;
   positionService: any;

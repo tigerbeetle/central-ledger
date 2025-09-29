@@ -336,6 +336,12 @@ export type DepositCollateralResponse = DepositCollateralResponseSuccess
   | DepositCollateralResponseAlreadyExists
   | DepositCollateralResponseFailed
 
+export interface SetLimitsCommand {
+
+}
+
+
+
 export interface SettlementModel {
   name: string,
   settlementGranularity: string,

@@ -24,6 +24,8 @@ export interface Ledger {
   enableDfsp(cmd: unknown): Promise<unknown>;
   depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
   withdrawCollateral(cmd: unknown): Promise<unknown>;
+  setLimits(cmd: SetLimitsCommand): Promise<SetLimitsResponse>;
+  getLimits(cmd: GetLimitsCommand): Promise<GetLimitsResponse>;
   /**
    * Clearing Methods
    */

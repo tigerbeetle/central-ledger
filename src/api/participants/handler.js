@@ -132,6 +132,7 @@ const create = async function (request, h) {
   }
 }
 
+// TODO(LD): I think we need to rewrite this for the case of using LegacyLedger without auto provisioning
 const createHubAccount = async function (request, h) {
   try {
     // start - To Do move to domain
@@ -176,6 +177,8 @@ const createHubAccount = async function (request, h) {
   }
 }
 
+// TODO(LD): lower priority, but probably required
+// The question is how we might go about implementing this in TigerBeetle
 const getAll = async function (request) {
   const results = await ParticipantService.getAll()
   const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
@@ -186,6 +189,8 @@ const getAll = async function (request) {
   return results.map(record => entityItem(record, ledgerAccountIds))
 }
 
+// TODO(LD): lower priority, but probably required
+// The question is how we might go about implementing this in TigerBeetle
 const getByName = async function (request) {
   const entity = await ParticipantService.getByName(request.params.name)
   handleMissingRecord(entity)
@@ -251,14 +256,6 @@ const getEndpoint = async function (request) {
 
 const addLimitAndInitialPosition = async function (request, h) {
   try {
-    Logger.debug('addLimitAndInitialPosition handler called', {
-      hasRequest: !!request,
-      hasServer: !!request?.server,
-      hasH: !!h,
-      requestType: typeof request,
-      serverType: typeof request?.server
-    })
-    
     assert(request)
     assert(request.params)
     assert(request.params.name)
@@ -269,11 +266,10 @@ const addLimitAndInitialPosition = async function (request, h) {
     assert(request.payload.limit.type)
     assert(request.payload.limit.value !== undefined)
 
-    // const { currency, name } = request.payload
     const ledger = getLedger(request)
 
     const depositCollateralCmd = {
-      transferId: randomUUID(), // TODO: should be user defined
+      transferId: randomUUID(), // TODO: should be defined by the user in the API
       dfspId: request.params.name,
       currency: request.payload.currency,
       amount: request.payload.limit.value
@@ -286,7 +282,6 @@ const addLimitAndInitialPosition = async function (request, h) {
       return
     }
 
-    // await ParticipantService.addLimitAndInitialPosition(request.params.name, request.payload)
     return h.response().code(201)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddLimitAndInitialPosition' })
