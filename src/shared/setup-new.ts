@@ -269,7 +269,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
   const transferBatcher = new TransferBatcher(
     client,
     8000,
-    100  // batch interval ms - TODO: make configurable
+    25  // batch interval ms - TODO: make configurable
   )
 
   const tigerBeetleDeps: TigerBeetleLedgerDependencies = {
