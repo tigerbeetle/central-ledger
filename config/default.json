@@ -234,13 +234,13 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 3,
+              "batchSize": 1000,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 100
+              "consumeTimeout": 20
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-prepare",
@@ -280,13 +280,13 @@
           "config": {
             "options": {
               "mode": 2,
-              "batchSize": 3,
+              "batchSize": 1000,
               "pollFrequency": 10,
-              "recursiveTimeout": 100,
+              "recursiveTimeout": 20,
               "messageCharset": "utf8",
               "messageAsJSON": true,
               "sync": true,
-              "consumeTimeout": 100
+              "consumeTimeout": 20
             },
             "rdkafkaConf": {
               "client.id": "cl-con-transfer-fulfil",
