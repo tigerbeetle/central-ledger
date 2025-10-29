@@ -7,7 +7,9 @@ import {
   CreateHubAccountResponse,
   DepositCollateralCommand,
   DepositCollateralResponse,
+  DFSPAccountResponse,
   FulfilResult,
+  GetDFSPAccountsQuery,
   PrepareResult,
 } from './types'
 
@@ -24,8 +26,11 @@ export interface Ledger {
   enableDfsp(cmd: unknown): Promise<unknown>;
   depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
   withdrawCollateral(cmd: unknown): Promise<unknown>;
+  getAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse>
+  
   // setLimits(cmd: SetLimitsCommand): Promise<SetLimitsResponse>;
   // getLimits(cmd: GetLimitsCommand): Promise<GetLimitsResponse>;
+
   /**
    * Clearing Methods
    */

@@ -341,6 +341,23 @@ export interface SetLimitsCommand {
 }
 
 
+export interface GetDFSPAccountsQuery {
+  dfspId: string,
+  currency: string
+}
+
+export interface DFSPAccountResponseSuccess {
+  type: 'SUCCESS',
+  accounts: Array<LegacyLedgerAccount>
+}
+
+export interface DFSPAccountResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type DFSPAccountResponse = DFSPAccountResponseSuccess
+  | DFSPAccountResponseFailed
 
 export interface SettlementModel {
   name: string,
@@ -352,4 +369,33 @@ export interface SettlementModel {
   ledgerAccountType: string,
   settlementAccountType: string,
   autoPositionReset: boolean
+}
+
+export interface ParticipantServiceAccount {
+  id: number,
+  ledgerAccountType: string,
+  currency: string,
+  isActive: number,
+  value: string,
+  reservedValue: string,
+  changedDate: string
+}
+
+
+/**
+ * Represents a ledger account 
+ * 
+ * For the TigerBeetle implementation, we throw away information to make it backwards compatible.
+ * 
+ * Once everything is migrated to the TigerBeetle Ledger, we can update this interface to be 
+ * double-entry compatible.
+ */
+export interface LegacyLedgerAccount {
+  id: bigint,
+  accountType: string,
+  currency: string,
+  isActive: boolean,
+  value: number,
+  reservedValue: number,
+  changedDate: Date
 }

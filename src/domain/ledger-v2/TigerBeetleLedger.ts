@@ -1,6 +1,6 @@
 import { ApplicationConfig } from "src/shared/config";
 import { logger } from '../../shared/logger';
-import { CreateDFSPCommand, CreateDFSPResponse, CreateHubAccountCommand, CreateHubAccountResponse, DepositCollateralCommand, DepositCollateralResponse, FulfilResult, FulfilResultType, PrepareResult, PrepareResultType } from "./types";
+import { CreateDFSPCommand, CreateDFSPResponse, CreateHubAccountCommand, CreateHubAccountResponse, DepositCollateralCommand, DepositCollateralResponse, DFSPAccountResponse, FulfilResult, FulfilResultType, GetDFSPAccountsQuery, LegacyLedgerAccount, PrepareResult, PrepareResultType } from "./types";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, Transfer, TransferFlags } from 'tigerbeetle-node'
@@ -10,6 +10,8 @@ import { TransferBatcher } from "./TransferBatcher";
 import { Ledger } from "./Ledger";
 import { DfspAccountIds, MetadataStore } from "./MetadataStore";
 import Crypto from 'node:crypto'
+import { object } from "joi";
+import { convertBigIntToNumber } from "../../shared/config/util";
 
 export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
@@ -52,6 +54,11 @@ export default class TigerBeetleLedger implements Ledger {
   /**
    * Onboarding/Lifecycle Management
    */
+
+  /**
+   * @method createHubAccount
+   * @description Creates an account in the Hub for the provided Currency and Settlement Model
+   */
   public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
     // TODO(LD): I don't know if we need this at the moment, since we won't have common accounts
     // but instead use separate collateral accounts for each DFSP + Currency combination
@@ -59,7 +66,7 @@ export default class TigerBeetleLedger implements Ledger {
     // We will however need to set up:
     // 1. Settlement Models/Configuration
     // 2. Enable certain currencies
-    logger.warn('depositCollateral() - noop')
+    logger.warn('createHubAccount() - noop')
 
     return {
       type: 'SUCCESS'
@@ -311,6 +318,73 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async withdrawCollateral(thing: unknown): Promise<unknown> {
     throw new Error('not implemented')
+  }
+
+  /**
+   * @method getAccounts
+   * @description Lookup the accounts for a DFSP + Currency
+   */
+  public async getAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+    const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
+    if (ids.type === 'DfspAccountMetadataNone') {
+      return {
+        type: 'FAILED',
+        error: new Error(`getAccounts() failed since getDfspAccountMetata() returned 
+          'DfspAccountMetadataNone' for dfspId: ${query.dfspId}, and currency: ${query.currency}`)
+      }
+    }
+    const tbAccountIds = [
+      // ids.liquidity,
+      // TODO: is this equivalent to POSITION?
+      ids.clearing,
+      // ids.collateral,
+      // TODO: is this equivalent to SETTLEMENT?
+      ids.settlementMultilateral
+    ]
+    const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
+    if (tbAccounts.length !== tbAccountIds.length) {
+      return {
+        type: 'FAILED',
+        error: new Error(`getAccounts() failed - expected ${tbAccountIds.length} accounts from 
+          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`)
+      }
+    }
+
+    const accounts: Array<LegacyLedgerAccount> = []
+    tbAccounts.forEach(tbAccount => {
+      if (tbAccount.id === ids.clearing) {
+        accounts.push({
+          id: ids.clearing,
+          accountType: 'POSITION',
+          currency: query.currency,
+          // TODO(LD): implement lookup on Account flags to see if it's closed
+          isActive: true,
+          value: convertBigIntToNumber(tbAccount.credits_posted - tbAccount.debits_posted),
+          reservedValue: convertBigIntToNumber(tbAccount.credits_pending - tbAccount.debits_pending),
+          // We don't have this in TigerBeetle
+          changedDate: new Date(0)
+        })
+      }
+
+      if (tbAccount.id === ids.settlementMultilateral) {
+        accounts.push({
+          id: ids.clearing,
+          accountType: 'SETTLEMENT',
+          currency: query.currency,
+          // TODO(LD): implement lookup on Account flags to see if it's closed
+          isActive: true,
+          value: convertBigIntToNumber(tbAccount.credits_posted - tbAccount.debits_posted),
+          reservedValue: convertBigIntToNumber(tbAccount.credits_pending - tbAccount.debits_pending),
+          // We don't have this in TigerBeetle
+          changedDate: new Date(0)
+        })
+      }
+    })
+
+    return {
+      type: 'SUCCESS',
+      accounts,
+    }
   }
 
   /**

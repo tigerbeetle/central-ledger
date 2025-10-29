@@ -40,6 +40,7 @@ const rethrow = require('../../shared/rethrow')
 const MLNumber = require('@mojaloop/ml-number')
 const assert = require('assert')
 const { randomUUID } = require('crypto')
+const { log } = require('console')
 
 const LocalEnum = {
   activated: 'activated',
@@ -47,7 +48,7 @@ const LocalEnum = {
 }
 
 const getLedger = (request) => {
-  assert(request, 'request is undefined')  
+  assert(request, 'request is undefined')
   assert(request.server.app, 'request.server.app is undefined')
   assert(request.server.app.ledger, 'Ledger not available in server app state')
   return request.server.app.ledger
@@ -94,7 +95,7 @@ const create = async function (request, h) {
       requestType: typeof request,
       serverType: typeof request?.server
     })
-    
+
     assert(request)
     assert(request.payload)
     assert(request.payload.currency)
@@ -377,21 +378,29 @@ const getPositions = async function (request) {
 }
 
 const getAccounts = async function (request) {
-  try {
-    const result = await ParticipantService.getAccounts(request.params.name, request.query)
+  assert(request)
+  assert(request.params)
+  assert(request.params.name)
+  assert(request.query)
+  assert(request.query.currency)
 
-    // Convert value and reservedValue from string to number
-    if (Array.isArray(result)) {
-      return result.map(account => ({
-        ...account,
-        value: account.value !== undefined ? new MLNumber(account.value).toNumber() : undefined,
-        reservedValue: account.reservedValue !== undefined ? new MLNumber(account.reservedValue).toNumber() : undefined
-      }))
-    }
-    return result
-  } catch (err) {
-    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetAccounts' })
+  const name = request.params.name
+  const currency = request.query.currency
+  const ledger = getLedger(request)
+  const ledgerAccountsResponse = await ledger.getAccounts({ dfspId: name, currency })
+
+  if (ledgerAccountsResponse.type === 'FAILED') {
+    log.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
+    throw ledgerAccountsResponse.error
   }
+
+  // Map to legacy compatible API response
+  return ledgerAccountsResponse.accounts.map(acc => {
+    return {
+      ...acc,
+      id: acc.id.toString(),
+    }
+  })
 }
 
 const updateAccount = async function (request, h) {

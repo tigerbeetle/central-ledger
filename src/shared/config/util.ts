@@ -238,3 +238,19 @@ export const kafkaWithBrokerDefaults = (input: KafkaConfig, defaultBroker: strin
 
   return input
 }
+
+/**
+ * @function convertBigIntToNumber
+ * @description Converts a bigint to a number, throwing an error if the bigint is outside of the 
+ *  range (MIN_SAFE_INTEGER, MAX_SAFE_INTEGER)
+ */
+export function convertBigIntToNumber(input: bigint): number {
+  if (input > BigInt(Number.MAX_SAFE_INTEGER) ||
+    input < BigInt(Number.MIN_SAFE_INTEGER)
+  ) {
+    throw new Error(`convertBigIntToNumber failed: input is outside of safe range.`)
+  }
+
+  return Number(input)
+
+}

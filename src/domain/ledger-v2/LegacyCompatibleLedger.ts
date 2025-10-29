@@ -16,9 +16,13 @@ import {
   CreateHubAccountResponse,
   DepositCollateralCommand,
   DepositCollateralResponse,
+  DFSPAccountResponse,
   FulfilDuplicateResult,
   FulfilResult,
   FulfilResultType,
+  GetDFSPAccountsQuery,
+  LegacyLedgerAccount,
+  ParticipantServiceAccount,
   ParticipantWithCurrency,
   PayeeResponsePayload,
   PrepareDuplicateResult,
@@ -46,6 +50,8 @@ export interface LegacyCompatibleLedgerDependencies {
     participantService: {
       getByName: (name: string) => Promise<{ currencyList: any[], participantId: number }>
       getById: (id: number) => Promise<{ currencyList: any[], participantId: number }>
+      // TODO(LD): Add types
+      getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
       create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
       createParticipantCurrency: (participantId: number, currency: string, ledgerAccountTypeId: number, isActive?: boolean) => Promise<number>
       getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
@@ -379,6 +385,43 @@ export default class LegacyCompatibleLedger implements Ledger {
 
   public async withdrawCollateral(thing: unknown): Promise<unknown> {
     throw new Error('not implemented')
+  }
+
+  public async getAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+    const legacyQuery = { currency: query.currency }
+    try {
+      const accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
+      const formattedAccounts: Array<LegacyLedgerAccount> = []
+      accounts.forEach(account => {
+        // TODO: parse out the silly strings into proper numbers
+
+        // Map from the internal legacy participantService representation to 
+        // a compatible Ledger Interface
+        const formattedAccount: LegacyLedgerAccount = {
+          id: BigInt(account.id),
+          accountType: account.ledgerAccountType,
+          currency: account.currency,
+          isActive: Boolean(account.isActive),
+          value: 0,
+          reservedValue: 0,
+          changedDate: new Date(account.changedDate)
+        }
+        formattedAccounts.push(formattedAccount)
+      })
+
+      assert(formattedAccounts.length === accounts.length)
+
+      return {
+        type: 'SUCCESS',
+        accounts: formattedAccounts,
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILED',
+        error: err
+      }
+    }
   }
 
   /**

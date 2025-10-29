@@ -670,9 +670,8 @@ const getPositions = async (name, query) => {
 const getAccounts = async (name, query) => {
   const log = logger.child({ name, query })
   try {
-    log.debug('getting accounts')
+    log.debug(`getAccounts() - getting accounts for participant: ${name}`)
     const participant = await ParticipantModel.getByName(name)
-    log.debug('getting accounts for participant', { participant })
     participantExists(participant)
     const result = await PositionFacade.getAllByNameAndCurrency(name, query.currency)
     const positions = []
@@ -689,7 +688,8 @@ const getAccounts = async (name, query) => {
         })
       })
     }
-    log.debug('found accounts for participant', { participant, positions })
+    log.debug(`getAccounts() found ${positions.length} positions for participant: ${name}`)
+    
     return positions
   } catch (err) {
     log.error('error getting accounts', err)
