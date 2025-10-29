@@ -390,7 +390,7 @@ const getAccounts = async function (request) {
   const ledgerAccountsResponse = await ledger.getAccounts({ dfspId: name, currency })
 
   if (ledgerAccountsResponse.type === 'FAILED') {
-    log.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
+    Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
     throw ledgerAccountsResponse.error
   }
 

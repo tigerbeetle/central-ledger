@@ -329,8 +329,8 @@ export default class TigerBeetleLedger implements Ledger {
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
         type: 'FAILED',
-        error: new Error(`getAccounts() failed since getDfspAccountMetata() returned 
-          'DfspAccountMetadataNone' for dfspId: ${query.dfspId}, and currency: ${query.currency}`)
+        error: new Error(`failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+          dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' '))
       }
     }
     const tbAccountIds = [
@@ -345,8 +345,8 @@ export default class TigerBeetleLedger implements Ledger {
     if (tbAccounts.length !== tbAccountIds.length) {
       return {
         type: 'FAILED',
-        error: new Error(`getAccounts() failed - expected ${tbAccountIds.length} accounts from 
-          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`)
+        error: new Error(`getAccounts() failed - expected ${tbAccountIds.length} accounts from \
+          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`.replace(/\s+/g, ' '))
       }
     }
 
@@ -368,7 +368,7 @@ export default class TigerBeetleLedger implements Ledger {
 
       if (tbAccount.id === ids.settlementMultilateral) {
         accounts.push({
-          id: ids.clearing,
+          id: ids.settlementMultilateral,
           accountType: 'SETTLEMENT',
           currency: query.currency,
           // TODO(LD): implement lookup on Account flags to see if it's closed
