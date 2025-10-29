@@ -521,7 +521,7 @@
   "SERVER_PRINT_ROUTES_ON_STARTUP": false,
   "EXPERIMENTAL": {
     "LEDGER": {
-      "PRIMARY": "SQL",
+      "PRIMARY": "TIGERBEETLE",
       "SECONDARY": "NONE"
     },
     "TIGERBEETLE": {
