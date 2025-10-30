@@ -340,7 +340,6 @@ export interface SetLimitsCommand {
 
 }
 
-
 export interface GetDFSPAccountsQuery {
   dfspId: string,
   currency: string
@@ -358,6 +357,24 @@ export interface DFSPAccountResponseFailed {
 
 export type DFSPAccountResponse = DFSPAccountResponseSuccess
   | DFSPAccountResponseFailed
+
+  export interface GetNetDebitCapQuery {
+  dfspId: string,
+  currency: string
+}
+
+export interface NetDebitCapResponseSuccess {
+  type: 'SUCCESS',
+  limit: LegacyLimit
+}
+
+export interface NetDebitCapResponseFailed {
+  type: 'FAILED',
+  error: Error
+}
+
+export type NetDebitCapResponse = NetDebitCapResponseSuccess
+  | NetDebitCapResponseFailed
 
 export interface SettlementModel {
   name: string,
@@ -392,10 +409,19 @@ export interface ParticipantServiceAccount {
  */
 export interface LegacyLedgerAccount {
   id: bigint,
-  accountType: string,
+  ledgerAccountType: string,
   currency: string,
   isActive: boolean,
   value: number,
   reservedValue: number,
   changedDate: Date
+}
+
+/**
+ * Legacy Representation of the net debit cap limit, backwards compatible with the admin api
+ */
+export interface LegacyLimit {
+  type: 'NET_DEBIT_CAP',
+  value: number,
+  alarmPercentage: number
 }

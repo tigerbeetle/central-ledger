@@ -291,21 +291,47 @@ const addLimitAndInitialPosition = async function (request, h) {
 
 const getLimits = async function (request) {
   try {
-    const result = await ParticipantService.getLimits(request.params.name, request.query)
-    const limits = []
-    if (Array.isArray(result) && result.length > 0) {
-      result.forEach(item => {
-        limits.push({
-          currency: (item.currencyId || request.query.currency),
-          limit: {
-            type: item.name,
-            value: new MLNumber(item.value).toNumber(),
-            alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
-          }
-        })
-      })
+    assert(request)
+    assert(request.params)
+    assert(request.params.name)
+    assert(request.query)
+    assert(request.query.currency)
+    // only limits of type NET_DEBIT_CAP are supported by this API
+    assert.equal(request.query.type, 'NET_DEBIT_CAP')
+
+    const ledger = getLedger(request)
+    const limitResponse = await ledger.getNetDebitCap({
+      dfspId: request.params.name, 
+      currency: request.query.currency
+    })
+
+    if (limitResponse.type !== 'SUCCESS') {
+      throw limitResponse.error
     }
-    return limits
+
+    return [
+      {
+        currency: request.query.currency,
+        limit: limitResponse.limit
+      }
+    ]
+
+
+    // const result = await ParticipantService.getLimits(request.params.name, request.query)
+    // const limits = []
+    // if (Array.isArray(result) && result.length > 0) {
+    //   result.forEach(item => {
+    //     limits.push({
+    //       currency: (item.currencyId || request.query.currency),
+    //       limit: {
+    //         type: item.name,
+    //         value: new MLNumber(item.value).toNumber(),
+    //         alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
+    //       }
+    //     })
+    //   })
+    // }
+    // return limits
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetLimits' })
   }
@@ -399,6 +425,7 @@ const getAccounts = async function (request) {
     return {
       ...acc,
       id: acc.id.toString(),
+      isActive: acc.isActive ? 1 : 0,
     }
   })
 }

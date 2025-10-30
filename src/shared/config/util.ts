@@ -252,5 +252,28 @@ export function convertBigIntToNumber(input: bigint): number {
   }
 
   return Number(input)
+}
 
+/**
+ * @function safeStringToNumber
+ * @description Safetly convert from a string representation of a number to a js number
+ */
+export function safeStringToNumber(input: string) {
+  assert(typeof input === 'string')
+  // Trim whitespace
+  const trimmed = input.trim();
+  
+  // Check if it's a valid number string
+  if (trimmed === '' || isNaN(Number(trimmed))) {
+    throw new Error(`Invalid number string: "${input}"`);
+  }
+  
+  const num = Number(trimmed);
+  
+  // Check for infinity
+  if (!isFinite(num)) {
+    throw new Error(`Number out of range: "${input}"`);
+  }
+  
+  return num;
 }

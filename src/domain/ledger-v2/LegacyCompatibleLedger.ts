@@ -21,7 +21,9 @@ import {
   FulfilResult,
   FulfilResultType,
   GetDFSPAccountsQuery,
+  GetNetDebitCapQuery,
   LegacyLedgerAccount,
+  NetDebitCapResponse,
   ParticipantServiceAccount,
   ParticipantWithCurrency,
   PayeeResponsePayload,
@@ -34,6 +36,7 @@ import {
   TransformredTransfer
 } from './types';
 import { Ledger } from './Ledger';
+import { safeStringToNumber } from '../../shared/config/util';
 
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
@@ -50,8 +53,8 @@ export interface LegacyCompatibleLedgerDependencies {
     participantService: {
       getByName: (name: string) => Promise<{ currencyList: any[], participantId: number }>
       getById: (id: number) => Promise<{ currencyList: any[], participantId: number }>
-      // TODO(LD): Add types
       getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
+      getLimits: (name: string, query: {currency: string, type: string }) => Promise<Array<unknown>>
       create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
       createParticipantCurrency: (participantId: number, currency: string, ledgerAccountTypeId: number, isActive?: boolean) => Promise<number>
       getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
@@ -399,11 +402,12 @@ export default class LegacyCompatibleLedger implements Ledger {
         // a compatible Ledger Interface
         const formattedAccount: LegacyLedgerAccount = {
           id: BigInt(account.id),
-          accountType: account.ledgerAccountType,
+          ledgerAccountType: account.ledgerAccountType,
           currency: account.currency,
           isActive: Boolean(account.isActive),
-          value: 0,
-          reservedValue: 0,
+          // TODO(LD): map the numbers!
+          value: safeStringToNumber(account.value),
+          reservedValue: safeStringToNumber(account.reservedValue),
           changedDate: new Date(account.changedDate)
         }
         formattedAccounts.push(formattedAccount)
@@ -422,6 +426,54 @@ export default class LegacyCompatibleLedger implements Ledger {
         error: err
       }
     }
+  }
+
+  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
+    const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP'}
+    try {
+      const result = await this.deps.lifecycle.participantService.getLimits(query.dfspId, legacyQuery)
+      if (result.length === 0) {
+        return {
+          type: 'FAILED',
+          error: new Error(`getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`)
+        }
+      }
+
+      assert(result.length === 1)
+      const legacyLimit = result[0] as {value: string, thresholdAlarmPercentage: string}
+      assert(legacyLimit.value)
+      assert(legacyLimit.thresholdAlarmPercentage)
+      return {
+        type: 'SUCCESS',
+        limit: {
+          type: 'NET_DEBIT_CAP',
+          value: safeStringToNumber(legacyLimit.value),
+          alarmPercentage: safeStringToNumber(legacyLimit.thresholdAlarmPercentage)
+        }
+      }
+    } catch (err) {
+      return {
+        type: 'FAILED',
+        error: err
+      }
+    }
+
+
+     // const result = await ParticipantService.getLimits(request.params.name, request.query)
+    // const limits = []
+    // if (Array.isArray(result) && result.length > 0) {
+    //   result.forEach(item => {
+    //     limits.push({
+    //       currency: (item.currencyId || request.query.currency),
+    //       limit: {
+    //         type: item.name,
+    //         value: new MLNumber(item.value).toNumber(),
+    //         alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
+    //       }
+    //     })
+    //   })
+    // }
+    // return limits
   }
 
   /**

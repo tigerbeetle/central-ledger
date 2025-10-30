@@ -1,6 +1,6 @@
 import { ApplicationConfig } from "src/shared/config";
 import { logger } from '../../shared/logger';
-import { CreateDFSPCommand, CreateDFSPResponse, CreateHubAccountCommand, CreateHubAccountResponse, DepositCollateralCommand, DepositCollateralResponse, DFSPAccountResponse, FulfilResult, FulfilResultType, GetDFSPAccountsQuery, LegacyLedgerAccount, PrepareResult, PrepareResultType } from "./types";
+import { CreateDFSPCommand, CreateDFSPResponse, CreateHubAccountCommand, CreateHubAccountResponse, DepositCollateralCommand, DepositCollateralResponse, DFSPAccountResponse, FulfilResult, FulfilResultType, GetDFSPAccountsQuery, GetNetDebitCapQuery, LegacyLedgerAccount, LegacyLimit, NetDebitCapResponse, PrepareResult, PrepareResultType } from "./types";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, Transfer, TransferFlags } from 'tigerbeetle-node'
@@ -334,10 +334,10 @@ export default class TigerBeetleLedger implements Ledger {
       }
     }
     const tbAccountIds = [
-      // ids.liquidity,
+      ids.liquidity,
       // TODO: is this equivalent to POSITION?
       ids.clearing,
-      // ids.collateral,
+      ids.collateral,
       // TODO: is this equivalent to SETTLEMENT?
       ids.settlementMultilateral
     ]
@@ -350,40 +350,92 @@ export default class TigerBeetleLedger implements Ledger {
       }
     }
 
+    // TODO(LD): We need to spend more time here figuring out how to adapt from newer double entry
+    // accounts map on to the legacy accounts
     const accounts: Array<LegacyLedgerAccount> = []
+    let clearingAccount: Account
+    let collateralAccount: Account
     tbAccounts.forEach(tbAccount => {
       if (tbAccount.id === ids.clearing) {
-        accounts.push({
-          id: ids.clearing,
-          accountType: 'POSITION',
-          currency: query.currency,
-          // TODO(LD): implement lookup on Account flags to see if it's closed
-          isActive: true,
-          value: convertBigIntToNumber(tbAccount.credits_posted - tbAccount.debits_posted),
-          reservedValue: convertBigIntToNumber(tbAccount.credits_pending - tbAccount.debits_pending),
-          // We don't have this in TigerBeetle
-          changedDate: new Date(0)
-        })
+        clearingAccount = tbAccount
       }
+      if (tbAccount.id === ids.collateral) {
+        collateralAccount = tbAccount
+      }
+    })
+    assert(clearingAccount)
+    assert(collateralAccount)
 
-      if (tbAccount.id === ids.settlementMultilateral) {
-        accounts.push({
-          id: ids.settlementMultilateral,
-          accountType: 'SETTLEMENT',
-          currency: query.currency,
-          // TODO(LD): implement lookup on Account flags to see if it's closed
-          isActive: true,
-          value: convertBigIntToNumber(tbAccount.credits_posted - tbAccount.debits_posted),
-          reservedValue: convertBigIntToNumber(tbAccount.credits_pending - tbAccount.debits_pending),
-          // We don't have this in TigerBeetle
-          changedDate: new Date(0)
-        })
-      }
+    // Legacy Settlement Balance: How much DFSP has available to settle.
+    const legacySettlementBalancePosted = collateralAccount.debits_posted - collateralAccount.credits_posted
+    const legacySettlementBalancePending = collateralAccount.debits_pending - collateralAccount.credits_pending
+
+    // Legacy Position Balance: How much DFSP is owed or how much this DFSP owes.
+    const clearingBalancePosted = clearingAccount.credits_posted - clearingAccount.debits_posted
+    const clearingBalancePending = clearingAccount.credits_pending - clearingAccount.debits_pending
+    const legacyPositionBalancePosted = legacySettlementBalancePosted - clearingBalancePosted
+    const legacyPositionBalancePending = legacySettlementBalancePending - clearingBalancePending
+
+    accounts.push({
+      id: ids.clearing,
+      ledgerAccountType: 'POSITION',
+      currency: query.currency,
+      isActive: !(clearingAccount.flags & AccountFlags.closed),
+      value: convertBigIntToNumber(legacyPositionBalancePosted)/1000,
+      reservedValue: convertBigIntToNumber(legacyPositionBalancePending)/1000,
+      // We don't have this in TigerBeetle, although we could use the created date
+      changedDate: new Date(0)
+    })
+
+    accounts.push({
+      id: ids.collateral,
+      ledgerAccountType: 'SETTLEMENT',
+      currency: query.currency,
+      isActive: !(collateralAccount.flags & AccountFlags.closed),
+      value: convertBigIntToNumber(legacySettlementBalancePosted)/1000,
+      reservedValue: convertBigIntToNumber(legacySettlementBalancePending)/1000,
+      // We don't have this in TigerBeetle, although we could use the created date
+      changedDate: new Date(0)
     })
 
     return {
       type: 'SUCCESS',
       accounts,
+    }
+  }
+
+  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
+    const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
+    if (ids.type === 'DfspAccountMetadataNone') {
+      return {
+        type: 'FAILED',
+        error: new Error(`failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+          dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' '))
+      }
+    }
+    const tbAccountIds = [
+      // TODO: we need to define the limit as an account in TigerBeetle
+      ids.collateral,
+    ]
+    const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
+    if (tbAccounts.length !== tbAccountIds.length) {
+      return {
+        type: 'FAILED',
+        error: new Error(`getNetDebitCap() failed - expected ${tbAccountIds.length} accounts from \
+          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`.replace(/\s+/g, ' '))
+      }
+    }
+
+    const limit: LegacyLimit = {
+      type: "NET_DEBIT_CAP",
+      // TODO(LD): load from the tigerbeetle account
+      value: 10000,
+      alarmPercentage: 0
+    }
+
+    return {
+      type: 'SUCCESS',
+      limit
     }
   }
 
