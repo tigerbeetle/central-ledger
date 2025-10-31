@@ -33,12 +33,52 @@ const rethrow = require('../../shared/rethrow')
 
 const Transaction = require('../../domain/transactions')
 
+const getLedger = (request) => {
+  assert(request, 'request is undefined')
+  assert(request.server.app, 'request.server.app is undefined')
+  assert(request.server.app.ledger, 'Ledger not available in server app state')
+  return request.server.app.ledger
+}
+
 const getById = async function (request) {
   try {
+
+    // TODO(LD): Lookup the transfer in the metadata store, and look
+    // for the ilp packet.
     const entity = await Transaction.getById(request.params.id)
     if (entity) {
       return await Transaction.getTransactionObject(entity[0].value)
     }
+
+    /**
+     * Returns something like:
+     * 
+     * {
+          "quoteId": "00001",
+          "transactionId": "00001",
+          "transactionType": "unknown",
+          "payee": {
+            "partyIdInfo": {
+              "partyIdType": "MSISDN",
+              "partyIdentifier": "12346",
+              "fspId": "dfsp_b"
+            }
+          },
+          "payer": {
+            "partyIdInfo": {
+              "partyIdType": "MSISDN",
+              "partyIdentifier": "78901",
+              "fspId": "dfsp_a"
+            }
+          },
+          "expiration": "2025-10-31T10:40:18.968Z",
+          "amount": {
+            "amount": "99",
+            "currency": "USD"
+          }
+        }
+     */
+    
     throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND, 'The requested resource could not be found.')
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'transactionsGetById' })
