@@ -198,7 +198,7 @@ export class FusedPrepareHandler {
           action: Enum.Events.Event.Action.PREPARE_DUPLICATE,
           to: input.message.value.from,
           from: this.deps.config.HUB_NAME,
-          payload: result.finalisedTransfer,
+          payload: result.finalizedTransfer,
           headers: input.headers,
           metadata: input.message.value.metadata
         });

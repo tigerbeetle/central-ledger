@@ -5,13 +5,16 @@ import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
+import { ApplicationConfig } from '../shared/config';
+import { Ledger } from '../domain/ledger-v2/Ledger';
 
 const rethrow = Util.rethrow;
 
 export interface GetHandlerDependencies {
   notificationProducer: INotificationProducer;
   committer: IMessageCommitter;
-  config: any;
+  config: ApplicationConfig
+  ledger: Ledger
 
   // Business logic dependencies
   validator: any;
@@ -134,7 +137,7 @@ export class GetHandler {
         logger.info(`Participant does not exist: ${message.value.from} for transfer: ${transferId}`);
         
         return {
-          type: 'success', // This is actually successful processing (invalid participant is handled gracefully)
+          type: 'success', // This is actually successfully processing (invalid participant is handled gracefully)
           transferId,
           data: { skipProcessing: true }
         };

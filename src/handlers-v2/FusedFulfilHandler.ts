@@ -28,6 +28,9 @@ export interface FusedFulfilHandlerInput {
   message: any;
   payload: CommitTransferDto;
   headers: Record<string, any>;
+  /**
+   * The mojaloop logical transfer id
+   */
   transferId: string;
   action: SupportedFulfilHandlerAction;
   eventType: string;

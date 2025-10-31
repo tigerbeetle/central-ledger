@@ -1,17 +1,36 @@
-import { ApplicationConfig } from "src/shared/config";
-import { logger } from '../../shared/logger';
-import { CreateDFSPCommand, CreateDFSPResponse, CreateHubAccountCommand, CreateHubAccountResponse, DepositCollateralCommand, DepositCollateralResponse, DFSPAccountResponse, FulfilResult, FulfilResultType, GetDFSPAccountsQuery, GetNetDebitCapQuery, LegacyLedgerAccount, LegacyLimit, NetDebitCapResponse, PrepareResult, PrepareResultType } from "./types";
-import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
-import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
-import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, Transfer, TransferFlags } from 'tigerbeetle-node'
-import assert, { fail } from "assert";
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
-import { TransferBatcher } from "./TransferBatcher";
+import assert from "assert";
+import Crypto from 'node:crypto';
+import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
+import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
+import { ApplicationConfig } from "src/shared/config";
+import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, Transfer, TransferFlags } from 'tigerbeetle-node';
+import { convertBigIntToNumber } from "../../shared/config/util";
+import { logger } from '../../shared/logger';
 import { Ledger } from "./Ledger";
 import { DfspAccountIds, MetadataStore } from "./MetadataStore";
-import Crypto from 'node:crypto'
-import { object } from "joi";
-import { convertBigIntToNumber } from "../../shared/config/util";
+import { TransferBatcher } from "./TransferBatcher";
+import {
+  CreateDFSPCommand,
+  CreateDFSPResponse,
+  CreateHubAccountCommand,
+  CreateHubAccountResponse,
+  DepositCollateralCommand,
+  DepositCollateralResponse,
+  DFSPAccountResponse,
+  FulfilResult,
+  FulfilResultType,
+  GetDFSPAccountsQuery,
+  GetNetDebitCapQuery,
+  LegacyLedgerAccount,
+  LegacyLimit,
+  LookupTransferQuery,
+  LookupTransferQueryResponse,
+  LookupTransferResultType,
+  NetDebitCapResponse,
+  PrepareResult,
+  PrepareResultType
+} from "./types";
 
 export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
@@ -218,7 +237,7 @@ export default class TigerBeetleLedger implements Ledger {
       await this.deps.metadataStore.tombstoneDfspAccounts(cmd.dfspId, currency, accountIds)
 
       return {
-        type: 'FAILED',
+        type: 'FAILURE',
         error: new Error(`LedgerError: ${readableErrors.join(',')}`)
       }
     }
@@ -283,7 +302,7 @@ export default class TigerBeetleLedger implements Ledger {
 
     if (failed) {
       return {
-        type: 'FAILED',
+        type: 'FAILURE',
         error: new Error(`LedgerError: ${readableErrors.join(',')}`)
       }
     }
@@ -328,9 +347,12 @@ export default class TigerBeetleLedger implements Ledger {
     const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
-        type: 'FAILED',
-        error: new Error(`failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
-          dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' '))
+        type: 'FAILURE',
+        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
+            `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
+        )
       }
     }
     const tbAccountIds = [
@@ -344,9 +366,12 @@ export default class TigerBeetleLedger implements Ledger {
     const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
     if (tbAccounts.length !== tbAccountIds.length) {
       return {
-        type: 'FAILED',
-        error: new Error(`getAccounts() failed - expected ${tbAccountIds.length} accounts from \
-          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`.replace(/\s+/g, ' '))
+        type: 'FAILURE',
+        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
+        )
       }
     }
 
@@ -367,22 +392,23 @@ export default class TigerBeetleLedger implements Ledger {
     assert(collateralAccount)
 
     // Legacy Settlement Balance: How much DFSP has available to settle.
-    const legacySettlementBalancePosted = collateralAccount.debits_posted - collateralAccount.credits_posted
-    const legacySettlementBalancePending = collateralAccount.debits_pending - collateralAccount.credits_pending
+    // Was a negative number in the legacy API once the dfsp had deposited funds.
+    const legacySettlementBalancePosted = (collateralAccount.debits_posted - collateralAccount.credits_posted) * BigInt(-1)
+    const legacySettlementBalancePending = (collateralAccount.debits_pending - collateralAccount.credits_pending) * BigInt(-1)
 
     // Legacy Position Balance: How much DFSP is owed or how much this DFSP owes.
     const clearingBalancePosted = clearingAccount.credits_posted - clearingAccount.debits_posted
     const clearingBalancePending = clearingAccount.credits_pending - clearingAccount.debits_pending
-    const legacyPositionBalancePosted = legacySettlementBalancePosted - clearingBalancePosted
-    const legacyPositionBalancePending = legacySettlementBalancePending - clearingBalancePending
+    const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
+    const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
 
     accounts.push({
       id: ids.clearing,
       ledgerAccountType: 'POSITION',
       currency: query.currency,
       isActive: !(clearingAccount.flags & AccountFlags.closed),
-      value: convertBigIntToNumber(legacyPositionBalancePosted)/1000,
-      reservedValue: convertBigIntToNumber(legacyPositionBalancePending)/1000,
+      value: convertBigIntToNumber(legacyPositionBalancePosted) / 100,
+      reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / 100,
       // We don't have this in TigerBeetle, although we could use the created date
       changedDate: new Date(0)
     })
@@ -392,8 +418,8 @@ export default class TigerBeetleLedger implements Ledger {
       ledgerAccountType: 'SETTLEMENT',
       currency: query.currency,
       isActive: !(collateralAccount.flags & AccountFlags.closed),
-      value: convertBigIntToNumber(legacySettlementBalancePosted)/1000,
-      reservedValue: convertBigIntToNumber(legacySettlementBalancePending)/1000,
+      value: convertBigIntToNumber(legacySettlementBalancePosted) / 100,
+      reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / 100,
       // We don't have this in TigerBeetle, although we could use the created date
       changedDate: new Date(0)
     })
@@ -408,9 +434,12 @@ export default class TigerBeetleLedger implements Ledger {
     const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
-        type: 'FAILED',
-        error: new Error(`failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
-          dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' '))
+        type: 'FAILURE',
+        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
+            `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
+        )
       }
     }
     const tbAccountIds = [
@@ -420,16 +449,19 @@ export default class TigerBeetleLedger implements Ledger {
     const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
     if (tbAccounts.length !== tbAccountIds.length) {
       return {
-        type: 'FAILED',
-        error: new Error(`getNetDebitCap() failed - expected ${tbAccountIds.length} accounts from \
-          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`.replace(/\s+/g, ' '))
+        type: 'FAILURE',
+        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          `getNetDebitCap() failed - expected ${tbAccountIds.length} accounts from \
+          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`.replace(/\s+/g, ' ')
+        )
       }
     }
 
     const limit: LegacyLimit = {
       type: "NET_DEBIT_CAP",
       // TODO(LD): load from the tigerbeetle account
-      value: 10000,
+      value: 100000,
       alarmPercentage: 0
     }
 
@@ -502,11 +534,12 @@ export default class TigerBeetleLedger implements Ledger {
         credit_account_id: payeeMetadata.clearing,
         amount,
         pending_id: 0n,
-        user_data_128: 0n,
+        // Also used as a correlation to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
+        user_data_128: prepareId,
         user_data_64: 0n,
         user_data_32: 0,
-        // TODO(LD): we can use this timeout in the future, once we hook up CDC to get the timeout
-        // events back out of TigerBeetle
+        // TODO(LD): we can use this timeout in the future, once we implement our scanning timeout
+        // handler or CDC
         timeout: 0,
         ledger: LedgerIdUSD,
         code: 1,
@@ -522,7 +555,60 @@ export default class TigerBeetleLedger implements Ledger {
 
       const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
       if (error) {
+        // specific error handling cases
+        if (error === CreateTransferError.exceeds_credits) {
+          return {
+            type: PrepareResultType.FAIL_LIQUIDITY,
+            fspiopError: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.PAYER_FSP_INSUFFICIENT_LIQUIDITY
+            )
+          }
+        }
+
+        /**
+         * Pending Transfer has already been created.
+         * 
+         * Look up what it is, and map to a PrepareResultType
+         */
+        if (error === CreateTransferError.exists) {
+          const lookupTransferResult = await this.lookupTransfer({
+            transferId: input.payload.transferId
+          })
+
+          switch(lookupTransferResult.type) {
+            case LookupTransferResultType.FOUND_NON_FINAL: {
+              return {
+                type: PrepareResultType.DUPLICATE_NON_FINAL
+              }
+            }
+            case LookupTransferResultType.FOUND_FINAL: {
+              return {
+                type: PrepareResultType.DUPLICATE_FINAL,
+                finalizedTransfer: lookupTransferResult.finalizedTransfer,
+              }
+            }
+            case LookupTransferResultType.NOT_FOUND: {
+              return {
+                type: PrepareResultType.FAIL_OTHER,
+                fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+                  `TigerBeetleLedger.prepare() - TigerBeetleLedger.lookupTransfer() got result \
+                  ${lookupTransferResult.type} after encountering ${error}. This should not be \
+                  possible`.replace(/\s+/g, ' ')
+                )
+              }
+            }
+            case LookupTransferResultType.FAILED: {
+              return {
+                type: PrepareResultType.FAIL_OTHER,
+                fspiopError: lookupTransferResult.fspiopError
+              }
+            }
+          }
+        }
+
+        // unhandled TigerBeetle Error
         const readableError = CreateTransferError[error]
+
         return {
           type: PrepareResultType.FAIL_OTHER,
           fspiopError: ErrorHandler.Factory.createFSPIOPError(
@@ -615,6 +701,116 @@ export default class TigerBeetleLedger implements Ledger {
         type: FulfilResultType.FAIL_OTHER,
         fspiopError: err
       }
+    }
+  }
+
+  /**
+   * @method lookupTransfer
+   */
+  public async lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse> {
+    const prepareId = TigerBeetleLedger.fromMojaloopId(query.transferId)
+
+    // look up all TigerBeetle Transfers related to this MojaloopId
+    const relatedTransfers = await this.deps.client.queryTransfers({
+      user_data_128: prepareId,
+      user_data_64: 0n,
+      user_data_32: 0,
+      ledger: 0,
+      code: 1,
+      timestamp_min: 0n,
+      timestamp_max: 0n,
+      limit: 3,
+      flags: 0
+    })
+
+    if (relatedTransfers.length === 0) {
+      return {
+        type: LookupTransferResultType.NOT_FOUND,
+      }
+    }
+
+    if (relatedTransfers.length === 1) {
+      const pendingTransfer = relatedTransfers[0]
+      assert(pendingTransfer)
+      assert(pendingTransfer.flags & TransferFlags.pending)
+      // TigerBeetle timeout is defined in seconds
+      const timeoutNs = BigInt(pendingTransfer.timeout) * 1_000_000_000n;
+      const createdAt = pendingTransfer.timestamp
+      const expiredAt = createdAt + timeoutNs
+
+      /**
+       * TODO(LD): There could be clock mismatch errors here, since we are using our own time
+       *   instead of the TigerBeetle time, we don't know 100% for sure that TigerBeetle has
+       *   actually timed out the transfer.
+       */
+      const nowNs = BigInt(Date.now()) * 1_000_000_000n
+      const expiredAtMs = convertBigIntToNumber(expiredAt / 1_000_000n)
+      if (expiredAt > nowNs) {
+        return {
+          type: LookupTransferResultType.FOUND_FINAL,
+          finalizedTransfer: {
+            completedTimestamp: (new Date(expiredAtMs)).toISOString(),
+            transferState: "ABORTED"
+          }
+        }
+      }
+
+      return {
+        type: LookupTransferResultType.FOUND_NON_FINAL
+      }
+    }
+
+    if (relatedTransfers.length > 2) {
+      return {
+        type: LookupTransferResultType.FAILED,
+        fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Found: ${relatedTransfers.length} related transfers. Expected at most 2.`
+        )
+      }
+    }
+
+    let pendingTransfer: Transfer;
+    let finalTransfer: Transfer;
+    if (relatedTransfers[0].id === prepareId) {
+      [pendingTransfer, finalTransfer] = relatedTransfers
+    } else if (relatedTransfers[1].id === prepareId) {
+      [finalTransfer, pendingTransfer] = relatedTransfers
+    } else {
+      return {
+        type: LookupTransferResultType.FAILED,
+        fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Found: ${relatedTransfers.length} related transfers. Expected at most 2.`
+        )
+      }
+    }
+
+    if (finalTransfer.flags & TransferFlags.post_pending_transfer) {
+      const committedTime = convertBigIntToNumber(finalTransfer.timestamp / 1_000_000n)
+      return {
+        type: LookupTransferResultType.FOUND_FINAL,
+        finalizedTransfer: {
+          completedTimestamp: (new Date(committedTime)).toISOString(),
+          transferState: "COMMITTED"
+          // TODO: need to lookup the fulfilment from the transfer metadata database
+        }
+      }
+    } else if (finalTransfer.flags & TransferFlags.void_pending_transfer) {
+      const abortedTime = convertBigIntToNumber(finalTransfer.timestamp / 1_000_000n)
+      return {
+        type: LookupTransferResultType.FOUND_FINAL,
+        finalizedTransfer: {
+          completedTimestamp: (new Date(abortedTime)).toISOString(),
+          transferState: "ABORTED"
+        }
+      }
+    }
+
+    logger.warn(`fulfilTransfer with id: ${finalTransfer.id} had neither 'post_pending_transfer' nor 'void_pending_transfer' flags set.`)
+    return {
+      type: LookupTransferResultType.FAILED,
+      fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+        `fulfilTransfer with id: ${finalTransfer.id} had neither 'post_pending_transfer' nor 'void_pending_transfer' flags set.`
+      )
     }
   }
 

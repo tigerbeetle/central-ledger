@@ -499,7 +499,7 @@ export default class LegacyCompatibleLedger implements Ledger {
           const payload = this.deps.clearing.transformTransferToFulfil(transfer, false)
           return {
             type: PrepareResultType.DUPLICATE_FINAL,
-            finalisedTransfer: payload,
+            finalizedTransfer: payload,
           }
         }
 

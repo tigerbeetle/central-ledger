@@ -10,7 +10,7 @@ export interface ParticipantWithCurrency {
   isActive: boolean;
   createdDate: string;
   createdBy: string;
-  
+
   // From participantCurrency table (added when currency is found)
   participantCurrencyId: number;
   currencyId: string;
@@ -216,8 +216,11 @@ export interface PrepareResultPass {
 
 export interface PrepareResultDuplicateFinal {
   type: PrepareResultType.DUPLICATE_FINAL,
-  // TODO(LD): add types to this!
-  finalisedTransfer: any
+  finalizedTransfer: {
+    completedTimestamp: string,
+    transferState: 'COMMITTED' | 'ABORTED',
+    fulfilment?: string,
+  }
 }
 
 export interface PrepareResultDuplicateNonFinal {
@@ -275,14 +278,14 @@ export interface CreateHubAccountResponseAlreadyExists {
   type: 'ALREADY_EXISTS'
 }
 
-export interface CreateHubAccountResponseFailed {
-  type: 'FAILED',
+export interface CreateHubAccountResponseFailure {
+  type: 'FAILURE',
   error: Error
 }
 
 export type CreateHubAccountResponse = CreateHubAccountResponseSuccess
   | CreateHubAccountResponseAlreadyExists
-  | CreateHubAccountResponseFailed
+  | CreateHubAccountResponseFailure
 
 
 export interface CreateDFSPCommand {
@@ -299,14 +302,14 @@ export interface CreateDFSPResponseAlreadyExists {
   type: 'ALREADY_EXISTS'
 }
 
-export interface CreateDFSPResponseFailed {
-  type: 'FAILED',
+export interface CreateDFSPResponseFailure {
+  type: 'FAILURE',
   error: Error
 }
 
 export type CreateDFSPResponse = CreateDFSPResponseSuccess
   | CreateDFSPResponseAlreadyExists
-  | CreateDFSPResponseFailed
+  | CreateDFSPResponseFailure
 
 
 export interface DepositCollateralCommand {
@@ -327,14 +330,14 @@ export interface DepositCollateralResponseAlreadyExists {
   type: 'ALREADY_EXISTS'
 }
 
-export interface DepositCollateralResponseFailed {
-  type: 'FAILED',
+export interface DepositCollateralResponseFailure {
+  type: 'FAILURE',
   error: Error
 }
 
 export type DepositCollateralResponse = DepositCollateralResponseSuccess
   | DepositCollateralResponseAlreadyExists
-  | DepositCollateralResponseFailed
+  | DepositCollateralResponseFailure
 
 export interface SetLimitsCommand {
 
@@ -350,15 +353,15 @@ export interface DFSPAccountResponseSuccess {
   accounts: Array<LegacyLedgerAccount>
 }
 
-export interface DFSPAccountResponseFailed {
-  type: 'FAILED',
-  error: Error
+export interface DFSPAccountResponseFailure {
+  type: 'FAILURE',
+  fspiopError: FSPIOPError
 }
 
 export type DFSPAccountResponse = DFSPAccountResponseSuccess
-  | DFSPAccountResponseFailed
+  | DFSPAccountResponseFailure
 
-  export interface GetNetDebitCapQuery {
+export interface GetNetDebitCapQuery {
   dfspId: string,
   currency: string
 }
@@ -368,13 +371,69 @@ export interface NetDebitCapResponseSuccess {
   limit: LegacyLimit
 }
 
-export interface NetDebitCapResponseFailed {
-  type: 'FAILED',
-  error: Error
+export interface NetDebitCapResponseFailure {
+  type: 'FAILURE',
+  fspiopError: FSPIOPError
 }
 
 export type NetDebitCapResponse = NetDebitCapResponseSuccess
-  | NetDebitCapResponseFailed
+  | NetDebitCapResponseFailure
+
+export interface LookupTransferQuery {
+  /**
+   * The mojaloop logical transfer id
+   */
+  transferId: string;
+}
+
+export enum LookupTransferResultType {
+  /**
+   * Found transfer, it's in a non final state.
+   */
+  FOUND_NON_FINAL = 'FOUND_NON_FINAL',
+
+  /**
+   * Found transfer, it's in a final state.
+   */
+  FOUND_FINAL = 'FOUND_FINAL',
+
+  /**
+   * Could not find the Transfer.
+   */
+  NOT_FOUND = 'NOT_FOUND',
+
+  /**
+   * Lookup failed
+   */
+  FAILED = 'FAILED',
+}
+
+export interface LookupTransferQueryResponseFoundNonFinal {
+  type: LookupTransferResultType.FOUND_NON_FINAL
+}
+
+export interface LookupTransferQueryResponseFoundFinal {
+  type: LookupTransferResultType.FOUND_FINAL,
+  finalizedTransfer: {
+    completedTimestamp: string,
+    transferState: 'ABORTED' | 'COMMITTED',
+    fulfilment?: string,
+  }
+}
+
+export interface LookupTransferQueryResponseNotFound {
+  type: LookupTransferResultType.NOT_FOUND,
+}
+
+export interface LookupTransferQueryResponseFailed {
+  type: LookupTransferResultType.FAILED
+  fspiopError: FSPIOPError
+}
+
+export type LookupTransferQueryResponse = LookupTransferQueryResponseFoundNonFinal
+ | LookupTransferQueryResponseFoundFinal
+ | LookupTransferQueryResponseNotFound
+ | LookupTransferQueryResponseFailed
 
 export interface SettlementModel {
   name: string,
