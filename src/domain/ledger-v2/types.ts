@@ -127,6 +127,11 @@ export enum PrepareResultType {
   DUPLICATE_NON_FINAL = 'DUPLICATE_NON_FINAL',
 
   /**
+   * An existing transfer exists with this id but different parameters
+   */
+  MODIFIED = 'MODIFIED',
+
+  /**
    * Transfer failed validation
    */
   FAIL_VALIDATION = 'FAIL_VALIDATION',
@@ -142,39 +147,6 @@ export enum PrepareResultType {
   FAIL_OTHER = 'FAIL_OTHER',
 }
 
-export enum PrepareDuplicateResult {
-  /**
-   * Transfer id is unique
-   */
-  UNIQUE = 'UNIQUE',
-
-  /**
-   * Transfer Id is the same, body is different
-   */
-  MODIFIED = 'MODIFIED',
-
-  /**
-   * Transfer Id is the same, body is the same
-   */
-  DUPLICATED = 'DUPLICATED'
-}
-
-export enum FulfilDuplicateResult {
-  /**
-   * Message is unique
-   */
-  UNIQUE = 'UNIQUE',
-
-  /**
-   * Transfer Id is the same, body is different
-   */
-  MODIFIED = 'MODIFIED',
-
-  /**
-   * Transfer Id is the same, body is the same
-   */
-  DUPLICATED = 'DUPLICATED'
-}
 
 export enum FulfilResultType {
   /**
@@ -206,6 +178,7 @@ export enum FulfilResultType {
 export type PrepareResult = PrepareResultPass
   | PrepareResultDuplicateFinal
   | PrepareResultDuplicateNonFinal
+  | PrepareResultFailModified
   | PrepareResultFailValidation
   | PrepareResultFailLiquidity
   | PrepareResultFailOther
@@ -225,6 +198,10 @@ export interface PrepareResultDuplicateFinal {
 
 export interface PrepareResultDuplicateNonFinal {
   type: PrepareResultType.DUPLICATE_NON_FINAL,
+}
+
+export interface PrepareResultFailModified {
+  type: PrepareResultType.MODIFIED,
 }
 
 export interface PrepareResultFailValidation {

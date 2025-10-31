@@ -565,6 +565,14 @@ export default class TigerBeetleLedger implements Ledger {
           }
         }
 
+        if (error === CreateTransferError.exists_with_different_amount ||
+           error === CreateTransferError.exists_with_different_debit_account_id || 
+           error === CreateTransferError.exists_with_different_credit_account_id ) {
+            return {
+              type: PrepareResultType.MODIFIED
+            }
+        }
+
         /**
          * Pending Transfer has already been created.
          * 
@@ -786,6 +794,7 @@ export default class TigerBeetleLedger implements Ledger {
 
     if (finalTransfer.flags & TransferFlags.post_pending_transfer) {
       const committedTime = convertBigIntToNumber(finalTransfer.timestamp / 1_000_000n)
+      logger.warn(`TODO(LD) - We are missing the fulfillment here, need to look it up in transfer metadata store.`)
       return {
         type: LookupTransferResultType.FOUND_FINAL,
         finalizedTransfer: {

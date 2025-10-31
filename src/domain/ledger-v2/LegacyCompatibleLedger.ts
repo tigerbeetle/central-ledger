@@ -17,7 +17,6 @@ import {
   DepositCollateralCommand,
   DepositCollateralResponse,
   DFSPAccountResponse,
-  FulfilDuplicateResult,
   FulfilResult,
   FulfilResultType,
   GetDFSPAccountsQuery,
@@ -30,7 +29,6 @@ import {
   ParticipantServiceAccount,
   ParticipantWithCurrency,
   PayeeResponsePayload,
-  PrepareDuplicateResult,
   PrepareResult,
   PrepareResultType,
   TransferParticipantInfo,
@@ -40,6 +38,41 @@ import {
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
+
+
+export enum PrepareDuplicateResult {
+  /**
+   * Transfer id is unique
+   */
+  UNIQUE = 'UNIQUE',
+
+  /**
+   * Transfer Id is the same, body is different
+   */
+  MODIFIED = 'MODIFIED',
+
+  /**
+   * Transfer Id is the same, body is the same
+   */
+  DUPLICATED = 'DUPLICATED'
+}
+
+export enum FulfilDuplicateResult {
+  /**
+   * Message is unique
+   */
+  UNIQUE = 'UNIQUE',
+
+  /**
+   * Transfer Id is the same, body is different
+   */
+  MODIFIED = 'MODIFIED',
+
+  /**
+   * Transfer Id is the same, body is the same
+   */
+  DUPLICATED = 'DUPLICATED'
+}
 
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
@@ -517,8 +550,7 @@ export default class LegacyCompatibleLedger implements Ledger {
       }
       case PrepareDuplicateResult.MODIFIED: {
         return {
-          type: PrepareResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST),
+          type: PrepareResultType.MODIFIED
         }
       }
       case PrepareDuplicateResult.UNIQUE:

@@ -1,13 +1,13 @@
 import { IPositionProducer, INotificationProducer, IMessageCommitter, ProcessResult } from '../messaging/types';
 import CentralServicesShared, { Enum, Util } from '@mojaloop/central-services-shared';
 import { logger } from '../shared/logger';
-import * as Metrics from '@mojaloop/central-services-metrics';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import assert from 'assert';
 import { CreateTransferDto } from './types';
 import { ApplicationConfig } from '../shared/config';
 import { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from '../domain/ledger-v2/types';
 import { Ledger } from '../domain/ledger-v2/Ledger';
+import { getServers } from 'dns';
 
 
 const { decodePayload } = Util.StreamingProtocol
@@ -206,6 +206,19 @@ export class FusedPrepareHandler {
       }
       case PrepareResultType.DUPLICATE_NON_FINAL: {
         // ignore this case - DFSPs are allowed to send multiple requests
+        break;
+      }
+      case PrepareResultType.MODIFIED: {
+        const fspiopError = createFSPIOPError(FSPIOPErrorCodes.MODIFIED_REQUEST);
+        await this.deps.notificationProducer.sendError({
+          transferId: input.transferId,
+          fspiopError: fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),
+          action: input.action,
+          to: input.message.value.from,
+          from: this.deps.config.HUB_NAME,
+          headers: input.headers,
+          metadata: input.message.value.metadata
+        });
         break;
       }
       case PrepareResultType.FAIL_VALIDATION: {
