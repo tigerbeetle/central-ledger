@@ -571,7 +571,7 @@ async function initializeHandlersV2(
       case HandlerType.get: {
         assert(consumers.get)
         assert(producers.notification)
-        await registerGetHandlerV2(config, consumers.get, producers.notification)
+        await registerGetHandlerV2(config, consumers.get, producers.notification, ledger)
         break;
       }
       case HandlerType.admin: {

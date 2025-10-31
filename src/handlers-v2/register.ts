@@ -377,6 +377,7 @@ export const createGetHandler = (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
   notificationProducer: Kafka.Producer,
+  ledger: Ledger
 ) => {
   // Import existing business logic modules
   const Validator = require('../handlers/transfers/validator')
@@ -391,7 +392,8 @@ export const createGetHandler = (
     validator: Validator,
     transferService: TransferService,
     fxTransferModel: FxTransferModel,
-    transferObjectTransform: TransferObjectTransform
+    transferObjectTransform: TransferObjectTransform,
+    ledger,
   }
 
   const handler = new GetHandler(dependencies)
@@ -402,11 +404,12 @@ export const registerGetHandlerV2 = async (
   config: ApplicationConfig,
   consumer: Kafka.Consumer,
   notificationProducer: Kafka.Producer,
+  ledger: Ledger
 ): Promise<void> => {
   try {
     logger.debug(`registerGetHandlerV2 registering`)
 
-    const handleMessage = createGetHandler(config, consumer, notificationProducer)
+    const handleMessage = createGetHandler(config, consumer, notificationProducer, ledger)
     consumer.consume(handleMessage)
 
   } catch (err) {

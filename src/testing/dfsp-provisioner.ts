@@ -44,7 +44,7 @@ export default class DFSPProvisioner {
 
     try {
       const result = await this.deps.ledger.createDfsp(config)
-      if (result.type === 'FAILED') {
+      if (result.type === 'FAILURE') {
         throw result.error
       }
 
@@ -65,7 +65,7 @@ export default class DFSPProvisioner {
           currency,
           amount: initialLimit,
         })
-        if (depositResult.type === 'FAILED') {
+        if (depositResult.type === 'FAILURE') {
           throw depositResult.error
         }
         if (depositResult.type === 'ALREADY_EXISTS') {

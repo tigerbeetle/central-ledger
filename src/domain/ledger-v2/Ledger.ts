@@ -11,6 +11,8 @@ import {
   FulfilResult,
   GetDFSPAccountsQuery,
   GetNetDebitCapQuery,
+  LookupTransferQuery,
+  LookupTransferQueryResponse,
   NetDebitCapResponse,
   PrepareResult,
 } from './types'
@@ -36,8 +38,31 @@ export interface Ledger {
   /**
    * Clearing Methods
    */
+
+  /**
+   * @method prepare
+   * @description Prepares a payment for clearing, reserving the payment amount from the Payer's
+   *   account to prevent double spending.
+   */
   prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult>;
+
+  /**
+   * @method fulfil
+   * @description Clears a previously prepared payment.
+   */
   fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult>;
+
+
+  /**
+   * @method lookupTransfer
+   * @description Looks up a previously created Mojaloop Transfer.
+   * 
+   * TODO(LD): We need to also include the transfer metadata, such as payer and payee ids
+   *   in the response here, so that we can check if the ultimate caller of lookupTransfer
+   *   is allowed to execute this request.
+   */
+  lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse>
+
   /**
    * Settlement Methods
    */

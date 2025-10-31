@@ -55,7 +55,7 @@ export default class Provisioner {
       }
     }
     const result = await this.deps.ledger.createHubAccount(createHubAccountCommand)
-    if (result.type === 'FAILED') {
+    if (result.type === 'FAILURE') {
       logger.error(`Provisioner.run() failed with error`, {error: result.error})
       throw result.error
     }

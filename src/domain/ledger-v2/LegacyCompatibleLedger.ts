@@ -23,6 +23,9 @@ import {
   GetDFSPAccountsQuery,
   GetNetDebitCapQuery,
   LegacyLedgerAccount,
+  LookupTransferQuery,
+  LookupTransferQueryResponse,
+  LookupTransferResultType,
   NetDebitCapResponse,
   ParticipantServiceAccount,
   ParticipantWithCurrency,
@@ -54,7 +57,7 @@ export interface LegacyCompatibleLedgerDependencies {
       getByName: (name: string) => Promise<{ currencyList: any[], participantId: number }>
       getById: (id: number) => Promise<{ currencyList: any[], participantId: number }>
       getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
-      getLimits: (name: string, query: {currency: string, type: string }) => Promise<Array<unknown>>
+      getLimits: (name: string, query: { currency: string, type: string }) => Promise<Array<unknown>>
       create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
       createParticipantCurrency: (participantId: number, currency: string, ledgerAccountTypeId: number, isActive?: boolean) => Promise<number>
       getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
@@ -148,6 +151,7 @@ export default class LegacyCompatibleLedger implements Ledger {
 
   }
 
+
   /**
    * Onboarding/Lifecycle Management
    */
@@ -217,7 +221,7 @@ export default class LegacyCompatibleLedger implements Ledger {
       }
 
       return {
-        type: 'FAILED',
+        type: 'FAILURE',
         error: err
       }
     }
@@ -320,7 +324,7 @@ export default class LegacyCompatibleLedger implements Ledger {
 
     } catch (err) {
       return {
-        type: 'FAILED',
+        type: 'FAILURE',
         error: err
       }
     }
@@ -380,7 +384,7 @@ export default class LegacyCompatibleLedger implements Ledger {
       // TODO: catch the duplicate error
 
       return {
-        type: 'FAILED',
+        type: 'FAILURE',
         error: err
       }
     }
@@ -422,25 +426,29 @@ export default class LegacyCompatibleLedger implements Ledger {
 
     } catch (err) {
       return {
-        type: 'FAILED',
-        error: err
+        type: 'FAILURE',
+        fspiopError: err
       }
     }
   }
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
-    const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP'}
+    const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP' }
     try {
       const result = await this.deps.lifecycle.participantService.getLimits(query.dfspId, legacyQuery)
       if (result.length === 0) {
         return {
-          type: 'FAILED',
-          error: new Error(`getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`)
+          type: 'FAILURE',
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
+              `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
+          )
+
         }
       }
 
       assert(result.length === 1)
-      const legacyLimit = result[0] as {value: string, thresholdAlarmPercentage: string}
+      const legacyLimit = result[0] as { value: string, thresholdAlarmPercentage: string }
       assert(legacyLimit.value)
       assert(legacyLimit.thresholdAlarmPercentage)
       return {
@@ -453,13 +461,13 @@ export default class LegacyCompatibleLedger implements Ledger {
       }
     } catch (err) {
       return {
-        type: 'FAILED',
-        error: err
+        type: 'FAILURE',
+        fspiopError: err
       }
     }
 
 
-     // const result = await ParticipantService.getLimits(request.params.name, request.query)
+    // const result = await ParticipantService.getLimits(request.params.name, request.query)
     // const limits = []
     // if (Array.isArray(result) && result.length > 0) {
     //   result.forEach(item => {
@@ -672,6 +680,60 @@ export default class LegacyCompatibleLedger implements Ledger {
       return {
         type: FulfilResultType.FAIL_OTHER,
         fspiopError: error
+      }
+    }
+  }
+
+  public async lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse> {
+    assert(query.transferId)
+    try {
+      const transfer = await this.deps.clearing.getTransferById(query.transferId)
+      if (!transfer) {
+        return {
+          type: LookupTransferResultType.NOT_FOUND
+        }
+      }
+
+      if (transfer.transferState === 'RECEIVED') {
+        return {
+          type: LookupTransferResultType.FOUND_NON_FINAL
+        }
+      }
+
+      switch (transfer.transferState) {
+        case 'ABORTED': {
+          assert(transfer.completedTimestamp, 'Expected transfer.completedTimestamp when transfer.transferState === `COMMITTED`')
+          return {
+            type: LookupTransferResultType.FOUND_FINAL,
+            finalizedTransfer: {
+              completedTimestamp: transfer.completedTimestamp,
+              transferState: transfer.transferState
+            }
+          }
+        }
+        case 'COMMITTED': {
+          assert(transfer.completedTimestamp, 'Expected transfer.completedTimestamp when transfer.transferState === `COMMITTED`')
+          assert(transfer.fulfilment, 'Expected transfer.fulfilment when transfer.transferState === `COMMITTED`')
+          return {
+            type: LookupTransferResultType.FOUND_FINAL,
+            finalizedTransfer: {
+              completedTimestamp: transfer.completedTimestamp,
+              transferState: transfer.transferState,
+              fulfilment: transfer.fulfilment
+            }
+          }
+        }
+        default: {
+          throw ErrorHandler.Factory.createInternalServerFSPIOPError(
+            `lookupTransfer() failed - getTransferById() found unexpected transferState: ${transfer.transferState}`
+          )
+        }
+      }
+
+    } catch (err) {
+      return {
+        type: LookupTransferResultType.FAILED,
+        fspiopError: err
       }
     }
   }

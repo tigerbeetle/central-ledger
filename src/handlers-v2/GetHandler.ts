@@ -7,6 +7,7 @@ import * as EventSdk from '@mojaloop/event-sdk';
 import assert from 'assert';
 import { ApplicationConfig } from '../shared/config';
 import { Ledger } from '../domain/ledger-v2/Ledger';
+import { LookupTransferResultType } from '../domain/ledger-v2/types';
 
 const rethrow = Util.rethrow;
 
@@ -34,7 +35,7 @@ export interface GetMessageInput {
 }
 
 export class GetHandler {
-  constructor(private deps: GetHandlerDependencies) {}
+  constructor(private deps: GetHandlerDependencies) { }
 
   async handle(error: any, messages: any): Promise<void> {
     const histTimerEnd = Metrics.getHistogram(
@@ -89,8 +90,8 @@ export class GetHandler {
       if (span && !span.isFinished) {
         const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err);
         const state = new EventSdk.EventStateMetadata(
-          EventSdk.EventStatusType.failed, 
-          fspiopError.apiErrorCode.code, 
+          EventSdk.EventStatusType.failed,
+          fspiopError.apiErrorCode.code,
           fspiopError.apiErrorCode.message
         );
         await span.error(fspiopError, state);
@@ -135,7 +136,7 @@ export class GetHandler {
       // Validate participant exists
       if (!await this.deps.validator.validateParticipantByName(message.value.from)) {
         logger.info(`Participant does not exist: ${message.value.from} for transfer: ${transferId}`);
-        
+
         return {
           type: 'success', // This is actually successfully processing (invalid participant is handled gracefully)
           transferId,
@@ -165,10 +166,10 @@ export class GetHandler {
     const fxTransfer = await this.deps.fxTransferModel.fxTransfer.getByIdLight(transferId);
     if (!fxTransfer) {
       const fspiopError = ErrorHandler.Factory.createFSPIOPError(
-        ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND, 
+        ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND,
         'Provided commitRequest ID was not found on the server.'
       );
-      
+
       return {
         type: 'error',
         transferId,
@@ -179,7 +180,7 @@ export class GetHandler {
     // Validate participant has access to this FX transfer
     if (!await this.deps.validator.validateParticipantForCommitRequestId(message.value.from, transferId)) {
       const fspiopError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR);
-      
+
       return {
         type: 'error',
         transferId,
@@ -198,41 +199,65 @@ export class GetHandler {
   }
 
   private async processTransferGet(input: GetMessageInput, message: any): Promise<ProcessResult> {
+    assert(input)
+    assert(input.transferId)
+    assert(message)
+    assert(message.value)
+    assert(message.value.from)
+
     const { transferId } = input;
+    const lookupTransferResult = await this.deps.ledger.lookupTransfer({
+      transferId: input.transferId
+    })
 
-    // Get regular transfer
-    const transfer = await this.deps.transferService.getByIdLight(transferId);
-    if (!transfer) {
-      const fspiopError = ErrorHandler.Factory.createFSPIOPError(
-        ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND, 
-        'Provided Transfer ID was not found on the server.'
-      );
-      
-      return {
-        type: 'error',
-        transferId,
-        error: fspiopError
-      };
+    let responsePayload = {}
+
+    switch (lookupTransferResult.type) {
+      case LookupTransferResultType.NOT_FOUND: {
+        const fspiopError = ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_ID_NOT_FOUND,
+          'Provided Transfer ID was not found on the server.'
+        );
+
+        return {
+          type: 'error',
+          transferId,
+          error: fspiopError
+        };
+      }
+      case LookupTransferResultType.FAILED: {
+        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `failed when looking up transfer id`
+        )
+
+        return {
+          type: 'error',
+          transferId,
+          error: fspiopError
+        };
+      }
+      case LookupTransferResultType.FOUND_NON_FINAL: {
+        responsePayload = {
+          transferState: 'RECEIVED'
+        }
+        break;
+      }
+      case LookupTransferResultType.FOUND_FINAL: {
+        responsePayload = lookupTransferResult.finalizedTransfer
+        break;
+      }
     }
 
-    // Validate participant has access to this transfer
-    if (!await this.deps.validator.validateParticipantTransferId(message.value.from, transferId)) {
-      const fspiopError = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR);
-      
-      return {
-        type: 'error',
-        transferId,
-        error: fspiopError
-      };
-    }
+    logger.warn('TODO(LD): GetHandler - disabled the participant id check - reinstate this once we implement the transfer metadata store')
 
-    // Transform the transfer for response
-    message.value.content.payload = this.deps.transferObjectTransform.toFulfil(transfer);
+    message.value.content.payload = responsePayload
 
     return {
       type: 'success',
       transferId,
-      data: { transfer, payload: message.value.content.payload }
+      data: { 
+        payload: message.value.content.payload 
+      }
     };
   }
 
