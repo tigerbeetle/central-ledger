@@ -276,7 +276,7 @@ const addLimitAndInitialPosition = async function (request, h) {
       amount: request.payload.limit.value
     }
     const result = await ledger.depositCollateral(depositCollateralCmd)
-    if (result.type === 'FAILED') {
+    if (result.type === 'FAILURE') {
       throw result.error
     }
     if (result.type === 'ALREADY_EXISTS') {
@@ -306,7 +306,7 @@ const getLimits = async function (request) {
     })
 
     if (limitResponse.type !== 'SUCCESS') {
-      throw limitResponse.error
+      throw limitResponse.fspiopError
     }
 
     return [
@@ -415,9 +415,9 @@ const getAccounts = async function (request) {
   const ledger = getLedger(request)
   const ledgerAccountsResponse = await ledger.getAccounts({ dfspId: name, currency })
 
-  if (ledgerAccountsResponse.type === 'FAILED') {
-    Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
-    throw ledgerAccountsResponse.error
+  if (ledgerAccountsResponse.type === 'FAILURE') {
+    Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.fspiopError.message}`)
+    throw ledgerAccountsResponse.fspiopError
   }
 
   // Map to legacy compatible API response

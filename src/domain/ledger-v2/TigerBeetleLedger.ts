@@ -350,7 +350,7 @@ export default class TigerBeetleLedger implements Ledger {
       return {
         type: 'FAILURE',
         fspiopError: ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
+          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
             `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
               dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
         )
@@ -567,11 +567,11 @@ export default class TigerBeetleLedger implements Ledger {
         }
 
         if (error === CreateTransferError.exists_with_different_amount ||
-           error === CreateTransferError.exists_with_different_debit_account_id || 
-           error === CreateTransferError.exists_with_different_credit_account_id ) {
-            return {
-              type: PrepareResultType.MODIFIED
-            }
+          error === CreateTransferError.exists_with_different_debit_account_id ||
+          error === CreateTransferError.exists_with_different_credit_account_id) {
+          return {
+            type: PrepareResultType.MODIFIED
+          }
         }
 
         /**
@@ -584,7 +584,7 @@ export default class TigerBeetleLedger implements Ledger {
             transferId: input.payload.transferId
           })
 
-          switch(lookupTransferResult.type) {
+          switch (lookupTransferResult.type) {
             case LookupTransferResultType.FOUND_NON_FINAL: {
               return {
                 type: PrepareResultType.DUPLICATE_NON_FINAL
@@ -640,6 +640,43 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
+  private async abort(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
+    assert(input.action === Enum.Events.Event.Action.ABORT)
+
+    const prepareId = TigerBeetleLedger.fromMojaloopId(input.transferId)
+    const transfer: Transfer = {
+      id: id(),
+      debit_account_id: 0n,
+      credit_account_id: 0n,
+      amount: 0n,
+      pending_id: prepareId,
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      timeout: 0,
+      ledger: LedgerIdUSD,
+      code: 1,
+      flags: TransferFlags.void_pending_transfer,
+      timestamp: 0n
+    }
+    const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
+    if (error) {
+      const readableError = CreateTransferError[error]
+      return {
+        type: FulfilResultType.FAIL_OTHER,
+        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+          `failed to abort transfer with error: ${readableError}`
+        )
+      }
+    }
+
+    return {
+      type: FulfilResultType.PASS
+    }
+
+  }
+
   // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able 
   // to read multiple messages from Kafka at the same point.
   public async fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
@@ -650,7 +687,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     if (input.action === Enum.Events.Event.Action.ABORT) {
-      throw new Error(`not implemented`)
+      return this.abort(input)
     }
 
     try {

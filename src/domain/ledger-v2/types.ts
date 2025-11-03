@@ -150,7 +150,8 @@ export enum PrepareResultType {
 
 export enum FulfilResultType {
   /**
-   * Fulfil step completed validation
+   * Fulfil step completed validation. Transfer was either fulfilled succesfully or aborted 
+   * sucessfully
    */
   PASS = 'PASS',
 
