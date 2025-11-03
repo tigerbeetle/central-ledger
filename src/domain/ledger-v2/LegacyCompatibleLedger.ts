@@ -130,11 +130,13 @@ export interface LegacyCompatibleLedgerDependencies {
     validateParticipantTransferId: (participantName: string, transferId: string) => Promise<boolean>;
     validateFulfilCondition: (fulfilment: string, condition: string) => boolean;
     validationReasons: string[];
-    handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any) => Promise<TransformredTransfer>;
+    handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any, fspiopError?: any) => Promise<TransformredTransfer>;
     getTransferById: (transferId: string) => Promise<TransferReadModel | null>;
     getTransferInfoToChangePosition: (transferId: string, roleType: any, entryType: any) => Promise<TransferParticipantInfo | null>;
     getTransferFulfilmentDuplicateCheck: any;
     saveTransferFulfilmentDuplicateCheck: any;
+    getTransferErrorDuplicateCheck: any;
+    saveTransferErrorDuplicateCheck: any;
     transformTransferToFulfil: (transfer: any, isFx: boolean) => any;
     duplicateCheckComparator: (transferId: string, payload: any, getCheck: any, saveCheck: any) => Promise<any>;
     checkDuplication: (args: {
@@ -609,8 +611,9 @@ export default class LegacyCompatibleLedger implements Ledger {
     const { payload, transferId, headers } = input;
     logger.debug(`fulfil() - transferId: ${transferId}`)
 
+    // Handle ABORT action separately
     if (input.action === Enum.Events.Event.Action.ABORT) {
-      throw new Error(`not implemented`)
+      return await this.handleAbort(input);
     }
 
     try {
@@ -712,6 +715,148 @@ export default class LegacyCompatibleLedger implements Ledger {
       return {
         type: FulfilResultType.FAIL_OTHER,
         fspiopError: error
+      }
+    }
+  }
+
+  /**
+   * Handle abort/error message for a transfer
+   * This reverses the position changes made during prepare
+   */
+  private async handleAbort(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
+    const { payload, transferId } = input;
+    logger.debug(`handleAbort() - transferId: ${transferId}`)
+
+    // Basic validation - ensure sender exists
+    try {
+      assert(input)
+      assert(input.message)
+      assert(input.message.value)
+      assert(input.message.value.from)
+      assert(payload)
+
+      const { message: { value: { from } } } = input;
+      if (!await this.deps.clearing.validateParticipantByName(from)) {
+        return {
+          type: FulfilResultType.FAIL_VALIDATION,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            'Participant not found'
+          )
+        }
+      }
+
+      // Check for duplicate abort messages
+      const duplicateResult = await this.checkAbortDuplicate(payload, transferId);
+      switch (duplicateResult) {
+        case FulfilDuplicateResult.DUPLICATED: {
+          return {
+            type: FulfilResultType.DUPLICATE_FINAL
+          }
+        }
+        case FulfilDuplicateResult.MODIFIED: {
+          return {
+            type: FulfilResultType.FAIL_OTHER,
+            fspiopError: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST,
+              'Transfer abort has been modified'
+            ),
+          }
+        }
+        case FulfilDuplicateResult.UNIQUE:
+        default: { }
+      }
+
+      // Extract and validate error information from payload
+      let fspiopError: ErrorHandler.FSPIOPError;
+      const errorInfo = (payload as any).errorInformation;
+      if (!errorInfo) {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            'missing error information in callback'
+          ),
+        }
+      }
+      fspiopError = ErrorHandler.Factory.createFSPIOPErrorFromErrorInformation(errorInfo);
+
+      // Save the abort response
+      await this.deps.clearing.handlePayeeResponse(
+        transferId,
+        payload,
+        input.action,
+        fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING)
+      );
+
+      // Process position abort (reversal)
+      logger.info(`Processing position reversal for transfer: ${transferId}`);
+      // Get transfer info to change position for PAYER (we're reversing the prepare)
+      const transferInfo = await this.deps.clearing.getTransferInfoToChangePosition(
+        transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      // Get participant currency info for payer
+      const participantCurrency = await this.deps.clearing.getByIDAndCurrency(
+        transferInfo.participantId,
+        transferInfo.currencyId,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // Validate transfer state - must be in a reserved state to abort
+      const validAbortStates = [
+        Enum.Transfers.TransferInternalState.RESERVED,
+        Enum.Transfers.TransferInternalState.RESERVED_FORWARDED,
+        Enum.Transfers.TransferInternalState.RECEIVED_ERROR
+      ];
+
+      if (!validAbortStates.includes(transferInfo.transferStateId)) {
+        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Invalid State for abort: ${transferInfo.transferStateId}`
+        );
+
+        logger.error(`Position abort validation failed - invalid state for transfer: ${transferId}`, {
+          currentState: transferInfo.transferStateId,
+          validStates: validAbortStates
+        });
+
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          fspiopError
+        }
+      }
+
+      logger.info(`Position abort validation passed for transfer: ${transferId}`);
+
+      // Change participant position (IS a reversal for abort - releases reserved funds)
+      const isReversal = true;
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferInternalState.ABORTED_ERROR
+      };
+
+      await this.deps.clearing.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      logger.info(`Position abort processed successfully for transfer: ${transferId}`, {
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount
+      });
+
+      return {
+        type: FulfilResultType.PASS
+      }
+      
+    } catch (err) {
+      return {
+        type: FulfilResultType.FAIL_OTHER,
+        fspiopError: err
       }
     }
   }
@@ -850,6 +995,25 @@ export default class LegacyCompatibleLedger implements Ledger {
       payload,
       this.deps.clearing.getTransferFulfilmentDuplicateCheck,
       this.deps.clearing.saveTransferFulfilmentDuplicateCheck
+    )
+
+    if (checkDuplicateResult.hasDuplicateHash && checkDuplicateResult.hasDuplicateId) {
+      return FulfilDuplicateResult.DUPLICATED
+    }
+
+    if (checkDuplicateResult.hasDuplicateId && !checkDuplicateResult.hasDuplicateHash) {
+      return FulfilDuplicateResult.MODIFIED
+    }
+
+    return FulfilDuplicateResult.UNIQUE
+  }
+
+  private async checkAbortDuplicate(payload: any, transferId: string): Promise<FulfilDuplicateResult> {
+    const checkDuplicateResult = await this.deps.clearing.duplicateCheckComparator(
+      transferId,
+      payload,
+      this.deps.clearing.getTransferErrorDuplicateCheck,
+      this.deps.clearing.saveTransferErrorDuplicateCheck
     )
 
     if (checkDuplicateResult.hasDuplicateHash && checkDuplicateResult.hasDuplicateId) {

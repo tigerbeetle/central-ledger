@@ -127,6 +127,8 @@ describe('LegacyCompatibleLedger', () => {
           getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
           getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
           saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
+          getTransferErrorDuplicateCheck: TransferService.getTransferErrorDuplicateCheck,
+          saveTransferErrorDuplicateCheck: TransferService.saveTransferErrorDuplicateCheck,
           transformTransferToFulfil: TransferObjectTransform.toFulfil,
           duplicateCheckComparator: Comparators.duplicateCheckComparator,
           checkDuplication: prepareModule.checkDuplication,

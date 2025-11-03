@@ -31,6 +31,7 @@ import {
   PrepareResult,
   PrepareResultType
 } from "./types";
+import { Enum } from '@mojaloop/central-services-shared';
 
 export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
@@ -646,6 +647,10 @@ export default class TigerBeetleLedger implements Ledger {
       return {
         type: FulfilResultType.PASS
       }
+    }
+
+    if (input.action === Enum.Events.Event.Action.ABORT) {
+      throw new Error(`not implemented`)
     }
 
     try {

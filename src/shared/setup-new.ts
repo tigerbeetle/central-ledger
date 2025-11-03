@@ -321,6 +321,8 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
       getTransferInfoToChangePosition: TransferService.getTransferInfoToChangePosition,
       getTransferFulfilmentDuplicateCheck: TransferService.getTransferFulfilmentDuplicateCheck,
       saveTransferFulfilmentDuplicateCheck: TransferService.saveTransferFulfilmentDuplicateCheck,
+      getTransferErrorDuplicateCheck: TransferService.getTransferErrorDuplicateCheck,
+      saveTransferErrorDuplicateCheck: TransferService.saveTransferErrorDuplicateCheck,
 
       // Utility functions (flattened from nested objects)
       transformTransferToFulfil: TransferObjectTransform.toFulfil,
