@@ -15,6 +15,7 @@ import {
   LookupTransferQueryResponse,
   NetDebitCapResponse,
   PrepareResult,
+  SweepResult,
 } from './types'
 
 /**
@@ -52,6 +53,12 @@ export interface Ledger {
    */
   fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult>;
 
+  /**
+   * @method sweepTimedOut
+   * @description Looks through the ledger timed out transfers. Once a transfer has been swept,
+   *  it will not be returned again with sweepForTimedOutTransfers()
+   */
+  sweepTimedOut(): Promise<SweepResult>;
 
   /**
    * @method lookupTransfer

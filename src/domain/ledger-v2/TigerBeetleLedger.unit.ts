@@ -18,4 +18,15 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, 'PASS')
     })
   })
+
+  describe('id mapping', () => {
+    it('maps from a mojaloop uuid to a tigerbeetle bigint id and back again', () => {
+      const source = `4f73c4b8-6f4a-4321-a3eb-a972d0caab69`
+      const tigerBeetleId = TigerBeetleLedger.fromMojaloopId(source)
+      assert(tigerBeetleId === 105610115770446691108652388357673495401n)
+
+      const mojaloopId = TigerBeetleLedger.toMojaloopId(tigerBeetleId)
+      assert(source === mojaloopId)
+    })
+  })
 })

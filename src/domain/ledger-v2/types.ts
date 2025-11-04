@@ -242,6 +242,39 @@ export interface FulfilResultFailOther {
   fspiopError: FSPIOPError,
 }
 
+export type SweepResult = SweepResultSuccess
+  | SweepResultFailure
+
+export interface TimedOutTransfer {
+  id: string,
+  payeeId: string,
+  payerId: string,
+}
+
+export interface SweepResultSuccess {
+  type: 'SUCCESS'
+  transfers: Array<TimedOutTransfer>
+}
+
+export interface SweepResultFailure {
+  type: 'FAILURE'
+  error: Error
+}
+
+export interface FulfilResultDuplicateFinal {
+  type: FulfilResultType.DUPLICATE_FINAL,
+}
+
+export interface FulfilResultFailValidation {
+  type: FulfilResultType.FAIL_VALIDATION,
+  fspiopError: FSPIOPError,
+}
+
+export interface FulfilResultFailOther {
+  type: FulfilResultType.FAIL_OTHER,
+  fspiopError: FSPIOPError,
+}
+
 
 export interface CreateHubAccountCommand {
   currency: string,

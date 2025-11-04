@@ -6,10 +6,45 @@ import * as EventSdk from '@mojaloop/event-sdk';
 
 const { resourceVersions } = Util;
 
+export interface TimeoutSegment {
+  value: number;
+  segmentId: number;
+}
+
+export interface LatestTransferStateChange {
+  transferStateChangeId: string;
+}
+
+export interface LatestFxTransferStateChange {
+  fxTransferStateChangeId: string;
+}
+
+export interface TimeoutExpireReservedResult {
+  transferTimeoutList: TimedOutTransfer[] | null;
+  fxTransferTimeoutList: TimedOutFxTransfer[] | null;
+}
+
+export interface ITimeoutService {
+  getTimeoutSegment: () => Promise<TimeoutSegment | null>;
+  cleanupTransferTimeout: () => Promise<any>;
+  getLatestTransferStateChange: () => Promise<LatestTransferStateChange | null>;
+  getFxTimeoutSegment: () => Promise<TimeoutSegment | null>;
+  cleanupFxTransferTimeout: () => Promise<any>;
+  getLatestFxTransferStateChange: () => Promise<LatestFxTransferStateChange | null>;
+  timeoutExpireReserved: (
+    segmentId: number,
+    intervalMin: number,
+    intervalMax: number,
+    fxSegmentId: number,
+    fxIntervalMin: number,
+    fxIntervalMax: number
+  ) => Promise<TimeoutExpireReservedResult>;
+}
+
 export interface TimeoutHandlerDependencies {
   notificationProducer: INotificationProducer;
   config: any;
-  timeoutService: any;
+  timeoutService: ITimeoutService;
   distLock?: any;
   transferService: any;
   participantFacade: any;

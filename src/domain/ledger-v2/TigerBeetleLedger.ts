@@ -4,7 +4,7 @@ import Crypto from 'node:crypto';
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { ApplicationConfig } from "src/shared/config";
-import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, Transfer, TransferFlags } from 'tigerbeetle-node';
+import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { Ledger } from "./Ledger";
@@ -29,7 +29,9 @@ import {
   LookupTransferResultType,
   NetDebitCapResponse,
   PrepareResult,
-  PrepareResultType
+  PrepareResultType,
+  SweepResult,
+  TimedOutTransfer
 } from "./types";
 import { Enum } from '@mojaloop/central-services-shared';
 
@@ -46,6 +48,10 @@ export interface TigerBeetleLedgerDependencies {
 
 // reserved for USD
 export const LedgerIdUSD = 100
+export const LedgerIdTimeoutHandler = 9000
+
+// 1 second = 1,000,000,000 nanoseconds (1 billion)
+const NS_PER_SECOND = 1_000_000_000n
 
 export enum AccountType {
   Collateral = 1,
@@ -65,6 +71,19 @@ interface InterledgerValidationFail {
 
 export type InterledgerValidationResult = InterledgerValidationPass
   | InterledgerValidationFail
+
+
+interface TransferMetadata {
+  /**
+   * Mojaloop id (uuid)
+   */
+  id: string
+  payeeId: string,
+  payerId: string,
+  condition: string,
+  fulfilment?: string,
+
+}
 
 export default class TigerBeetleLedger implements Ledger {
   constructor(private deps: TigerBeetleLedgerDependencies) {
@@ -351,7 +370,7 @@ export default class TigerBeetleLedger implements Ledger {
         type: 'FAILURE',
         fspiopError: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-            `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+          `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
               dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
         )
       }
@@ -674,7 +693,6 @@ export default class TigerBeetleLedger implements Ledger {
     return {
       type: FulfilResultType.PASS
     }
-
   }
 
   // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able 
@@ -865,6 +883,272 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
+
+  /**
+   * @description Looks up a list of transfers that have timed out.
+   * 
+   * 
+   */
+  public async sweepTimedOut(): Promise<SweepResult> {
+    const MAX_TRANSFERS_IN_PAGE = 8000
+    const MAX_PAGES = 10
+
+    try {
+      const bookmarkQuery: QueryFilter = {
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        ledger: LedgerIdTimeoutHandler,
+        code: 0,
+        timestamp_min: 0n,
+        timestamp_max: 0n,
+        limit: 10,
+        flags: QueryFilterFlags.reversed
+      }
+      let bookmarkTransfers = await this.deps.client.queryTransfers(bookmarkQuery)
+      if (bookmarkTransfers.length === 0) {
+        logger.debug(`sweepTimedOut - no opening bookmark found. creating one now.`)
+        // No bookmark transfers exist yet - create one now starting at time=0
+        await this.createOpeningBookmarkTransfer()
+
+        bookmarkTransfers = await this.deps.client.queryTransfers(bookmarkQuery)
+        if (bookmarkTransfers.length === 0) {
+          throw new Error(`sweepTimedOut() - failed, found no bookmark entries even after creating the opening bookmark.`)
+        }
+      }
+      const openingBookmark = bookmarkTransfers[0]
+      // TODO: make sure that the latest bookmark is actually the latest!
+      const openingBookmarkTimestamp = openingBookmark.user_data_64
+      logger.debug(`sweepTimedOut - openingBookmarkTimestamp: ${openingBookmarkTimestamp} `)
+
+      const transfersQuery: QueryFilter = {
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        ledger: LedgerIdTimeoutHandler,
+        code: 1,
+        timestamp_min: openingBookmarkTimestamp,
+        timestamp_max: 0n,
+        limit: MAX_TRANSFERS_IN_PAGE,
+        flags: QueryFilterFlags.reversed
+      }
+      const transfers = await this.deps.client.queryTransfers(transfersQuery)
+      if (transfers.length === MAX_TRANSFERS_IN_PAGE) {
+        // TODO: need to repeat and page, put them into a big list!
+      }
+
+      logger.debug(`sweepTimedOut - found ${transfers.length} transfers since ${openingBookmarkTimestamp}`)
+
+      // now that we have all transfers, or when we reach the limit
+      const maybeTimedOutTransfers: { [Key: string]: Transfer } = {}
+      const postedAndVoidedTransferIds: { [Key: string]: true } = {}
+      transfers.forEach(transfer => {
+        if (transfer.flags & TransferFlags.pending) {
+          maybeTimedOutTransfers[`${transfer.id}`] = transfer
+          return
+        }
+
+        if (transfer.flags & TransferFlags.post_pending_transfer ||
+          transfer.flags & TransferFlags.void_pending_transfer) {
+          assert(transfer.pending_id, 'expected post_pending or void_pending transfer to have a pending_id')
+          postedAndVoidedTransferIds[`${transfer.pending_id}`] = true
+          return
+        }
+      })
+
+      logger.debug(`sweepTimedOut - filtering out ${Object.keys(postedAndVoidedTransferIds).length} posted and voided transfers.`)
+
+      // Remove the transfers that were posted or voided from the maybeTimedOutTransfers set
+      Object.keys(postedAndVoidedTransferIds).forEach(key => {
+        delete maybeTimedOutTransfers[key]
+      })
+
+      // Remove the in flight transfers from the maybeTimedOutTransfers set
+
+      // TODO(LD): Ideally we could get the cluster time here, because if the server time has drifted
+      // too far, we might be filtering transfers out that have already timed out.
+      const nowNs = BigInt(new Date().getTime()) * 1_000_000n
+      Object.keys(maybeTimedOutTransfers).forEach(key => {
+        const transfer = maybeTimedOutTransfers[key]
+        const timeoutNs = BigInt(transfer.timeout) * NS_PER_SECOND
+        if ((transfer.timestamp + timeoutNs) > nowNs) {
+          delete maybeTimedOutTransfers[key]
+        }
+      })
+
+      const timedOutTransfers = Object.values(maybeTimedOutTransfers)
+      if (timedOutTransfers.length === 0) {
+        logger.debug(`sweepTimedOut - found no timed out transfers. Returning.`)
+
+        return {
+          type: 'SUCCESS',
+          transfers: []
+        }
+      }
+
+      logger.debug(`sweepTimedOut - found ${timedOutTransfers.length} timed out transfers`)
+
+      // Lookup the metadata for each transfer from the metadata database. If this fails, throw an error.
+      const metadata = await this.lookupTransfersMetadata(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
+      assert(metadata.length === timedOutTransfers.length, `lookupMetadata is missing entries. Expected: ${timedOutTransfers.length}, but got ${metadata.length}`)
+
+      const transfersWithMetadata: Array<TimedOutTransfer> = []
+      metadata.forEach(metadata => {
+        transfersWithMetadata.push({
+          id: metadata.id,
+          payerId: metadata.payerId,
+          payeeId: metadata.payeeId,
+        })
+      })
+
+      // Now we can close the opening bookmark, and set a new bookmark to the time that we just 
+      // swept. We do so atomically to make sure that no other racing timeouts have called 
+      // sweepTimedOut() and already swept the timed out transfers.
+      const lastTimedOutTransfer = timedOutTransfers[timedOutTransfers.length - 1]
+      assert(lastTimedOutTransfer)
+      const newOpeningTimestamp = lastTimedOutTransfer.timestamp + 1n
+
+      const atomicBookmarks: Array<Transfer> = [
+        // Close the last bookmark
+        {
+          id: id(),
+          debit_account_id: 1000n,
+          credit_account_id: 1001n,
+          amount: 0n,
+          pending_id: openingBookmark.id,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          timeout: 0,
+          ledger: LedgerIdTimeoutHandler,
+          code: 9000,
+          flags: TransferFlags.void_pending_transfer | TransferFlags.linked,
+          timestamp: 0n
+        },
+        // Open a new bookmark
+        {
+          id: id(),
+          debit_account_id: 1000n,
+          credit_account_id: 1001n,
+          amount: 0n,
+          pending_id: openingBookmark.id,
+          user_data_128: 0n,
+          user_data_64: newOpeningTimestamp,
+          user_data_32: 0,
+          timeout: 0,
+          ledger: LedgerIdTimeoutHandler,
+          code: 9000,
+          flags: TransferFlags.pending,
+          timestamp: 0n
+        },
+      ]
+      const atomicBookmarkErrors = await this.deps.client.createTransfers(atomicBookmarks)
+
+      const fatalBookmarkErrors = []
+      for (const error of atomicBookmarkErrors) {
+        // If the error is `pending_transfer_already_voided`, then we know that this call of sweep() raced
+        // with another one!
+        fatalBookmarkErrors.push(CreateTransferError[error.result])
+      }
+
+      if (fatalBookmarkErrors.length > 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`sweepTimedOut() - encountered fatal error when closing and opening\n${fatalBookmarkErrors.join(',')}`)
+        }
+      }
+
+      return {
+        type: 'SUCCESS',
+        transfers:transfersWithMetadata
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  private async lookupTransfersMetadata(mojaloopIds: Array<string>): Promise<Array<TransferMetadata>> {
+    throw new Error('Not Implemented')
+  }
+
+  private async createOpeningBookmarkTransfer(): Promise<void> {
+    const bookmarkControlAcounts: Array<Account> = [
+      {
+        // TODO(LD): Find better account ids
+        id: 1000n,
+        debits_pending: 0n,
+        debits_posted: 0n,
+        credits_pending: 0n,
+        credits_posted: 0n,
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        reserved: 0,
+        ledger: 0,
+        code: 0,
+        flags: 0,
+        timestamp: 0n
+      },
+      {
+        id: 1001n,
+        debits_pending: 0n,
+        debits_posted: 0n,
+        credits_pending: 0n,
+        credits_posted: 0n,
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        reserved: 0,
+        ledger: 0,
+        code: 0,
+        flags: 0,
+        timestamp: 0n
+      },
+    ]
+    const createAccountsErrors = await this.deps.client.createAccounts(bookmarkControlAcounts)
+
+    const fatalAccountErrors = []
+    for (const error of createAccountsErrors) {
+      if (error.result === CreateAccountError.exists) {
+        continue
+      }
+
+      fatalAccountErrors.push(CreateAccountError[error.result])
+    }
+
+    if (fatalAccountErrors.length > 0) {
+      throw new Error(`createOpeningBookmarkTransfer() - encountered fatal error when creating bookmark control accounts\n${fatalAccountErrors.join(',')}`)
+    }
+
+    const openingBookmarkTransfer: Transfer = {
+      id: id(),
+      debit_account_id: 1000n,
+      credit_account_id: 1001n,
+      amount: 0n,
+      pending_id: 0n,
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      timeout: 0,
+      ledger: LedgerIdTimeoutHandler,
+      code: 9000,
+      flags: TransferFlags.pending,
+      timestamp: 0n
+    }
+    const createTransfersErrors = await this.deps.client.createTransfers([openingBookmarkTransfer])
+    const fatalTransferErrors = []
+    for (const error of createTransfersErrors) {
+      fatalTransferErrors.push(CreateTransferError[error.result])
+    }
+
+    if (fatalTransferErrors.length > 0) {
+      throw new Error(`createOpeningBookmarkTransfer() - encountered fatal error when creating opening bookmark\n${fatalTransferErrors.join(',')}`)
+    }
+  }
+
   /**
    * Settlement Methods
    */
@@ -887,6 +1171,19 @@ export default class TigerBeetleLedger implements Ledger {
 
     const hex = mojaloopId.replace(/-/g, '');
     return BigInt(`0x${hex}`);
+  }
+
+  public static toMojaloopId(id: bigint): string {
+    assert(id !== undefined && id !== null, 'id is required')
+
+    // Convert bigint to hex string (without 0x prefix)
+    let hex = id.toString(16);
+
+    // Pad to 32 characters (128 bits = 16 bytes = 32 hex chars)
+    hex = hex.padStart(32, '0');
+
+    // Insert dashes to create UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
   }
 
   /**
