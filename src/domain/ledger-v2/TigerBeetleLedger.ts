@@ -318,7 +318,10 @@ export default class TigerBeetleLedger implements Ledger {
     assert.strictEqual(createTransferErrors.length, 0)
 
     // Create the participant in the legacy system
-    // await this.deps.participantService.create({ name: cmd.dfspId })
+    // TODO: this is required when running properly, but causes problems in test
+    // indeed we should actually create the participant first before creating the account in 
+    // TigerBeetle
+    await this.deps.participantService.create({ name: cmd.dfspId })
 
     return {
       type: 'SUCCESS'
@@ -490,6 +493,7 @@ export default class TigerBeetleLedger implements Ledger {
   // a cache that gets broadcast to all fulfil handlers, or otherwise use Kafka keys to ensure that
   // the condition and fulfil end up on the same handler instance.
   public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
+    logger.debug('TigerBeetleLedger.prepare()')
     try {
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
         return {
@@ -553,7 +557,7 @@ export default class TigerBeetleLedger implements Ledger {
       // down. For now, let's be pessimistic and round down.
       const timeoutMs = expirationMs - nowMs
       assert(timeoutMs > 0)
-      const timeoutSeconds = Math.floor(timeoutMs/1000)
+      const timeoutSeconds = Math.floor(timeoutMs / 1000)
       if (timeoutSeconds === 0) {
         return {
           type: PrepareResultType.FAIL_OTHER,
@@ -580,12 +584,12 @@ export default class TigerBeetleLedger implements Ledger {
           ilpPacket: input.payload.ilpPacket
         }
       ])
-      
+
       /**
        * Dr Payer_Clearing
        *  Cr Payee_Clearing
        * Flags: pending
-       */      
+       */
       const transfer: Transfer = {
         id: prepareId,
         debit_account_id: payerMetadata.clearing,
@@ -632,9 +636,13 @@ export default class TigerBeetleLedger implements Ledger {
         /**
          * Pending Transfer has already been created.
          * 
+         * Note that because Mojaloop defines timeouts as expiration times, we can't guarantee that
+         * a timeout for a duplicate transfer will always be the same.
+         * 
          * Look up what it is, and map to a PrepareResultType
          */
-        if (error === CreateTransferError.exists) {
+        if (error === CreateTransferError.exists ||
+          error === CreateTransferError.exists_with_different_timeout) {
           const lookupTransferResult = await this.lookupTransfer({
             transferId: input.payload.transferId
           })
@@ -696,6 +704,7 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   private async abort(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
+    logger.debug('TigerBeetleLedger.abort()')
     assert(input.action === Enum.Events.Event.Action.ABORT)
 
     const prepareId = TigerBeetleLedger.fromMojaloopId(input.transferId)
@@ -734,6 +743,8 @@ export default class TigerBeetleLedger implements Ledger {
   // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able 
   // to read multiple messages from Kafka at the same point.
   public async fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
+    logger.debug('TigerBeetleLedger.fulfil()')
+
     if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
       return {
         type: FulfilResultType.PASS
@@ -745,15 +756,54 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     try {
+      // TODO: this SHOULD be in cache if we use the Kafka key partitioning properly. We should add
+      // some observability here to catch misconfiguration errors
+      const transferMetadataResults = await this.deps.metadataStore.lookupTransferMetadata([input.transferId])
+      assert(transferMetadataResults.length === 1, `expected transfer metadata for id: ${input.transferId}`)
+      const transferMetadata = transferMetadataResults[0]
+      assert(transferMetadata.type === 'TransferMetadata')
+
+      await this.deps.metadataStore.saveTransferMetadata([
+        {
+          ...transferMetadata,
+          fulfilment: input.payload.fulfilment,
+        }
+      ])
       const prepareId = TigerBeetleLedger.fromMojaloopId(input.transferId)
 
-      // TODO(LD): Validate that the fulfilment matches the condition
-      // for now, we're just putting this in here to simulate the peformance of doing this
-      // from a condition that is already in memory
-      const dummyFulfilment = 'V-IalzIzy-zxy0SrlY1Ku2OE9aS4KgGZ0W-Zq5_BeC0'
-      const dummyCondition = 'GIxd5xcohkmnnXolpTv_OxwpyaH__Oiq49JTvCo8pyA'
-      const fulfilmentAndConditionResult = TigerBeetleLedger.validateFulfilmentAndCondition(dummyFulfilment, dummyCondition)
+      // Validate that the fulfilment matches the condition
+      const fulfilmentAndConditionResult = TigerBeetleLedger.validateFulfilmentAndCondition(
+        input.payload.fulfilment, transferMetadata.condition
+      )
       if (fulfilmentAndConditionResult.type === 'FAIL') {
+        const transfer: Transfer = {
+          id: id(),
+          debit_account_id: 0n,
+          credit_account_id: 0n,
+          amount: amount_max,
+          pending_id: prepareId,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          timeout: 0,
+          ledger: LedgerIdUSD,
+          code: 1,
+          flags: TransferFlags.void_pending_transfer,
+          timestamp: 0n
+        }
+
+        const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
+        if (error) {
+          const readableError = CreateTransferError[error]
+          return {
+            type: FulfilResultType.FAIL_OTHER,
+            fspiopError: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+              `encountered unexpected error when voiding transfer after invalid fulfilment`
+            )
+          }
+        }
+
         return {
           type: FulfilResultType.FAIL_VALIDATION,
           fspiopError: ErrorHandler.Factory.createFSPIOPError(

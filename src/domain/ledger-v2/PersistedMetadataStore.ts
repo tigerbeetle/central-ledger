@@ -190,7 +190,6 @@ export class PersistedMetadataStore implements MetadataStore {
   }
 
   async saveTransferMetadata(metadata: Array<SaveTransferMetadataCommand>): Promise<Array<SaveTransferMetadataResult>> {
-
     try {
       const records: Array<TransferMetadataRecord> = metadata.map(m => {
         const record: TransferMetadataRecord = {
@@ -228,4 +227,19 @@ export class PersistedMetadataStore implements MetadataStore {
       })
     }
   }
+
+  // updateTransferMetadataFulfilment(transfersToUpdate: Array<{ id: string; fulfilment: string; }>): Promise<Array<SaveTransferMetadataResult>> {
+  //   try {
+  //    // TODO: 
+
+      
+  //   } catch (err) {
+  //     logger.error(`updateTransferMetadataFulfilment() - failed with error: ${err.message}`)
+  //     return transfersToUpdate.map(m => {
+  //       return {
+  //         type: 'FAILURE'
+  //       }
+  //     })
+  //   }
+  // }
 }

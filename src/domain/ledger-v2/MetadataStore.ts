@@ -75,4 +75,9 @@ export interface MetadataStore {
    * Saves the transfer metadata to the metadata store
    */
   saveTransferMetadata(metadata: Array<SaveTransferMetadataCommand>): Promise<Array<SaveTransferMetadataResult>>
+
+  // /**
+  //  * Update existing transfers, attaching the fulfilment
+  //  */
+  // updateTransferMetadataFulfilment(transfersToUpdate: Array<{id: string, fulfilment: string}>): Promise<Array<SaveTransferMetadataResult>>
 }

@@ -230,7 +230,6 @@ export default class LegacyCompatibleLedger implements Ledger {
         }
       }
 
-      // Convert to simplified result format (ignore fx for now)
       const simplifiedTransfers: TimedOutTransfer[] = transferTimeoutList && Array.isArray(transferTimeoutList)
         ? transferTimeoutList.map(tt => ({
             id: tt.transferId,
