@@ -25,36 +25,24 @@
  **********/
 
 exports.up = async (knex) => {
-  return knex.schema.hasTable('tigerBeetleAccountMetadata').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleTransferMetadata').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerBeetleAccountMetadata', (t) => {
-        t.bigIncrements('id').primary().notNullable()
-        t.string('dfspId', 256).notNullable()
-        t.string('currency', 3).notNullable()
-        t.string('collateralAccountId', 64).notNullable()
-        t.string('liquidityAccountId', 64).notNullable()
-        t.string('clearingAccountId', 64).notNullable()
-        t.string('settlementMultilateralAccountId', 64).notNullable()
-        t.boolean('isTombstoned').defaultTo(false).notNullable()
-        t.dateTime('createdDate').defaultTo(knex.fn.now()).notNullable()
-        t.dateTime('updatedDate').defaultTo(knex.fn.now()).notNullable()
-        
-        // Unique constraint for active (non-tombstoned) records
-        t.unique(['dfspId', 'currency', 'isTombstoned'])
-        
-        // Indexes for common queries
-        t.index('dfspId')
-        t.index('currency')
-        t.index(['dfspId', 'currency'])
+      return knex.schema.createTable('tigerBeetleTransferMetadata', (t) => {
+        t.string('id', 36).primary().notNullable()
+        t.string('payerId', 256).notNullable()
+        t.string('payeeId', 256).notNullable()
+        t.string('ilpCondition', 256).notNullable()
+        t.text('ilpPacket').notNullable()
+        t.string('fulfilment', 256)
       })
     }
   })
 }
 
 exports.down = function (knex) {
-  return knex.schema.hasTable('tigerBeetleAccountMetadata').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleTransferMetadata').then(function (exists) {
     if (exists) {
-      return knex.schema.dropTableIfExists('tigerBeetleAccountMetadata')
+      return knex.schema.dropTableIfExists('tigerBeetleTransferMetadata')
     }
   })
 }

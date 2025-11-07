@@ -73,18 +73,6 @@ export type InterledgerValidationResult = InterledgerValidationPass
   | InterledgerValidationFail
 
 
-interface TransferMetadata {
-  /**
-   * Mojaloop id (uuid)
-   */
-  id: string
-  payeeId: string,
-  payerId: string,
-  condition: string,
-  fulfilment?: string,
-
-}
-
 export default class TigerBeetleLedger implements Ledger {
   constructor(private deps: TigerBeetleLedgerDependencies) {
 
@@ -854,13 +842,34 @@ export default class TigerBeetleLedger implements Ledger {
 
     if (finalTransfer.flags & TransferFlags.post_pending_transfer) {
       const committedTime = convertBigIntToNumber(finalTransfer.timestamp / 1_000_000n)
-      logger.warn(`TODO(LD) - We are missing the fulfillment here, need to look it up in transfer metadata store.`)
+      const transferMetadata = await this.deps.metadataStore.lookupTransferMetadata([query.transferId])
+      assert(transferMetadata.length === 1, 'expected exactly one transferMetadata result')
+
+      const foundMetadata = transferMetadata[0]
+      if (foundMetadata.type === 'TransferMetadataNone') {
+        return {
+          type: LookupTransferResultType.FAILED,
+          fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+            `missing transfer metadata for finalized transferId: ${query.transferId}`
+          )
+        }
+      }
+      
+      if (!foundMetadata.fulfilment) {
+        return {
+          type: LookupTransferResultType.FAILED,
+          fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+            `missing metadata.fulfilment for finalized transferId: ${query.transferId}`
+          )
+        }
+      }
+
       return {
         type: LookupTransferResultType.FOUND_FINAL,
         finalizedTransfer: {
           completedTimestamp: (new Date(committedTime)).toISOString(),
-          transferState: "COMMITTED"
-          // TODO: need to lookup the fulfilment from the transfer metadata database
+          transferState: "COMMITTED",
+          fulfilment: foundMetadata.fulfilment
         }
       }
     } else if (finalTransfer.flags & TransferFlags.void_pending_transfer) {
@@ -989,11 +998,14 @@ export default class TigerBeetleLedger implements Ledger {
       logger.debug(`sweepTimedOut - found ${timedOutTransfers.length} timed out transfers`)
 
       // Lookup the metadata for each transfer from the metadata database. If this fails, throw an error.
-      const metadata = await this.lookupTransfersMetadata(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
-      assert(metadata.length === timedOutTransfers.length, `lookupMetadata is missing entries. Expected: ${timedOutTransfers.length}, but got ${metadata.length}`)
+      // const metadata = await this.lookupTransfersMetadata(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
+      const metadata = await this.deps.metadataStore.lookupTransferMetadata(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
+      const missingMetadata = metadata.filter(m => m.type === 'TransferMetadataNone')
+      assert(missingMetadata.length === 0, `lookupTransferMetadata() missing ${missingMetadata.length} entries`)
+      const foundMetadata = metadata.filter(m => m.type === 'TransferMetadata')
 
       const transfersWithMetadata: Array<TimedOutTransfer> = []
-      metadata.forEach(metadata => {
+      foundMetadata.forEach(metadata => {
         transfersWithMetadata.push({
           id: metadata.id,
           payerId: metadata.payerId,
@@ -1068,10 +1080,6 @@ export default class TigerBeetleLedger implements Ledger {
         error: err
       }
     }
-  }
-
-  private async lookupTransfersMetadata(mojaloopIds: Array<string>): Promise<Array<TransferMetadata>> {
-    throw new Error('Not Implemented')
   }
 
   private async createOpeningBookmarkTransfer(): Promise<void> {

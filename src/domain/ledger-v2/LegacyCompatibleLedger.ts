@@ -31,6 +31,7 @@ import {
   PayeeResponsePayload,
   PrepareResult,
   PrepareResultType,
+  SweepResult,
   TransferParticipantInfo,
   TransferReadModel,
   TransferStateChange,
@@ -184,6 +185,9 @@ export interface LegacyCompatibleLedgerDependencies {
 export default class LegacyCompatibleLedger implements Ledger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) {
 
+  }
+  sweepTimedOut(): Promise<SweepResult> {
+    throw new Error('Method not implemented.');
   }
 
 

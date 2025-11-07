@@ -15,6 +15,31 @@ export interface DfspAccountMetadataNone {
   type: 'DfspAccountMetadataNone'
 }
 
+export interface TransferMetadata {
+  type: 'TransferMetadata'
+  id: string,
+  payerId: string,
+  payeeId: string,
+  condition: string,
+  ilpPacket: string,
+  fulfilment?: string
+}
+
+export interface TransferMetadataNone {
+  type: 'TransferMetadataNone'
+  id: string
+}
+
+export interface SaveTransferMetadataResultSuccess {
+  type: 'SUCCESS'
+}
+
+export interface SaveTransferMetadataResultFailure {
+  type: 'FAILURE'
+}
+
+export type SaveTransferMetadataResult = SaveTransferMetadataResultSuccess | SaveTransferMetadataResultFailure
+
 export interface MetadataStore {
 
   /**
@@ -37,4 +62,15 @@ export interface MetadataStore {
   // 1. transfer conditions (for validating the fulfil stage)
   // 2. Some subset of the payloads, so we can implement the GET -> PUT for duplicate requests
   // 3. What else? Need to scour
+
+  /**
+   * Looks up the transfer metadata for a given set of Mojaloop Ids. Always returns the transfers 
+   * in the order they are given.
+   */
+  lookupTransferMetadata(ids: Array<string>): Promise<Array<TransferMetadata | TransferMetadataNone>>
+
+  /**
+   * Saves the transfer metadata to the metadata store
+   */
+  saveTransferMetadata(metadata: Array<TransferMetadata>): Promise<Array<SaveTransferMetadataResult>>
 }
