@@ -151,11 +151,11 @@ describe('TigerBeetleLedger', () => {
   });
 
   describe('timeout handling', () => {
-    const transferId = randomUUID()
-    const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
-    const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+    it('prepares a transfer, waits for timeout, and sweeps', async () => {
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
 
-    it.only('prepares a transfer, waits for timeout, and sweeps', async () => {
       // Arrange
        const payload: CreateTransferDto = {
         transferId,
@@ -182,11 +182,46 @@ describe('TigerBeetleLedger', () => {
       assert(sweepResult.type === 'SUCCESS')
       const ids = sweepResult.transfers.map(t => t.id)
       assert(ids.includes(transferId))
-      
+    })
+
+    it('once a transfer is swept, it cannot be swept again', async () => {
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Arrange
+       const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: {
+          amount: '100',
+          currency: 'USD'
+        },
+        ilpPacket,
+        condition,
+        // 1 second expiry
+        expiration: new Date(Date.now() + 1050).toISOString()
+      };
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
+      const prepareResult = await ledger.prepare(input)
+      assert(prepareResult.type === PrepareResultType.PASS)
+
+      // Act
+      await TestUtils.sleep(1500) // wait for TigerBeetle to timeout the transfer
+      const sweepResultA = await ledger.sweepTimedOut()
+      const sweepResultB = await ledger.sweepTimedOut()
+
+      // Assert
+      assert(sweepResultA.type === 'SUCCESS')
+      const ids = sweepResultA.transfers.map(t => t.id)
+      assert(ids.includes(transferId))
+      assert(sweepResultB.type === 'SUCCESS')
+      assert(sweepResultB.transfers.length === 0)
     })
   })
 
-  describe.skip('happy path prepare and fulfill', () => {
+  describe('happy path prepare and fulfill', () => {
     const transferId = randomUUID()
     const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
     const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)

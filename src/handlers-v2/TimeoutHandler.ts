@@ -1,8 +1,10 @@
-import { INotificationProducer, IPositionProducer } from '../messaging/types';
+import { INotificationProducer } from '../messaging/types';
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { logger } from '../shared/logger';
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import * as EventSdk from '@mojaloop/event-sdk';
+import { ApplicationConfig } from '../shared/config';
+import { Ledger } from 'src/domain/ledger-v2/Ledger';
 
 const { resourceVersions } = Util;
 
@@ -43,8 +45,12 @@ export interface ITimeoutService {
 
 export interface TimeoutHandlerDependencies {
   notificationProducer: INotificationProducer;
-  config: any;
+  config: ApplicationConfig;
   timeoutService: ITimeoutService;
+  ledger: Ledger;
+  constants: {
+
+  },
   distLock?: any;
   transferService: any;
   participantFacade: any;
@@ -376,7 +382,7 @@ export class TimeoutHandler {
   private async acquireLock(): Promise<boolean> {
     if (this.deps.distLock) {
       try {
-        const distLockKey = this.deps.config.TIMEOUT_HANDLER_DIST_LOCK_KEY;
+        const distLockKey = this.deps.config.HANDLERS_TIMEOUT.DIST_LOCK.distLockKey || 'mutex:cl-timeout-handler';
         const distLockTtl = this.deps.config.HANDLERS_TIMEOUT?.DIST_LOCK?.lockTimeout || 10000;
         const distLockAcquireTimeout = this.deps.config.HANDLERS_TIMEOUT?.DIST_LOCK?.acquireTimeout || 5000;
         

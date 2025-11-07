@@ -220,6 +220,11 @@ export interface ApplicationConfig {
   },
   HANDLERS_API_DISABLED: boolean,
   HANDLERS_TIMEOUT: {
+    DIST_LOCK: {
+      distLockKey: string,
+      lockTimeout: number,
+      acquireTimeout: number,
+    }
     DISABLED: boolean,
     TIMEXP: string,
     TIMEZONE: string,

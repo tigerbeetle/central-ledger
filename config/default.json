@@ -51,6 +51,7 @@
       "TIMEXP": "*/15 * * * * *",
       "TIMEZONE": "UTC",
       "DIST_LOCK": {
+        "distLockKey": "mutex:cl-timeout-handler",
         "enabled": false,
         "lockTimeout": 10000,
         "acquireTimeout": 5000,

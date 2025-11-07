@@ -7,7 +7,6 @@ import { CreateTransferDto } from './types';
 import { ApplicationConfig } from '../shared/config';
 import { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from '../domain/ledger-v2/types';
 import { Ledger } from '../domain/ledger-v2/Ledger';
-import { getServers } from 'dns';
 
 
 const { decodePayload } = Util.StreamingProtocol
