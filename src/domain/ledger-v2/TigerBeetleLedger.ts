@@ -318,7 +318,7 @@ export default class TigerBeetleLedger implements Ledger {
     assert.strictEqual(createTransferErrors.length, 0)
 
     // Create the participant in the legacy system
-    await this.deps.participantService.create({ name: cmd.dfspId })
+    // await this.deps.participantService.create({ name: cmd.dfspId })
 
     return {
       type: 'SUCCESS'
@@ -502,6 +502,7 @@ export default class TigerBeetleLedger implements Ledger {
       const payer = input.payload.payerFsp
       const payee = input.payload.payeeFsp
 
+      // TODO(LD): switch the interface to array based!
       const payerMetadata = await this.deps.metadataStore.getDfspAccountMetadata(payer, currency)
       if (payerMetadata.type === 'DfspAccountMetadataNone') {
         return {
@@ -526,6 +527,60 @@ export default class TigerBeetleLedger implements Ledger {
       const prepareId = TigerBeetleLedger.fromMojaloopId(input.payload.transferId)
       const amount = TigerBeetleLedger.fromMojaloopAmount(amountStr, 2)
 
+      const nowMs = (new Date()).getTime()
+      const expirationMs = Date.parse(input.payload.expiration)
+      if (isNaN(expirationMs)) {
+        return {
+          type: PrepareResultType.FAIL_OTHER,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `invalid transfer expiration`
+          ),
+        }
+      }
+
+      if (nowMs > expirationMs) {
+        return {
+          type: PrepareResultType.FAIL_OTHER,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `expiration date already in the past`
+          ),
+        }
+      }
+
+      // TigerBeetle timeouts are specified in seconds. I'm not sure if we should round this up or
+      // down. For now, let's be pessimistic and round down.
+      const timeoutMs = expirationMs - nowMs
+      assert(timeoutMs > 0)
+      const timeoutSeconds = Math.floor(timeoutMs/1000)
+      if (timeoutSeconds === 0) {
+        return {
+          type: PrepareResultType.FAIL_OTHER,
+          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `transfer expiry must be one or more seconds in the future.`
+          ),
+        }
+      }
+      logger.warn(`prepare() - rounding down derived transfer timeout of ${timeoutMs} to ${timeoutSeconds * 1000}`)
+
+
+      /**
+       * Write Last, Read First Rule
+       * We write data dependencies first, then write to TigerBeetle
+       * reference: https://tigerbeetle.com/blog/2025-11-06-the-write-last-read-first-rule/
+       */
+      await this.deps.metadataStore.saveTransferMetadata([
+        {
+          id: input.payload.transferId,
+          payerId: input.payload.payerFsp,
+          payeeId: input.payload.payeeFsp,
+          condition: input.payload.condition,
+          ilpPacket: input.payload.ilpPacket
+        }
+      ])
+      
       /**
        * Dr Payer_Clearing
        *  Cr Payee_Clearing
@@ -535,7 +590,7 @@ export default class TigerBeetleLedger implements Ledger {
       // TODO(LD): The issue with this chart of account design is that for a net-receiver of funds
       // DFSP, they will end up being over their net debit cap, and funds need to be moved out of 
       // the Clearing account back to the Liquidity account. But we can come back to this later.
-
+      
       const transfer: Transfer = {
         id: prepareId,
         debit_account_id: payerMetadata.clearing,
@@ -548,7 +603,7 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_32: 0,
         // TODO(LD): we can use this timeout in the future, once we implement our scanning timeout
         // handler or CDC
-        timeout: 0,
+        timeout: timeoutSeconds,
         ledger: LedgerIdUSD,
         code: 1,
         flags: TransferFlags.pending,
@@ -934,7 +989,7 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_128: 0n,
         user_data_64: 0n,
         user_data_32: 0,
-        ledger: LedgerIdTimeoutHandler,
+        ledger: LedgerIdUSD,
         code: 1,
         timestamp_min: openingBookmarkTimestamp,
         timestamp_max: 0n,
@@ -1019,6 +1074,7 @@ export default class TigerBeetleLedger implements Ledger {
       const missingMetadata = metadata.filter(m => m.type === 'TransferMetadataNone')
       assert(missingMetadata.length === 0, `lookupTransferMetadata() missing ${missingMetadata.length} entries`)
       const foundMetadata = metadata.filter(m => m.type === 'TransferMetadata')
+      assert(foundMetadata.length === timedOutTransfers.length, `lookupTransferMetadata() expected foundMetadata.length === ${timedOutTransfers.length}, but instead got: ${foundMetadata.length}`)
 
       const transfersWithMetadata: Array<TimedOutTransfer> = []
       foundMetadata.forEach(metadata => {
@@ -1059,7 +1115,7 @@ export default class TigerBeetleLedger implements Ledger {
           debit_account_id: 1000n,
           credit_account_id: 1001n,
           amount: 0n,
-          pending_id: openingBookmark.id,
+          pending_id: 0n,
           user_data_128: 0n,
           user_data_64: newOpeningTimestamp,
           user_data_32: 0,
@@ -1111,8 +1167,8 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_64: 0n,
         user_data_32: 0,
         reserved: 0,
-        ledger: 0,
-        code: 0,
+        ledger: LedgerIdTimeoutHandler,
+        code: 9000,
         flags: 0,
         timestamp: 0n
       },
@@ -1126,8 +1182,8 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_64: 0n,
         user_data_32: 0,
         reserved: 0,
-        ledger: 0,
-        code: 0,
+        ledger: LedgerIdTimeoutHandler,
+        code: 9000,
         flags: 0,
         timestamp: 0n
       },

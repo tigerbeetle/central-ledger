@@ -24,6 +24,14 @@ export class TransferBatcher {
     this._timer = setInterval(() => this.flushQueue(), this._batchInterval);
   }
 
+  cleanup(): void {
+    if (!this._timer) {
+      return
+    }
+    
+    clearInterval(this._timer)
+  }
+
   async enqueueTransfer(transfer: Transfer): Promise<undefined | number> {
     return new Promise((resolve) => {
       this._transferQueue.push({ transfer, resolve});

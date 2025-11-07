@@ -208,7 +208,7 @@ export class IntegrationHarnessDatabase implements IntegrationHarness {
           throw new Error(`MySQL failed to start after ${maxAttempts} attempts: ${error.message}`);
         }
 
-        logger.debug(`Waiting for MySQL database (attempt ${attempt}/${maxAttempts})...`);
+        logger.debug(`Waiting for MySQL database (attempt ${`${attempt}`.padStart(3)}/${maxAttempts})...`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }

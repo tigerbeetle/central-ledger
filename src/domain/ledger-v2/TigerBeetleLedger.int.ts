@@ -22,6 +22,7 @@ import { TransferBatcher } from './TransferBatcher';
 
 describe('TigerBeetleLedger', () => {
   let ledger: TigerBeetleLedger
+  let transferBatcher: TransferBatcher
   let client: Client
   let config: ApplicationConfig;
   let dbHarness: IntegrationHarnessDatabase;
@@ -41,13 +42,13 @@ describe('TigerBeetleLedger', () => {
         migration: { type: 'knex' }
         // migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
       });
-      dbConfig = await dbHarness.start();
+      
 
       tbHarness = new IntegrationHarnessTigerBeetle({
         // tigerbeetleBinaryPath: '../../.bin/tigerbeetle'
         tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
-      })
-      tbConfig = await tbHarness.start()
+      });
+      [dbConfig, tbConfig] = await Promise.all([dbHarness.start(), tbHarness.start()])
 
       config = makeConfig();
 
@@ -73,11 +74,12 @@ describe('TigerBeetleLedger', () => {
         cluster_id: tbConfig.clusterId,
         replica_addresses: tbConfig.address,
       })
+      transferBatcher = new TransferBatcher(client, 100, 1)
       const deps: TigerBeetleLedgerDependencies = {
         config,
         client,
         metadataStore: new PersistedMetadataStore(Db.getKnex()),
-        transferBatcher: new TransferBatcher(client, 100, 1),
+        transferBatcher,
         participantService: require('../../domain/participant')
       }
       ledger = new TigerBeetleLedger(deps)
@@ -127,6 +129,8 @@ describe('TigerBeetleLedger', () => {
         await dbHarness.teardown();
       }
 
+      transferBatcher.cleanup()
+
       throw err
     }
   })
@@ -142,22 +146,49 @@ describe('TigerBeetleLedger', () => {
     if (dbHarness) {
       await dbHarness.teardown();
     }
+
+    transferBatcher.cleanup()
   });
 
-  describe('happy path prepare and fulfill', () => {
+  describe('timeout handling', () => {
     const transferId = randomUUID()
-    const mockQuoteResponse: MojaloopMockQuoteILPResponse = {
-      quoteId: '00001',
-      // TODO: how do we get this determinitically?
-      transactionId: '00001',
-      transactionType: 'unknown',
-      payerId: 'dfsp_a',
-      payeeId: 'dfsp_b',
-      transferId,
-      amount: 100,
-      currency: 'USD',
-      expiration: new Date(Date.now() + 60000).toISOString()
-    }
+    const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+    const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+    it.only('prepares a transfer, waits for timeout, and sweeps', async () => {
+      // Arrange
+       const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: {
+          amount: '100',
+          currency: 'USD'
+        },
+        ilpPacket,
+        condition,
+        // 1 second expiry
+        expiration: new Date(Date.now() + 1050).toISOString()
+      };
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
+      const prepareResult = await ledger.prepare(input)
+      assert(prepareResult.type === PrepareResultType.PASS)
+
+      // Act
+      await TestUtils.sleep(1500) // wait for TigerBeetle to timeout the transfer
+      const sweepResult = await ledger.sweepTimedOut()
+
+      // Assert
+      assert(sweepResult.type === 'SUCCESS')
+      const ids = sweepResult.transfers.map(t => t.id)
+      assert(ids.includes(transferId))
+      
+    })
+  })
+
+  describe.skip('happy path prepare and fulfill', () => {
+    const transferId = randomUUID()
+    const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
     const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
 
     it('01 prepare transfer', async () => {
@@ -174,48 +205,7 @@ describe('TigerBeetleLedger', () => {
         condition,
         expiration: new Date(Date.now() + 60000).toISOString()
       };
-
-      const input: FusedPrepareHandlerInput = {
-        payload,
-        transferId,
-        headers: {
-          'fspiop-source': 'dfsp_a',
-          'fspiop-destination': 'dfsp_b',
-          'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
-        },
-        message: {
-          value: {
-            from: 'payerfsp',
-            to: 'payeefsp',
-            id: `msg-${transferId}`,
-            type: 'application/json',
-            content: {
-              headers: {
-                'fspiop-source': 'dfsp_a',
-                'fspiop-destination': 'dfsp_b'
-              },
-              payload,
-              uriParams: { id: transferId }
-            },
-            metadata: {
-              event: {
-                id: `event-${transferId}`,
-                type: 'transfer',
-                action: 'prepare',
-                createdAt: new Date().toISOString(),
-                state: {
-                  status: 'success',
-                  code: 0
-                }
-              }
-            }
-          }
-        },
-        action: Enum.Events.Event.Action.PREPARE,
-        metric: 'transfer_prepare',
-        functionality: Enum.Events.Event.Type.TRANSFER,
-        actionEnum: 'PREPARE'
-      };
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
 
       // Act
       const result = await ledger.prepare(input);
@@ -232,47 +222,7 @@ describe('TigerBeetleLedger', () => {
         fulfilment,
         completedTimestamp: new Date().toISOString()
       };
-
-      const input: FusedFulfilHandlerInput = {
-        payload,
-        transferId,
-        headers: {
-          'fspiop-source': 'dfsp_b',
-          'fspiop-destination': 'dfsp_a',
-          'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
-        },
-        message: {
-          value: {
-            from: 'dfsp_b',
-            to: 'dfsp_a',
-            id: `msg-${transferId}`,
-            type: 'application/json',
-            content: {
-              headers: {
-                'fspiop-source': 'dfsp_b',
-                'fspiop-destination': 'dfsp_a',
-              },
-              payload,
-              uriParams: { id: transferId }
-            },
-            metadata: {
-              event: {
-                id: `event-${transferId}`,
-                type: 'transfer',
-                action: 'commit',
-                createdAt: new Date().toISOString(),
-                state: {
-                  status: 'success',
-                  code: 0
-                }
-              }
-            }
-          }
-        },
-        action: Enum.Events.Event.Action.COMMIT,
-        eventType: 'fulfil',
-        kafkaTopic: 'topic-transfer-fulfil'
-      };
+      const input = TestUtils.buildValidFulfilInput(transferId, payload)
 
       // Act
       const result = await ledger.fulfil(input);

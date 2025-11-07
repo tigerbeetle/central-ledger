@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, DfspAccountMetadata, DfspAccountMetadataNone, MetadataStore, SaveTransferMetadataResult, TransferMetadata, TransferMetadataNone } from "./MetadataStore";
+import { DfspAccountIds, DfspAccountMetadata, DfspAccountMetadataNone, MetadataStore, SaveTransferMetadataCommand, SaveTransferMetadataResult, TransferMetadata, TransferMetadataNone } from "./MetadataStore";
 import { MetadataStoreCacheAccount } from "./MetadataStoreCacheAccount";
 import { MetadataStoreCacheTransfer } from "./MetadataStoreCacheTransfer";
 import { logger } from '../../shared/logger';
@@ -106,8 +106,6 @@ export class PersistedMetadataStore implements MetadataStore {
   async lookupTransferMetadata(ids: Array<string>): Promise<Array<TransferMetadata | TransferMetadataNone>> {
     // First port of call, check the cache
     const transferMetadataCached = this.cacheTransfer.get(ids)
-    const results: Array<TransferMetadata | TransferMetadataNone> = []
-
     const transferMetadataFoundSet: Record<string, TransferMetadata> = {}
     const missingIds: Array<string> = []
     transferMetadataCached.forEach((hitOrMiss, idx) => {
@@ -191,7 +189,7 @@ export class PersistedMetadataStore implements MetadataStore {
     return results
   }
 
-  async saveTransferMetadata(metadata: Array<TransferMetadata>): Promise<Array<SaveTransferMetadataResult>> {
+  async saveTransferMetadata(metadata: Array<SaveTransferMetadataCommand>): Promise<Array<SaveTransferMetadataResult>> {
 
     try {
       const records: Array<TransferMetadataRecord> = metadata.map(m => {
@@ -214,7 +212,7 @@ export class PersistedMetadataStore implements MetadataStore {
         .insert(records)
         .onConflict('id')
         .merge(['fulfilment']);
-      this.cacheTransfer.put(metadata)
+      this.cacheTransfer.put(metadata.map(m => ({type: 'TransferMetadata', ...m})))
 
       return metadata.map(m => {
         return {

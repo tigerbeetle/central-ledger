@@ -1,4 +1,9 @@
+import { Enum } from '@mojaloop/central-services-shared';
+import assert from 'assert';
 import { createServer } from 'net';
+import { FusedFulfilHandlerInput } from 'src/handlers-v2/FusedFulfilHandler';
+import { FusedPrepareHandlerInput } from 'src/handlers-v2/FusedPrepareHandler';
+import { CommitTransferDto, CreateTransferDto } from 'src/handlers-v2/types';
 
 const MojaloopLogger = require('@mojaloop/central-services-logger')
 const { ilpFactory, ILP_VERSIONS } = require('@mojaloop/sdk-standard-components').Ilp
@@ -24,6 +29,122 @@ export interface QuoteIlpResponse {
 }
 
 export class TestUtils {
+
+  /**
+   * @function sleep
+   * @param {*} timeMs - how long to sleep for
+   */
+  static async sleep(timeMs) {
+    return new Promise<void>((resolve, reject) => setTimeout(() => resolve(), timeMs))
+  }
+
+  static generateMockQuoteILPResponse(transferId: string, expiration: Date): MojaloopMockQuoteILPResponse {
+
+    return {
+      quoteId: '00001',
+      // TODO: how do we get this determinitically?
+      transactionId: '00001',
+      transactionType: 'unknown',
+      payerId: 'dfsp_a',
+      payeeId: 'dfsp_b',
+      transferId,
+      amount: 100,
+      currency: 'USD',
+      expiration: expiration.toISOString()
+    }
+  }
+
+  static buildValidFulfilInput(transferId: string, payload: CommitTransferDto): FusedFulfilHandlerInput {
+    const input: FusedFulfilHandlerInput = {
+      payload,
+      transferId,
+      headers: {
+        'fspiop-source': 'dfsp_b',
+        'fspiop-destination': 'dfsp_a',
+        'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
+      },
+      message: {
+        value: {
+          from: 'dfsp_b',
+          to: 'dfsp_a',
+          id: `msg-${transferId}`,
+          type: 'application/json',
+          content: {
+            headers: {
+              'fspiop-source': 'dfsp_b',
+              'fspiop-destination': 'dfsp_a',
+            },
+            payload,
+            uriParams: { id: transferId }
+          },
+          metadata: {
+            event: {
+              id: `event-${transferId}`,
+              type: 'transfer',
+              action: 'commit',
+              createdAt: new Date().toISOString(),
+              state: {
+                status: 'success',
+                code: 0
+              }
+            }
+          }
+        }
+      },
+      action: Enum.Events.Event.Action.COMMIT,
+      eventType: 'fulfil',
+      kafkaTopic: 'topic-transfer-fulfil'
+    };
+
+    return input
+  }
+
+  static buildValidPrepareInput(transferId: string, payload: CreateTransferDto): FusedPrepareHandlerInput {
+    assert(payload.transferId === transferId)
+    const input: FusedPrepareHandlerInput = {
+      payload,
+      transferId: payload.transferId,
+      headers: {
+        'fspiop-source': 'dfsp_a',
+        'fspiop-destination': 'dfsp_b',
+        'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
+      },
+      message: {
+        value: {
+          from: 'payerfsp',
+          to: 'payeefsp',
+          id: `msg-${transferId}`,
+          type: 'application/json',
+          content: {
+            headers: {
+              'fspiop-source': 'dfsp_a',
+              'fspiop-destination': 'dfsp_b'
+            },
+            payload,
+            uriParams: { id: transferId }
+          },
+          metadata: {
+            event: {
+              id: `event-${transferId}`,
+              type: 'transfer',
+              action: 'prepare',
+              createdAt: new Date().toISOString(),
+              state: {
+                status: 'success',
+                code: 0
+              }
+            }
+          }
+        }
+      },
+      action: Enum.Events.Event.Action.PREPARE,
+      metric: 'transfer_prepare',
+      functionality: Enum.Events.Event.Type.TRANSFER,
+      actionEnum: 'PREPARE'
+    };
+
+    return input
+  }
 
   static generateQuoteILPResponse(params: MojaloopMockQuoteILPResponse): QuoteIlpResponse {
     // Build an imaginary Quote Request/Response to generate the ILP packet, fulfilment and condition

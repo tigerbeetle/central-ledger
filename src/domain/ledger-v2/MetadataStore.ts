@@ -30,6 +30,8 @@ export interface TransferMetadataNone {
   id: string
 }
 
+export type SaveTransferMetadataCommand = Omit<TransferMetadata, 'type'>
+
 export interface SaveTransferMetadataResultSuccess {
   type: 'SUCCESS'
 }
@@ -72,5 +74,5 @@ export interface MetadataStore {
   /**
    * Saves the transfer metadata to the metadata store
    */
-  saveTransferMetadata(metadata: Array<TransferMetadata>): Promise<Array<SaveTransferMetadataResult>>
+  saveTransferMetadata(metadata: Array<SaveTransferMetadataCommand>): Promise<Array<SaveTransferMetadataResult>>
 }
