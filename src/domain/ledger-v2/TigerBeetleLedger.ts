@@ -854,7 +854,7 @@ export default class TigerBeetleLedger implements Ledger {
           )
         }
       }
-      
+
       if (!foundMetadata.fulfilment) {
         return {
           type: LookupTransferResultType.FAILED,
@@ -941,9 +941,25 @@ export default class TigerBeetleLedger implements Ledger {
         limit: MAX_TRANSFERS_IN_PAGE,
         flags: QueryFilterFlags.reversed
       }
-      const transfers = await this.deps.client.queryTransfers(transfersQuery)
+
+      let transfers = await this.deps.client.queryTransfers(transfersQuery)
       if (transfers.length === MAX_TRANSFERS_IN_PAGE) {
-        // TODO: need to repeat and page, put them into a big list!
+        let page = 1
+        while (page < MAX_PAGES) {
+          let pagedQuery: QueryFilter = {
+            ...transfersQuery,
+            timestamp_max: transfers[transfers.length - 1].timestamp
+          }
+          const nextPage = await this.deps.client.queryTransfers(pagedQuery)
+          transfers = transfers.concat(nextPage)
+
+          if (nextPage.length < MAX_TRANSFERS_IN_PAGE) {
+            // we ran out of entries
+            break;
+          }
+
+          page += 1
+        }
       }
 
       logger.debug(`sweepTimedOut - found ${transfers.length} transfers since ${openingBookmarkTimestamp}`)
@@ -1072,7 +1088,7 @@ export default class TigerBeetleLedger implements Ledger {
 
       return {
         type: 'SUCCESS',
-        transfers:transfersWithMetadata
+        transfers: transfersWithMetadata
       }
     } catch (err) {
       return {
