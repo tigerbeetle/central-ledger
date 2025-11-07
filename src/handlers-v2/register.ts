@@ -116,14 +116,8 @@ export const registerPositionHandlerV2 = async (
 export function createTimeoutHandler(
   config: any,
   notificationProducer: INotificationProducer,
-  positionProducer: IPositionProducer
+  ledger: Ledger
 ): TimeoutHandler {
-  // Import existing business logic modules for FUSED operation
-  const TimeoutService = require('../domain/timeout');
-  const TransferService = require('../domain/transfer/index')
-  const PositionService = require('../domain/position')
-  const ParticipantFacade = require('../models/participant/facade')
-
   // Initialize distributed lock if enabled
   let distLock;
   const distLockEnabled = config.HANDLERS_TIMEOUT_DIST_LOCK_ENABLED === true;
@@ -134,11 +128,8 @@ export function createTimeoutHandler(
   const deps: TimeoutHandlerDependencies = {
     notificationProducer,
     config,
-    timeoutService: TimeoutService,
-    distLock,
-    transferService: TransferService,
-    participantFacade: ParticipantFacade,
-    positionService: PositionService
+    ledger,
+    distLock
   };
 
   return new TimeoutHandler(deps);
@@ -147,7 +138,8 @@ export function createTimeoutHandler(
 export async function registerTimeoutHandlerV2(
   config: any,
   notificationProducer: Kafka.Producer,
-  positionProducer: Kafka.Producer
+  positionProducer: Kafka.Producer,
+  ledger: Ledger
 ): Promise<TimeoutScheduler> {
   try {
     if (config.HANDLERS_TIMEOUT_DISABLED) {
@@ -155,12 +147,11 @@ export async function registerTimeoutHandlerV2(
       throw new Error('Timeout handler is disabled');
     }
 
-    // Create wrapped producers
+    // Create wrapped notification producer
     const wrappedNotificationProducer = new NotificationProducer(notificationProducer, config);
-    const wrappedPositionProducer = new PositionProducer(positionProducer, config);
 
     // Create timeout handler
-    const timeoutHandler = createTimeoutHandler(config, wrappedNotificationProducer, wrappedPositionProducer);
+    const timeoutHandler = createTimeoutHandler(config, wrappedNotificationProducer, ledger);
 
     // Create scheduler config
     const schedulerConfig: TimeoutSchedulerConfig = {

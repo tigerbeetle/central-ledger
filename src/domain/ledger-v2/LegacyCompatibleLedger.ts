@@ -32,6 +32,7 @@ import {
   PrepareResult,
   PrepareResultType,
   SweepResult,
+  TimedOutTransfer,
   TransferParticipantInfo,
   TransferReadModel,
   TransferStateChange,
@@ -173,6 +174,19 @@ export interface LegacyCompatibleLedgerDependencies {
       transferStateChange: TransferStateChange
     ) => Promise<void>;
     getAccountByNameAndCurrency: (participantName: string, currency: string) => Promise<{ currencyIsActive: boolean }>;
+    timeoutService: {
+      getTimeoutSegment: () => Promise<{ value: number; segmentId: number } | null>;
+      cleanupTransferTimeout: () => Promise<any>;
+      getLatestTransferStateChange: () => Promise<{ transferStateChangeId: string } | null>;
+      timeoutExpireReserved: (
+        segmentId: number,
+        intervalMin: number,
+        intervalMax: number,
+        fxSegmentId: number,
+        fxIntervalMin: number,
+        fxIntervalMax: number
+      ) => Promise<{ transferTimeoutList: any[] | null; fxTransferTimeoutList: any[] | null }>;
+    };
   }
 }
 
@@ -187,8 +201,115 @@ export default class LegacyCompatibleLedger implements Ledger {
 
   }
   
-  sweepTimedOut(): Promise<SweepResult> {
-    throw new Error('Method not implemented.');
+  async sweepTimedOut(): Promise<SweepResult> {
+    try {
+      // Get timeout segments
+      const timeoutSegment = await this.deps.clearing.timeoutService.getTimeoutSegment();
+      const intervalMin = timeoutSegment ? timeoutSegment.value : 0;
+      const segmentId = timeoutSegment ? timeoutSegment.segmentId : 0;
+      await this.deps.clearing.timeoutService.cleanupTransferTimeout();
+      const latestTransferStateChange = await this.deps.clearing.timeoutService.getLatestTransferStateChange();
+      const intervalMax = (latestTransferStateChange && parseInt(latestTransferStateChange.transferStateChangeId)) || 0;
+
+      // For now, we pass 0 for fx segments (ignoring fx case)
+      const fxSegmentId = 0;
+      const fxIntervalMin = 0;
+      const fxIntervalMax = 0;
+
+      // Get timed out transfers
+      const { transferTimeoutList, fxTransferTimeoutList } = await this.deps.clearing.timeoutService.timeoutExpireReserved(
+        segmentId, intervalMin, intervalMax, fxSegmentId, fxIntervalMin, fxIntervalMax
+      );
+
+      // Process RESERVED_TIMEOUT transfers - reverse their positions
+      if (transferTimeoutList && Array.isArray(transferTimeoutList)) {
+        for (const tt of transferTimeoutList) {
+          if (tt.transferStateId === Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT) {
+            await this.reverseTimedOutTransferPosition(tt);
+          }
+        }
+      }
+
+      // Convert to simplified result format (ignore fx for now)
+      const simplifiedTransfers: TimedOutTransfer[] = transferTimeoutList && Array.isArray(transferTimeoutList)
+        ? transferTimeoutList.map(tt => ({
+            id: tt.transferId,
+            payerId: tt.payerFsp,
+            payeeId: tt.payeeFsp,
+          }))
+        : [];
+
+      return {
+        type: 'SUCCESS',
+        transfers: simplifiedTransfers
+      };
+    } catch (err) {
+      logger.error('sweepTimedOut() failed:', err);
+      return {
+        type: 'FAILURE',
+        error: err instanceof Error ? err : new Error(String(err))
+      };
+    }
+  }
+
+  /**
+   * Reverses the position for a timed out transfer that was in RESERVED state
+   */
+  private async reverseTimedOutTransferPosition(tt: any): Promise<void> {
+    try {
+      // Get transfer info for PAYER (who had funds reserved)
+      const transferInfo = await this.deps.clearing.getTransferInfoToChangePosition(
+        tt.transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      if (!transferInfo) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          'Transfer info not found'
+        );
+      }
+
+      // Get participant currency info
+      const participantCurrency = await this.deps.clearing.getByIDAndCurrency(
+        transferInfo.participantId,
+        transferInfo.currencyId,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      if (!participantCurrency) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          'Participant currency not found'
+        );
+      }
+
+      // Reverse the position (add back reserved funds)
+      const isReversal = true;
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferInternalState.EXPIRED_RESERVED,
+        reason: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED
+        ).message
+      };
+
+      await this.deps.clearing.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      logger.debug(`Successfully reversed position for timed out transfer: ${tt.transferId}`, {
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount
+      });
+    } catch (err) {
+      logger.error(`Failed to reverse position for timed out transfer: ${tt.transferId}`, err);
+      throw ErrorHandler.Factory.reformatFSPIOPError(err);
+    }
   }
 
 

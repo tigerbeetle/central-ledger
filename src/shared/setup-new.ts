@@ -294,6 +294,7 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
   const TransferObjectTransform = require('../domain/transfer/transform')
   const PositionService = require('../domain/position')
   const prepareModule = require('../handlers/transfers/prepare')
+  const TimeoutService = require('../domain/timeout')
 
 
   const deps: LegacyCompatibleLedgerDependencies = {
@@ -335,7 +336,7 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
       changeParticipantPosition: PositionService.changeParticipantPosition,
       getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
       getByIDAndCurrency: participantFacade.getByIDAndCurrency,
-
+      timeoutService: TimeoutService,
     }
   }
   return new LegacyCompatibleLedger(deps)
@@ -567,7 +568,7 @@ async function initializeHandlersV2(
       case HandlerType.timeout: {
         assert(producers.position)
         assert(producers.notification)
-        timeoutScheduler = await registerTimeoutHandlerV2(config, producers.notification, producers.position)
+        timeoutScheduler = await registerTimeoutHandlerV2(config, producers.notification, producers.position, ledger)
         break;
       }
       case HandlerType.get: {

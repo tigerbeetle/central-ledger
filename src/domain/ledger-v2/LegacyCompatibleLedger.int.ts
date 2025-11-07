@@ -137,6 +137,7 @@ describe('LegacyCompatibleLedger', () => {
           changeParticipantPosition: PositionService.changeParticipantPosition,
           getAccountByNameAndCurrency: Participant.getAccountByNameAndCurrency,
           getByIDAndCurrency: participantFacade.getByIDAndCurrency,
+          timeoutService: require('../../domain/timeout'),
         }
       };
 

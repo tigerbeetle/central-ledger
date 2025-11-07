@@ -569,7 +569,7 @@ export default class TigerBeetleLedger implements Ledger {
       /**
        * Write Last, Read First Rule
        * We write data dependencies first, then write to TigerBeetle
-       * reference: https://tigerbeetle.com/blog/2025-11-06-the-write-last-read-first-rule/
+       * Reference: https://tigerbeetle.com/blog/2025-11-06-the-write-last-read-first-rule/
        */
       await this.deps.metadataStore.saveTransferMetadata([
         {
@@ -585,12 +585,7 @@ export default class TigerBeetleLedger implements Ledger {
        * Dr Payer_Clearing
        *  Cr Payee_Clearing
        * Flags: pending
-       */
-
-      // TODO(LD): The issue with this chart of account design is that for a net-receiver of funds
-      // DFSP, they will end up being over their net debit cap, and funds need to be moved out of 
-      // the Clearing account back to the Liquidity account. But we can come back to this later.
-      
+       */      
       const transfer: Transfer = {
         id: prepareId,
         debit_account_id: payerMetadata.clearing,
@@ -601,8 +596,6 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_128: prepareId,
         user_data_64: 0n,
         user_data_32: 0,
-        // TODO(LD): we can use this timeout in the future, once we implement our scanning timeout
-        // handler or CDC
         timeout: timeoutSeconds,
         ledger: LedgerIdUSD,
         code: 1,
