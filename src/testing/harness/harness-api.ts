@@ -28,6 +28,7 @@ export class HarnessApi implements Harness {
   private harnessDatabase: HarnessDatabase
   private harnessTigerBeetle: HarnessTigerBeetle
   private client: Client
+  private transferBatcher: TransferBatcher
 
   constructor(
     private config: HarnessApiConfig, 
@@ -74,13 +75,13 @@ export class HarnessApi implements Harness {
       cluster_id: tbConfig.clusterId,
       replica_addresses: tbConfig.address,
     })
-    const transferBatcher = new TransferBatcher(this.client, 100, 1)
+    this.transferBatcher = new TransferBatcher(this.client, 100, 1)
     const deps: TigerBeetleLedgerDependencies = {
       // TODO: do we need to set up the ledger config based on what the harness did?
       config: this.config.applicationConfig,
       client: this.client,
       metadataStore: new PersistedMetadataStore(this.dbLib.getKnex()),
-      transferBatcher,
+      transferBatcher: this.transferBatcher,
       participantService: this.participantService,
     }
     const ledger = new TigerBeetleLedger(deps)
@@ -102,7 +103,13 @@ export class HarnessApi implements Harness {
   public async teardown(): Promise<void> {
     logger.info('HarnessApi - teardown()')
     await this.dbLib.disconnect()
-    this.client.destroy()
+    if (this.client) {
+      this.client.destroy()
+    }
+
+    if (this.transferBatcher) {
+      this.transferBatcher.cleanup()
+    }
 
     if (this.harnessDatabase) {
       await this.harnessDatabase.teardown()
