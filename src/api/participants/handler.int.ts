@@ -53,7 +53,7 @@ describe('api/participants/handler', () => {
     await harnessApi.teardown()
   })
 
-  describe('GET  /participants', () => {
+  describe('GET /participants', () => {
     it('01 Returns the hub information', async () => {
       // Arrange
       const request = {
@@ -73,21 +73,54 @@ describe('api/participants/handler', () => {
 
       // Assert
       assert(result, 'Expected a response from getAll()')
-      assert(Array.isArray(result))
-      const hubParticipant = result.filter(p => p.name === 'Hub')[0]
-      assert(hubParticipant.name === 'Hub')
-      assert(hubParticipant.id === 'http://central-ledger/participants/Hub')
-      assert(hubParticipant.created)
-      assert.equal(hubParticipant.isActive, 1)
-      assert(hubParticipant.accounts)
-      assert(hubParticipant.isProxy !== undefined)
+      const snapshot = [
+        {
+          name: 'Hub',
+          id: 'http://central-ledger/participants/Hub',
+          "created:ignore": true,
+          isActive: 1,
+          links: { self: 'http://central-ledger/participants/Hub' },
+          accounts: [
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "USD",
+              id: 1,
+              isActive: 1,
+              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+            },
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "USD",
+              id: 2,
+              isActive: 1,
+              ledgerAccountType: "HUB_RECONCILIATION"
+            },
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "KES",
+              id: 3,
+              isActive: 1,
+              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+            },
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "KES",
+              id: 4,
+              isActive: 1,
+              ledgerAccountType: "HUB_RECONCILIATION"
+            }
+          ],
+          isProxy: 0
+        }
+      ]
+      unwrapSnapshot(checkSnapshotObject(result, snapshot))
     })
   })
 
-
-  // TODO: Organizing the tests like this doesn't make too much sense.
-  // we would be better off doing it _per-dfsp_ or something similar.
-  // that way we can set better expectations between tests etc.
 
   describe('DFSP Onboarding', () => {
     it('02 Creates a new DFSP', async () => {
@@ -122,7 +155,7 @@ describe('api/participants/handler', () => {
         links: { self: 'http://central-ledger/participants/dfsp_x' },
         accounts: [
           {
-            id: 3,
+            id: 5,
             ledgerAccountType: 'POSITION',
             currency: 'USD',
             isActive: 0,
@@ -130,7 +163,7 @@ describe('api/participants/handler', () => {
             createdBy: 'unknown'
           },
           {
-            id: 4,
+            id: 6,
             ledgerAccountType: 'SETTLEMENT',
             currency: 'USD',
             isActive: 0,
@@ -174,22 +207,6 @@ describe('api/participants/handler', () => {
         links: { self: 'http://central-ledger/participants/dfsp_x' },
         accounts: [
           {
-            id: 3,
-            ledgerAccountType: 'POSITION',
-            currency: 'USD',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          },
-          {
-            id: 4,
-            ledgerAccountType: 'SETTLEMENT',
-            currency: 'USD',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          },
-          {
             id: 5,
             ledgerAccountType: 'POSITION',
             currency: 'USD',
@@ -204,12 +221,29 @@ describe('api/participants/handler', () => {
             isActive: 0,
             "createdDate:ignore": true,
             createdBy: 'unknown'
+          },
+          {
+            id: 7,
+            ledgerAccountType: 'POSITION',
+            currency: 'KES',
+            isActive: 0,
+            "createdDate:ignore": true,
+            createdBy: 'unknown'
+          },
+          {
+            id: 8,
+            ledgerAccountType: 'SETTLEMENT',
+            currency: 'KES',
+            isActive: 0,
+            "createdDate:ignore": true,
+            createdBy: 'unknown'
           }
         ],
         isProxy: 0
       }
       unwrapSnapshot(checkSnapshotObject(body, snapshot))
     })
+    
     it.todo('04 Gets the Participant by name')
   })
   // describe('GET  /participants/limits')

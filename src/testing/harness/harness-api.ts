@@ -92,7 +92,7 @@ export class HarnessApi implements Harness {
 
     // Provision the switch
     const provisionConfig: ProvisioningConfig = {
-      currencies: ['USD'],
+      currencies: ['USD', 'KES'],
       settlementModels: [],
       oracles: []
     }

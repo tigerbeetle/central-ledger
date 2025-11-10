@@ -47,7 +47,8 @@ export function unwrapSnapshot<T>(result: SnapshotResult<T>): void {
     return
   }
 
-  console.log(`snapshot check failed:\n${result.diff}`)
+  console.log(`snapshot mismatch:\n${result.diff}`)
+  throw new Error(`snapshot mismatch`)
 }
 
 export function checkSnapshotObject(actual: object, snapshot: object): SnapshotResult<object> {
@@ -92,7 +93,7 @@ export function checkSnapshotString(actual: string, snapshot: string): SnapshotR
       maxColumnLengthLeft = left.length
     }
 
-    if ((!left && right) || (right && !left)) {
+    if ((!left && right) || (left && !right)) {
       mismatchedLines.push(lineIdx)
       continue
     }

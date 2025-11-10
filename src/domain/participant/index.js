@@ -138,7 +138,7 @@ const update = async (name, payload) => {
 const createParticipantCurrency = async (participantId, currencyId, ledgerAccountTypeId, isActive = true) => {
   const log = logger.child({ participantId, currencyId, ledgerAccountTypeId, isActive })
   try {
-    log.info('creating participant currency')
+    log.debug('creating participant currency')
     const participantCurrency = await ParticipantCurrencyModel.create(participantId, currencyId, ledgerAccountTypeId, isActive)
     return participantCurrency
   } catch (err) {

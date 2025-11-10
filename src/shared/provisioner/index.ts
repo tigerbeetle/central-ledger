@@ -1,7 +1,7 @@
 import assert from "node:assert"
 import { Ledger } from "src/domain/ledger-v2/Ledger"
 import LegacyCompatibleLedger from "src/domain/ledger-v2/LegacyCompatibleLedger"
-import { CreateHubAccountCommand } from "src/domain/ledger-v2/types"
+import { CreateHubAccountCommand, CreateHubAccountResponse } from "src/domain/ledger-v2/types"
 
 const logger = require('../logger').logger
 
@@ -57,7 +57,13 @@ export default class Provisioner {
       }
     })
 
-    const results = await Promise.all(commands.map(async command => await this.deps.ledger.createHubAccount(command)))
+    // This _was_ previously in a Promise.all, but race conditions at the database meant we were
+    // getting nondeterministic results, so now we run each command one at a time
+    const results: Array<CreateHubAccountResponse> = []
+    for await (const command of commands) {
+      results.push(await this.deps.ledger.createHubAccount(command))
+    }
+    // const results = await Promise.all(commands.map(async command => await this.deps.ledger.createHubAccount(command)))
 
     const errorMessages = []
     results.forEach((result, idx) => {
