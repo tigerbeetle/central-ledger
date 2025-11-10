@@ -97,12 +97,12 @@ describe('TigerBeetleLedger', () => {
       const dfspAConfig: DFSPProvisionerConfig = {
         dfspId: 'dfsp_a',
         currencies: ['USD'],
-        initialLimits: [100000]
+        startingDeposits: [100000]
       }
       const dfspBConfig: DFSPProvisionerConfig = {
         dfspId: 'dfsp_b',
         currencies: ['USD'],
-        initialLimits: [100000]
+        startingDeposits: [100000]
       }
       const dfspProvisioner = new DFSPProvisioner({
         ledger: ledger,

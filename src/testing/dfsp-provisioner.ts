@@ -17,9 +17,9 @@ export interface DFSPProvisionerConfig {
   currencies: Array<string>
 
   /**
-   * The account opening limits, one per currency
+   * The account opening deposits, one per currency
    */
-  initialLimits: Array<number>
+  startingDeposits: Array<number>
 
 }
 
@@ -38,7 +38,7 @@ export default class DFSPProvisioner {
 
   public async run(config: DFSPProvisionerConfig): Promise<void> {
     assert(config.currencies.length > 0, 'DFSP should have at least 1 currency')
-    assert.equal(config.currencies.length, config.initialLimits.length)
+    assert.equal(config.currencies.length, config.startingDeposits.length)
 
     const childLogger = logger.child({ dfspId: config.dfspId });
 
@@ -55,15 +55,15 @@ export default class DFSPProvisioner {
 
       for (let i = 0; i < config.currencies.length; i++) {
         const currency = config.currencies[i];
-        const initialLimit = config.initialLimits[i]
+        const startingDeposit = config.startingDeposits[i]
         assert(currency)
-        assert(initialLimit)
+        assert(startingDeposit)
 
         const depositResult = await this.deps.ledger.depositCollateral({
           transferId: randomUUID(),
           dfspId: config.dfspId,
           currency,
-          amount: initialLimit,
+          amount: startingDeposit,
         })
         if (depositResult.type === 'FAILURE') {
           throw depositResult.error
@@ -72,7 +72,7 @@ export default class DFSPProvisioner {
           return
         }
 
-        childLogger.info(`depositted collateral of: ${currency} ${initialLimit}`)
+        childLogger.info(`deposited collateral of: ${currency} ${startingDeposit}`)
       }
 
       childLogger.info('DFSP provisioning completed successfully');

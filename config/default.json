@@ -538,7 +538,7 @@
     },
     "PROVISIONING": {
       "enabled": true,
-      "currencies": ["USD"],
+      "currencies": ["USD", "EUR", "KES"],
       "hubAlertEmailAddress": "example@email.com",
       "settlementModels": [],
       "oracles": []

@@ -40,28 +40,43 @@ export default class Provisioner {
   }
 
   public async run(): Promise<void> {
-    const createHubAccountCommand: CreateHubAccountCommand = {
-      currency: 'USD',
-      settlementModel: {
-        name: `DEFERRED_MULTILATERAL_NET_USD`,
-        settlementGranularity: "NET",
-        settlementInterchange: "MULTILATERAL",
-        settlementDelay: "DEFERRED",
-        currency: 'USD',
-        requireLiquidityCheck: true,
-        ledgerAccountType: "POSITION",
-        settlementAccountType: "SETTLEMENT",
-        autoPositionReset: true
+    const commands: Array<CreateHubAccountCommand> = this.config.currencies.map(currency => {
+      return {
+        currency,
+        settlementModel: {
+          name: `DEFERRED_MULTILATERAL_NET_${currency}`,
+          settlementGranularity: "NET",
+          settlementInterchange: "MULTILATERAL",
+          settlementDelay: "DEFERRED",
+          currency,
+          requireLiquidityCheck: true,
+          ledgerAccountType: "POSITION",
+          settlementAccountType: "SETTLEMENT",
+          autoPositionReset: true
+        }
       }
-    }
-    const result = await this.deps.ledger.createHubAccount(createHubAccountCommand)
-    if (result.type === 'FAILURE') {
-      logger.error(`Provisioner.run() failed with error`, {error: result.error})
-      throw result.error
-    }
+    })
 
-    if (result.type === 'ALREADY_EXISTS') {
-      logger.warn(`Hub account already created for: ${createHubAccountCommand.currency}, ${createHubAccountCommand.settlementModel.name}`)
+    const results = await Promise.all(commands.map(async command => await this.deps.ledger.createHubAccount(command)))
+
+    const errorMessages = []
+    results.forEach((result, idx) => {
+      const command = commands[idx]
+      if (result.type === 'FAILURE') {
+        logger.error(`Provisioner.run() failed with error`, { error: result.error })
+        errorMessages.push(result.error.message)
+      }
+
+      if (result.type === 'ALREADY_EXISTS') {
+        logger.warn(`Provisioner.run() - Hub account already created for: ${command.currency}, ${command.settlementModel.name}`)
+        return
+      }
+
+      logger.warn(`Provisioner.run() - Hub account created for: ${command.currency}, ${command.settlementModel.name}`)
+    })
+
+    if (errorMessages.length > 0) {
+      throw new Error(`Provisioner.run() failed with ${errorMessages.length} underlying errors: ${errorMessages.join('\;')}`)
     }
   }
 }

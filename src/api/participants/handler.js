@@ -41,6 +41,7 @@ const MLNumber = require('@mojaloop/ml-number')
 const assert = require('assert')
 const { randomUUID } = require('crypto')
 const { log } = require('console')
+const { assertString, safeStringToNumber } = require('../../shared/config/util')
 
 const LocalEnum = {
   activated: 'activated',
@@ -93,19 +94,38 @@ const create = async function (request, h) {
     assert(request.payload.currency)
     assert(request.payload.name)
 
+    // startingDeposit allows us to create an opening balance for the DFSP while onboarding.
+    // We added this feature to the Admin API to help limit the breaking changes when moving to
+    // TigerBeetle, as the TigerBeetleLedger doesn't allow `initialPositionAndLimits` to be 
+    // called _before_ funds have been deposited for the DFSP.
+    let startingDeposit = 0
+    if (request.payload.startingDeposit) {
+      assertString(request.payload.startingDeposit)
+      const startingDepositStr = request.payload.startingDeposit
+      startingDeposit = safeStringToNumber(startingDepositStr)
+      assert(startingDeposit >= 0)
+    }
+
     const { currency, name } = request.payload
     const ledger = getLedger(request)
     const createDfspResult = await ledger.createDfsp({
       dfspId: name,
       currencies: [currency],
-      // TODO: we need to look at this interface again, but this will work for 
-      // testing purposes now
-      initialLimits: [100000]
+      startingDeposits: [startingDeposit]
     })
 
     if (createDfspResult.type === 'ALREADY_EXISTS') {
       // throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
       Logger.warn(`participants.create() - participant: ${name} already exists in Ledger. Continuing.`)
+
+      // TODO(LD): should return:
+      // {
+      //   "errorInformation": {
+      //     "errorCode": "3000",
+      //     "errorDescription": "Generic client error - Participant currency has already been registered"
+      //   }
+      // }
+
     }
 
     if (createDfspResult.type === 'FAILED') {

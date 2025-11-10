@@ -111,16 +111,16 @@ export default class TigerBeetleLedger implements Ledger {
    * Dr Reserve
    *  Cr Liquidity
    * 
-   * Based on the `initialLimits` in CreateDFSPCommand.
+   * Based on the `startingDeposits` in CreateDFSPCommand.
    */
   public async createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> {
     assert(cmd.dfspId)
     assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
     assert.equal(cmd.currencies[0], 'USD', 'Currently only USD is supported.')
-    assert.equal(cmd.initialLimits.length, cmd.currencies.length)
+    assert.equal(cmd.startingDeposits.length, cmd.currencies.length)
 
     const currency = cmd.currencies[0]
-    const collateralAmount = cmd.initialLimits[0]
+    const collateralAmount = cmd.startingDeposits[0]
     assert(Number.isInteger(collateralAmount))
     assert(collateralAmount >= 0)
 

@@ -396,8 +396,11 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.currencies)
     assert(cmd.currencies.length > 0)
     assert(cmd.currencies.length < 16, 'Cannot register more than 16 currencies for a DFSP')
-    assert(cmd.initialLimits)
-    assert.equal(cmd.currencies.length, cmd.initialLimits.length, 'Expected currencies and intiial limits to have the same length')
+    assert(cmd.startingDeposits)
+    assert.equal(cmd.currencies.length, cmd.startingDeposits.length, 'Expected currencies and startingDeposits to have the same length')
+
+    // Write Last, Read First
+
 
     try {
       const participant = await this.deps.lifecycle.participantService.getByName(cmd.dfspId);
@@ -440,10 +443,10 @@ export default class LegacyCompatibleLedger implements Ledger {
       // Set the initial limits
       for (let i = 0; i < cmd.currencies.length; i++) {
         const currency = cmd.currencies[i];
-        const initialLimit = cmd.initialLimits[i]
+        const startingDeposit = cmd.startingDeposits[i]
         assert(currency)
-        assert(initialLimit)
-        assert(initialLimit >= 0)
+        assert(startingDeposit)
+        assert(startingDeposit >= 0)
 
         // Get participant accounts to get the participantCurrencyIds needed by the facade
         const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
@@ -462,7 +465,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         const limitPayload = {
           limit: {
             type: 'NET_DEBIT_CAP',
-            value: initialLimit,
+            value: startingDeposit,
             thresholdAlarmPercentage: 10
           },
           initialPosition: 0
