@@ -88,14 +88,6 @@ const handleMissingRecord = (entity) => {
 
 const create = async function (request, h) {
   try {
-    Logger.debug('create handler called', {
-      hasRequest: !!request,
-      hasServer: !!request?.server,
-      hasH: !!h,
-      requestType: typeof request,
-      serverType: typeof request?.server
-    })
-
     assert(request)
     assert(request.payload)
     assert(request.payload.currency)
@@ -126,6 +118,40 @@ const create = async function (request, h) {
     let participant = await ParticipantService.getByName(request.payload.name)
     const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
     const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
+
+
+    /**
+     * response from the switch should look something like:
+     * 
+     * {
+          "name": "dfsp_1",                                  <-- metadata database
+          "id": "http://central-ledger/participants/dfsp_1", <-- not sure
+          "created": "\"2025-11-10T07:31:44.000Z\"",         <-- timestamp of account creation
+          "isActive": 1,                                     <-- is position account open/closed
+          "links": {
+            "self": "http://central-ledger/participants/dfsp_1" <-- generated
+          },
+          "accounts": [                                       <-- from account response
+            {
+              "id": 7,
+              "ledgerAccountType": "POSITION",
+              "currency": "USD",
+              "isActive": 1,
+              "createdDate": null,
+              "createdBy": "unknown"
+            },
+            {
+              "id": 8,
+              "ledgerAccountType": "SETTLEMENT",
+              "currency": "USD",
+              "isActive": 1,
+              "createdDate": null,
+              "createdBy": "unknown"
+            }
+          ],
+          "isProxy": 0                                              <-- hardcoded to false
+        }
+     */
 
     return h.response(entityItem(participant, ledgerAccountIds)).code(201)
   } catch (err) {

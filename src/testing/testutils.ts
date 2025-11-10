@@ -218,4 +218,29 @@ export class TestUtils {
       });
     });
   }
+
+  /**
+   * @function unwrapHapiResponse
+   */
+  public static async unwrapHapiResponse(asyncFunction: (reply: any) => Promise<unknown>): Promise<{body: any, code: number}> {
+    let body
+    let code
+    const nestedReply = {
+      response: (response) => {
+        body = response
+        return {
+          code: statusCode => {
+            code = statusCode
+          }
+        }
+      }
+    }
+    await asyncFunction(nestedReply)
+  
+    return {
+      body,
+      code
+    }
+  }
 }
+

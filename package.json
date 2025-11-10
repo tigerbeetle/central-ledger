@@ -48,6 +48,7 @@
     "test": "npm run test:unit:spec",
     "test:tsunit": "npx ts-node test/unit/runner.ts './test/unit/**/*.test.*'",
     "test:unit": "npx tape 'test/unit/**/*.test.js'",
+    "test:unit-v2": "node --test --require ts-node/register './src/**/*.unit.ts'",
     "test:unit:spec": "npm run test:unit | tap-spec",
     "test:unit:distLock": "npx tape 'test/unit/lib/distLock/**/*.test.js'",
     "test:xunit": "npm run test:unit | tap-xunit > ./test/results/xunit.xml",
