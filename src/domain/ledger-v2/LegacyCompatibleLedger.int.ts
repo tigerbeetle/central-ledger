@@ -42,7 +42,7 @@ import { makeConfig } from '../../shared/config/resolver';
 import { logger } from '../../shared/logger';
 import Provisioner, { ProvisionerDependencies, ProvisioningConfig } from '../../shared/provisioner';
 import DFSPProvisioner, { DFSPProvisionerConfig } from '../../testing/dfsp-provisioner';
-import { DatabaseConfig, IntegrationHarnessDatabase } from '../../testing/integration-harness';
+import { DatabaseConfig, IntegrationHarnessDatabase } from '../../testing/harness/harness-tigerbeetle';
 import { MojaloopMockQuoteILPResponse, TestUtils } from '../../testing/testutils';
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from './LegacyCompatibleLedger';
 import { PrepareResultType } from './types';

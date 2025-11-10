@@ -11,7 +11,6 @@ import { makeConfig } from '../../shared/config/resolver';
 import { logger } from '../../shared/logger';
 import Provisioner, { ProvisioningConfig } from '../../shared/provisioner';
 import DFSPProvisioner, { DFSPProvisionerConfig } from '../../testing/dfsp-provisioner';
-import { DatabaseConfig, IntegrationHarnessDatabase, IntegrationHarnessTigerBeetle, TigerBeetleConfig } from '../../testing/integration-harness';
 import { MojaloopMockQuoteILPResponse, TestUtils } from '../../testing/testutils';
 import { PrepareResultType } from './types';
 
@@ -19,22 +18,23 @@ import { Client, createClient } from 'tigerbeetle-node';
 import { PersistedMetadataStore } from './PersistedMetadataStore';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "./TigerBeetleLedger";
 import { TransferBatcher } from './TransferBatcher';
+import { DatabaseConfig, HarnessDatabase } from '../../testing/harness/harness-database';
+import { HarnessTigerBeetle, TigerBeetleConfig } from '../../testing/harness/harness-tigerbeetle';
 
 describe('TigerBeetleLedger', () => {
   let ledger: TigerBeetleLedger
   let transferBatcher: TransferBatcher
   let client: Client
   let config: ApplicationConfig;
-  let dbHarness: IntegrationHarnessDatabase;
+  let dbHarness: HarnessDatabase;
   let dbConfig: DatabaseConfig;
-  let tbHarness: IntegrationHarnessTigerBeetle;
+  let tbHarness: HarnessTigerBeetle;
   let tbConfig: TigerBeetleConfig
 
   before(async () => {
     try {
       // Set up Docker MySQL container for integration testing
-      // TODO: add Tigerbeetle in memory binary to harness
-      dbHarness = new IntegrationHarnessDatabase({
+      dbHarness = new HarnessDatabase({
         databaseName: 'central_ledger_test',
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
@@ -44,7 +44,7 @@ describe('TigerBeetleLedger', () => {
       });
       
 
-      tbHarness = new IntegrationHarnessTigerBeetle({
+      tbHarness = new HarnessTigerBeetle({
         // tigerbeetleBinaryPath: '../../.bin/tigerbeetle'
         tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
       });
