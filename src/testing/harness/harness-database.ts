@@ -60,6 +60,7 @@ export class HarnessDatabase implements Harness {
 
     // Find an available port starting from the configured port
     const availablePort = await TestUtils.findAvailablePort(this.config.port);
+    logger.debug(`start() - using port: ${availablePort} for ${containerName}`)
     this.port = availablePort;
 
     try {
@@ -193,7 +194,7 @@ export class HarnessDatabase implements Harness {
   /**
    * Wait for MySQL to be ready to accept database connections
    */
-  private async waitForMysqlReady(maxAttempts: number = 300, delayMs: number = 10): Promise<void> {
+  private async waitForMysqlReady(maxAttempts: number = 300, delayMs: number = 35): Promise<void> {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         // Test actual database connection instead of just ping

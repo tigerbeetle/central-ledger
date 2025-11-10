@@ -1,25 +1,74 @@
-import { describe, it } from "node:test";
-import { CreateDFSPCommand, CreateDFSPResponse } from "../../domain/ledger-v2/types";
-import TestLedger from "../../testing/TestLedger";
-import { TestUtils } from "../../testing/testutils";
-import { create } from "./handler";
+import { after, before, describe, it } from 'node:test';
+import TigerBeetleLedger from '../../domain/ledger-v2/TigerBeetleLedger';
+import { makeConfig } from '../../shared/config/resolver';
+import { logger } from '../../shared/logger';
+import { HarnessApi, HarnessApiConfig } from '../../testing/harness/harness-api';
 
-class ApiTestLedger extends TestLedger {
-  createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> {
-    throw new Error("Method not implemented.");
-  }
-}
+import Db from '../../lib/db';
+import { TestUtils } from '../../testing/testutils';
+
+import * as ParticipantHandler from './handler'
+import assert from 'assert';
 
 describe('api/participants/handler', () => {
-  const ledger = new ApiTestLedger()
+  let harnessApi: HarnessApi
+  let ledger: TigerBeetleLedger
+
+  before(async () => {
+    try {
+      const config: HarnessApiConfig = {
+        databaseConfig: {
+          databaseName: 'central_ledger_test',
+          mysqlImage: 'mysql:8.0',
+          memorySize: '256m',
+          port: 3307,
+          migration: { type: 'knex' }
+          // migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
+        },
+        tigerBeetleConfig: {
+          tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
+
+        },
+        applicationConfig: makeConfig()
+      }
+      const participantService = require('../../domain/participant');
+      harnessApi = new HarnessApi(config, Db, participantService);
+
+      const harnessApiResult = await harnessApi.start()
+      ledger = harnessApiResult.ledger
+
+    } catch (err) {
+      logger.error(`before() - failed with error: ${err.message}`)
+      if (err.stack) {
+        logger.error(err.stack)
+      }
+      await harnessApi.teardown()
+    }
+  })
+
+  after(async () => {
+    await harnessApi.teardown()
+  })
 
   describe('GET  /participants', () => {
-    it('Lists information about all participants', async() => {
+    it('Lists information about all participants', async () => {
       // Arrange
+      const request = {
+        payload: {},
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
 
       // Act
+       const {
+        code, body
+      } = await TestUtils.unwrapHapiResponse(reply => ParticipantHandler.getAll(request))
 
       // Assert
+      assert.equal(code, 200)
 
     })
   })

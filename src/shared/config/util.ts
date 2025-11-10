@@ -229,7 +229,8 @@ export const kafkaWithBrokerDefaults = (input: KafkaConfig, defaultBroker: strin
           && leafConfig.config.rdkafkaConf
           && !leafConfig.config.rdkafkaConf['metadata.broker.list']
         ) {
-          logger.debug(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
+          // Disabled this noisy log - not sure if we should reenable it
+          // logger.debug(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
           input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
         }
       })

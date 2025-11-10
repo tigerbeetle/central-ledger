@@ -42,26 +42,28 @@ import { makeConfig } from '../../shared/config/resolver';
 import { logger } from '../../shared/logger';
 import Provisioner, { ProvisionerDependencies, ProvisioningConfig } from '../../shared/provisioner';
 import DFSPProvisioner, { DFSPProvisionerConfig } from '../../testing/dfsp-provisioner';
-import { DatabaseConfig, IntegrationHarnessDatabase } from '../../testing/harness/harness-tigerbeetle';
 import { MojaloopMockQuoteILPResponse, TestUtils } from '../../testing/testutils';
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from './LegacyCompatibleLedger';
 import { PrepareResultType } from './types';
+import { DatabaseConfig, HarnessDatabase } from '../../testing/harness/harness-database';
 
 describe('LegacyCompatibleLedger', () => {
   let ledger: LegacyCompatibleLedger;
   let config: ApplicationConfig;
-  let harness: IntegrationHarnessDatabase;
+  let harness: HarnessDatabase;
   let dbConfig: DatabaseConfig;
 
   before(async () => {
     try {
       // Set up Docker MySQL container for integration testing
-      harness = new IntegrationHarnessDatabase({
+      harness = new HarnessDatabase({
         databaseName: 'central_ledger_test',
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
         port: 3307,
-        migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
+        migration: { type: 'knex' }
+
+        // migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
       });
 
       dbConfig = await harness.start();
@@ -156,12 +158,12 @@ describe('LegacyCompatibleLedger', () => {
       const dfspAConfig: DFSPProvisionerConfig = {
         dfspId: 'dfsp_a',
         currencies: ['USD'],
-        initialLimits: [100000]
+        startingDeposits: [100000]
       }
       const dfspBConfig: DFSPProvisionerConfig = {
         dfspId: 'dfsp_b',
         currencies: ['USD'],
-        initialLimits: [100000]
+        startingDeposits: [100000]
       }
       const dfspProvisioner = new DFSPProvisioner({
         ledger: ledger,
