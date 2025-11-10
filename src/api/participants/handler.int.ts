@@ -9,7 +9,7 @@ import { initializeCache } from '../../shared/setup-new';
 import { HarnessApi, HarnessApiConfig } from '../../testing/harness/harness-api';
 import { TestUtils } from '../../testing/testutils';
 import * as ParticipantHandler from './handler';
-import { checkSnapshotObject, unwrapSnapshot } from '../../testing/snapshot';
+import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 
 describe('api/participants/handler', () => {
   let harnessApi: HarnessApi
@@ -54,6 +54,12 @@ describe('api/participants/handler', () => {
   })
 
   describe('GET /participants', () => {
+    /**
+     * Note: These tests are prefixed with a number since they depend on the state of the 
+     *       previous tests to be completed succesfully and in order. An alternative option
+     *       would have been to put them all inside one `it()` block, but I feel that the 
+     *       approach chosen here makes the test output more readable.
+     */
     it('01 Returns the hub information', async () => {
       // Arrange
       const request = {
@@ -122,7 +128,7 @@ describe('api/participants/handler', () => {
   })
 
 
-  describe('DFSP Onboarding', () => {
+  describe.skip('DFSP Onboarding', () => {
     it('02 Creates a new DFSP', async () => {
       // Arrange
       const request = {
@@ -243,21 +249,188 @@ describe('api/participants/handler', () => {
       }
       unwrapSnapshot(checkSnapshotObject(body, snapshot))
     })
-    
-    it.todo('04 Gets the Participant by name')
+
+    it('04 deactivates a participant', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_x'
+        },
+        payload: {
+          isActive: false,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const body = await ParticipantHandler.update(request)
+
+      // Assert
+      assert.equal(body.isActive, 0)
+    })
+
+    it('05 reactivates a participant', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_x'
+        },
+        payload: {
+          isActive: true,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const body = await ParticipantHandler.update(request)
+
+      // Assert
+      assert.equal(body.isActive, 1)
+    })
+
+    it('06 deactivating a deactivated participant has no effect', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_x'
+        },
+        payload: {
+          isActive: false,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      await ParticipantHandler.update(request)
+      const body = await ParticipantHandler.update(request)
+
+      // Assert
+      assert.equal(body.isActive, 0)
+    })
+
+    it('07 cannot deactivate a participant that does not exist', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'not_a_dfsp'
+        },
+        payload: {
+          isActive: false,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      try {
+        await ParticipantHandler.update(request)
+        throw new Error('Test failed')
+      } catch (err) {
+        assert.equal(err.message, 'Participant does not exist')
+      }
+    })
+
+    it('08 can deactivate the Hub participant', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          isActive: false,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const body = await ParticipantHandler.update(request)
+
+      // Assert
+      assert.equal(body.isActive, 0)
+    })
   })
-  // describe('GET  /participants/limits')
-  // describe('GET  /participants/{name}')
-  // describe('PUT  /participants/{name}')
-  // describe('GET  /participants/{name}/endpoints')
-  // describe('POST /participants/{name}/endpoints')
+
+  describe('Limits', () => {
+    it('01 Setup', async () => {
+      // Arrange
+      const request = {
+        query: {
+          isProxy: false
+        },
+        payload: {
+          currency: 'USD',
+          name: 'dfsp_y',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+    })
+
+    it('02 Gets the opening limits', async () => {
+      // Arrange
+      const request = {
+        query: {
+          currency: 'USD',
+          type: 'NET_DEBIT_CAP'
+        },
+        params: {
+          name: 'dfsp_y',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const body = await ParticipantHandler.getLimits(request)
+
+      // Assert
+      unwrapSnapshot(checkSnapshotString(JSON.stringify(body), "[]"))
+    })
+  })
+
+  // describe('GET  /participants/limits') -> tested incidentally
+  // describe('GET  /participants/{name}') -> tested incidentally
+  // describe('PUT  /participants/{name}') ✅
   // describe('GET  /participants/{name}/limits')
   // describe('PUT  /participants/{name}/limits')
-  // describe('GET  /participants/{name}/positions')
   // describe('GET  /participants/{name}/accounts')
   // describe('PUT  /participants/{name}/accounts')
   // describe('PUT  /participants/{name}/accounts/{id}')
   // describe('POST /participants/{name}/accounts/{id}')
   // describe('POST /participants/{name}/accounts/{id}/transfers/{id}')
   // describe('POST /participants/{name}/initialPositionAndLimits')
+  // describe('GET  /participants/{name}/positions')
+
+
+  // always kinda covered
+  // describe('GET  /participants/{name}/endpoints')
+  // describe('POST /participants/{name}/endpoints')
+
 })
