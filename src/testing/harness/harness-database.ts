@@ -198,14 +198,14 @@ export class HarnessDatabase implements Harness {
   }
 
   /**
-   * Wait for MySQL to be ready to accept database connections
+   * Wait for MySQL to be ready to accept client connections
    */
   private async waitForMysqlReady(maxAttempts: number = 300, delayMs: number = 35): Promise<void> {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         // Test actual database connection instead of just ping
         await execAsync(`docker exec ${this.containerId} mysql -u root -ppassword -e "SELECT 1" ${this.config.databaseName}`);
-        logger.info('MySQL is ready for database connections');
+        logger.info('MySQL is ready for client');
         return;
       } catch (error) {
         if (attempt === maxAttempts) {
@@ -296,7 +296,7 @@ export class HarnessDatabase implements Harness {
       const { stdout, stderr } = await execAsync(cmd);
 
       if (stderr && !stderr.includes('warning')) {
-        logger.warn('SQL migration warnings:', stderr);
+        logger.debug('SQL migration warnings:', stderr);
       }
 
       logger.debug(`SQL migration from ${sqlFilePath} completed`);

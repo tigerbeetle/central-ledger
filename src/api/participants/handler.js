@@ -87,7 +87,49 @@ const handleMissingRecord = (entity) => {
   return entity
 }
 
+// original create - no ledger!
 const create = async function (request, h) {
+  try {
+    const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
+    await ParticipantService.validateHubAccounts(request.payload.currency)
+    let participant = await ParticipantService.getByName(request.payload.name)
+    if (participant) {
+      const currencyExists = participant.currencyList.find(currency => {
+        return currency.currencyId === request.payload.currency
+      })
+      if (currencyExists) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
+      }
+    } else {
+      const participantId = await ParticipantService.create(request.payload)
+      participant = await ParticipantService.getById(participantId)
+    }
+    const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
+    const allSettlementModels = await SettlementService.getAll()
+    let settlementModels = allSettlementModels.filter(model => model.currencyId === request.payload.currency)
+    if (settlementModels.length === 0) {
+      settlementModels = allSettlementModels.filter(model => model.currencyId === null) // Default settlement model
+      if (settlementModels.length === 0) {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.GENERIC_SETTLEMENT_ERROR, 'Unable to find a matching or default, Settlement Model')
+      }
+    }
+    for (const settlementModel of settlementModels) {
+      const [participantCurrencyId1, participantCurrencyId2] = await Promise.all([
+        ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.ledgerAccountTypeId, false),
+        ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)])
+      if (Array.isArray(participant.currencyList)) {
+        participant.currencyList = participant.currencyList.concat([await ParticipantService.getParticipantCurrencyById(participantCurrencyId1), await ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
+      } else {
+        participant.currencyList = await Promise.all([ParticipantService.getParticipantCurrencyById(participantCurrencyId1), ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
+      }
+    }
+    return h.response(entityItem(participant, ledgerAccountIds)).code(201)
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
+  }
+}
+
+const createV2 = async function (request, h) {
   try {
     assert(request)
     assert(request.payload)
@@ -303,6 +345,15 @@ const getEndpoint = async function (request) {
 
 const addLimitAndInitialPosition = async function (request, h) {
   try {
+    await ParticipantService.addLimitAndInitialPosition(request.params.name, request.payload)
+    return h.response().code(201)
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddLimitAndInitialPosition' })
+  }
+}
+
+const addLimitAndInitialPositionV2 = async function (request, h) {
+  try {
     assert(request)
     assert(request.params)
     assert(request.params.name)
@@ -336,6 +387,28 @@ const addLimitAndInitialPosition = async function (request, h) {
 }
 
 const getLimits = async function (request) {
+  try {
+    const result = await ParticipantService.getLimits(request.params.name, request.query)
+    const limits = []
+    if (Array.isArray(result) && result.length > 0) {
+      result.forEach(item => {
+        limits.push({
+          currency: (item.currencyId || request.query.currency),
+          limit: {
+            type: item.name,
+            value: new MLNumber(item.value).toNumber(),
+            alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
+          }
+        })
+      })
+    }
+    return limits
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetLimits' })
+  }
+}
+
+const getLimitsV2 = async function (request) {
   try {
     assert(request)
     assert(request.params)
@@ -450,6 +523,24 @@ const getPositions = async function (request) {
 }
 
 const getAccounts = async function (request) {
+  try {
+    const result = await ParticipantService.getAccounts(request.params.name, request.query)
+
+    // Convert value and reservedValue from string to number
+    if (Array.isArray(result)) {
+      return result.map(account => ({
+        ...account,
+        value: account.value !== undefined ? new MLNumber(account.value).toNumber() : undefined,
+        reservedValue: account.reservedValue !== undefined ? new MLNumber(account.reservedValue).toNumber() : undefined
+      }))
+    }
+    return result
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetAccounts' })
+  }
+}
+
+const getAccountsV2 = async function (request) {
   assert(request)
   assert(request.params)
   assert(request.params.name)

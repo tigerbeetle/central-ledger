@@ -53,7 +53,6 @@ declare module '@hapi/hapi' {
   }
 }
 
-
 const USE_NEW_HANDLERS = true
 
 export interface Initialized {
@@ -365,7 +364,7 @@ async function initializeMongoDB(config: ApplicationConfig): Promise<unknown> {
   }
 }
 
-async function initializeCache(): Promise<void> {
+export async function initializeCache(): Promise<void> {
   // TODO: dependency inject!
   await EnumCached.initialize()
   await ParticipantCached.initialize()

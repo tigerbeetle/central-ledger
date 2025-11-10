@@ -39,7 +39,7 @@ export class HarnessTigerBeetle implements Harness {
 
     try {
       // Format the data file
-      logger.info(`Formatting TigerBeetle data file: ${this.dataFilePath}`);
+      logger.debug(`Formatting TigerBeetle data file: ${this.dataFilePath}`);
       const formatProcess = spawn(this.config.tigerbeetleBinaryPath, [
         'format',
         `--cluster=${clusterId}`,
@@ -62,11 +62,11 @@ export class HarnessTigerBeetle implements Harness {
 
         formatProcess.on('close', (code) => {
           logger.info(`TigerBeetle format process closed with code: ${code}`);
-          if (stdout) logger.info(`TigerBeetle format stdout: ${stdout}`);
-          if (stderr) logger.info(`TigerBeetle format stderr: ${stderr}`);
+          if (stdout) logger.debug(`TigerBeetle format stdout: ${stdout}`);
+          if (stderr) logger.debug(`TigerBeetle format stderr: ${stderr}`);
 
           if (code === 0) {
-            logger.info('TigerBeetle format completed successfully');
+            logger.debug('TigerBeetle format completed successfully');
             resolve();
           } else {
             reject(new Error(`TigerBeetle format failed with code ${code}. stderr: ${stderr}, stdout: ${stdout}`));
@@ -143,7 +143,7 @@ export class HarnessTigerBeetle implements Harness {
       try {
         const fs = require('fs').promises;
         await fs.unlink(this.dataFilePath);
-        logger.info(`Cleaned up TigerBeetle data file: ${this.dataFilePath}`);
+        logger.debug(`Cleaned up TigerBeetle data file: ${this.dataFilePath}`);
       } catch (error) {
         logger.warn(`Failed to cleanup data file: ${error.message}`);
       }
