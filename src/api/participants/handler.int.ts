@@ -9,6 +9,7 @@ import { TestUtils } from '../../testing/testutils';
 
 import * as ParticipantHandler from './handler'
 import assert from 'assert';
+import path from 'path';
 
 describe('api/participants/handler', () => {
   let harnessApi: HarnessApi
@@ -16,17 +17,19 @@ describe('api/participants/handler', () => {
 
   before(async () => {
     try {
+      const projectRoot = path.join(__dirname, '../../..')
       const config: HarnessApiConfig = {
         databaseConfig: {
           databaseName: 'central_ledger_test',
           mysqlImage: 'mysql:8.0',
           memorySize: '256m',
           port: 3307,
-          migration: { type: 'knex' }
-          // migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
+          // migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint1.sql') }
+          migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
         },
         tigerBeetleConfig: {
-          tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
+          tigerbeetleBinaryPath: path.join(projectRoot, '../../', '.bin/tigerbeetle')
+          // tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
 
         },
         applicationConfig: makeConfig()

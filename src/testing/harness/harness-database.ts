@@ -24,6 +24,12 @@ export interface DatabaseConfig {
 
 export interface MigrationOptionsKnex {
   type: 'knex';
+
+  /**
+   * If this is set, then after running the knex migration, perform a mysql dump
+   * to update the migration file
+   */
+  updateSqlFilePath?: string
 }
 
 export interface MigrationOptionsSql {
@@ -216,6 +222,8 @@ export class HarnessDatabase implements Harness {
    * Run knex migrations
    */
   private async migrateWithKnex(): Promise<void> {
+    assert(this.config.migration.type === 'knex')
+
     const knex = require('knex')({
       client: 'mysql2',
       connection: {
@@ -233,8 +241,45 @@ export class HarnessDatabase implements Harness {
     try {
       await knex.migrate.latest();
       logger.debug('Knex migrations completed');
+
+      if (this.config.migration.updateSqlFilePath) {
+        await this.updateSqlFile(this.config.migration.updateSqlFilePath)
+      }
     } finally {
       await knex.destroy();
+    }
+  }
+
+  /**
+   * Update the migration sql file by dumping the current database state
+   * This creates a checkpoint that can be used for faster test setup
+   */
+  private async updateSqlFile(sqlFilePath: string): Promise<void> {
+    try {
+      logger.info(`updateSqlFile() - creating checkpoint at: ${sqlFilePath}`)
+
+      // Dump the database inside the container to a temp file
+      const containerTempFile = '/tmp/checkpoint_dump.sql';
+      const dumpCmd = `docker exec ${this.containerId} sh -c 'mysqldump -u root -ppassword ${this.config.databaseName} > ${containerTempFile}'`;
+      const { stderr: dumpStderr } = await execAsync(dumpCmd);
+
+      if (dumpStderr && !dumpStderr.includes('Warning: Using a password')) {
+        logger.warn('SQL dump warnings:', dumpStderr);
+      }
+
+      // Copy the dump file from container to host
+      const copyCmd = `docker cp ${this.containerId}:${containerTempFile} ${sqlFilePath}`;
+      const { stderr: copyStderr } = await execAsync(copyCmd);
+
+      if (copyStderr) {
+        logger.warn('Docker copy warnings:', copyStderr);
+      }
+
+      logger.info(`SQL checkpoint saved to ${sqlFilePath}`);
+
+    } catch (err) {
+      logger.error(`updateSqlFile() failed with error: ${err.message}`)
+      throw err
     }
   }
 
@@ -244,8 +289,8 @@ export class HarnessDatabase implements Harness {
   private async migrateWithSqlFile(sqlFilePath: string): Promise<void> {
     try {
       // const sqlContent = await readFile(sqlFilePath, 'utf-8');
-      logger.debug('restoreFromCheckpoint()')
-      const fullFilePath = path.join(__dirname, sqlFilePath)
+      logger.debug(`migrateWithSqlFile(): ${sqlFilePath}`)
+      const fullFilePath = path.join(sqlFilePath)
       const cmd = `docker cp ${fullFilePath} ${this.containerId}:/tmp/checkpoint.sql && \
       docker exec -i ${this.containerId} sh -c 'mysql -u root -ppassword ${this.config.databaseName} < /tmp/checkpoint.sql'`
       const { stdout, stderr } = await execAsync(cmd);
