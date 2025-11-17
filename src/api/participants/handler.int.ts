@@ -128,8 +128,8 @@ describe('api/participants/handler', () => {
   })
 
 
-  describe.skip('DFSP Onboarding', () => {
-    it('02 Creates a new DFSP', async () => {
+  describe('DFSP Onboarding', () => {
+    it('01 Creates a new DFSP', async () => {
       // Arrange
       const request = {
         query: {
@@ -182,7 +182,7 @@ describe('api/participants/handler', () => {
       unwrapSnapshot(checkSnapshotObject(body, snapshot))
     })
 
-    it('03 Adds a second currency to an existing DFSP', async () => {
+    it('02 Adds a second currency to an existing DFSP', async () => {
       const request = {
         query: {
           isProxy: false
@@ -250,7 +250,7 @@ describe('api/participants/handler', () => {
       unwrapSnapshot(checkSnapshotObject(body, snapshot))
     })
 
-    it('04 deactivates a participant', async () => {
+    it('03 deactivates a participant', async () => {
       // Arrange
       const request = {
         params: {
@@ -273,7 +273,7 @@ describe('api/participants/handler', () => {
       assert.equal(body.isActive, 0)
     })
 
-    it('05 reactivates a participant', async () => {
+    it('04 reactivates a participant', async () => {
       // Arrange
       const request = {
         params: {
@@ -296,7 +296,7 @@ describe('api/participants/handler', () => {
       assert.equal(body.isActive, 1)
     })
 
-    it('06 deactivating a deactivated participant has no effect', async () => {
+    it('05 deactivating a deactivated participant has no effect', async () => {
       // Arrange
       const request = {
         params: {
@@ -320,7 +320,7 @@ describe('api/participants/handler', () => {
       assert.equal(body.isActive, 0)
     })
 
-    it('07 cannot deactivate a participant that does not exist', async () => {
+    it('06 cannot deactivate a participant that does not exist', async () => {
       // Arrange
       const request = {
         params: {
@@ -345,7 +345,7 @@ describe('api/participants/handler', () => {
       }
     })
 
-    it('08 can deactivate the Hub participant', async () => {
+    it('07 can deactivate the Hub participant', async () => {
       // Arrange
       const request = {
         params: {
@@ -413,19 +413,223 @@ describe('api/participants/handler', () => {
       // Assert
       unwrapSnapshot(checkSnapshotString(JSON.stringify(body), "[]"))
     })
+
+    it('03 Sets the initial limit', async () => {
+      // Arrange
+      const request = {
+        payload: {
+          currency: 'USD',
+          limit: {
+            value: 10000000,
+            type: 'NET_DEBIT_CAP',
+          }
+        },
+        params: {
+          name: 'dfsp_y',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const {
+        code, body
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.addLimitAndInitialPosition(request, h))
+      const checkLimitRequest = {
+        query: {
+          currency: 'USD',
+          type: 'NET_DEBIT_CAP'
+        },
+        params: {
+          name: 'dfsp_y',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      const newLimit = await ParticipantHandler.getLimits(checkLimitRequest)
+
+      // Assert
+      assert.equal(code, 201)
+      assert.equal(body, undefined)
+      unwrapSnapshot(checkSnapshotObject(newLimit, [{
+        currency: 'USD',
+        limit: {
+          type: "NET_DEBIT_CAP",
+          value: 10000000,
+          alarmPercentage: 10,
+        }
+      }]))
+
+    })
+
+    it('04 Changes the limit', async () => {
+      // Arrange
+      const request = {
+        payload: {
+          currency: 'USD',
+          limit: {
+            value: 4_000_000,
+            type: 'NET_DEBIT_CAP',
+          }
+        },
+        params: {
+          name: 'dfsp_y',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const {
+        body
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.adjustLimits(request, h))
+
+      // Assert
+      unwrapSnapshot(checkSnapshotObject(body, {
+        currency: 'USD',
+        limit: {
+          type: "NET_DEBIT_CAP",
+          value: 4_000_000,
+        }
+      }))
+    })
+  })
+
+  describe.only('Accounts', () => {
+    it('01 Setup', async () => {
+      // Arrange
+      const request = {
+        query: {
+          isProxy: false
+        },
+        payload: {
+          currency: 'USD',
+          name: 'dfsp_u',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+    })
+
+    it('02 Gets the opening accounts', async () => {
+      // Arrange
+      const request = {
+        query: {
+          currency: 'USD',
+        },
+        params: {
+          name: 'dfsp_y',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const body = await ParticipantHandler.getAccounts(request)
+
+      // Assert
+      unwrapSnapshot(checkSnapshotObject(body, [{
+        changedDate: ":ignore",
+        currency: "USD",
+        "id:ignore": "",
+        isActive: 1,
+        ledgerAccountType: "POSITION",
+        reservedValue: 0,
+        value: 0
+      },
+      {
+        changedDate: ":ignore",
+        currency: "USD",
+        "id:ignore": "",
+        isActive: 1,
+        ledgerAccountType: "SETTLEMENT",
+        reservedValue: 0,
+        value: 0
+      }]))
+    })
+
+     it('03 Deposits working capital', async () => {
+      // Arrange
+      const request = {
+        payload: {
+          amount: {
+            currency: 'USD',
+            am
+          }
+        },
+        query: {
+        },
+        params: {
+          name: 'dfsp_y',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const {
+        body
+      } = await TestUtils.unwrapHapiResponse(h => 
+          ParticipantHandler.recordFunds(request, h)
+        )
+
+
+      // Assert
+      unwrapSnapshot(checkSnapshotObject(body, [{
+        changedDate: ":ignore",
+        currency: "USD",
+        "id:ignore": "",
+        isActive: 1,
+        ledgerAccountType: "POSITION",
+        reservedValue: 0,
+        value: 0
+      },
+      {
+        changedDate: ":ignore",
+        currency: "USD",
+        "id:ignore": "",
+        isActive: 1,
+        ledgerAccountType: "SETTLEMENT",
+        reservedValue: 0,
+        value: 0
+      }]))
+    })
   })
 
   // describe('GET  /participants/limits') -> tested incidentally
   // describe('GET  /participants/{name}') -> tested incidentally
   // describe('PUT  /participants/{name}') ✅
-  // describe('GET  /participants/{name}/limits')
-  // describe('PUT  /participants/{name}/limits')
+  // describe('GET  /participants/{name}/limits') ✅
+  // describe('POST /participants/{name}/initialPositionAndLimits') ✅
+  // describe('PUT  /participants/{name}/limits') ✅
+
   // describe('GET  /participants/{name}/accounts')
   // describe('PUT  /participants/{name}/accounts')
   // describe('PUT  /participants/{name}/accounts/{id}')
   // describe('POST /participants/{name}/accounts/{id}')
   // describe('POST /participants/{name}/accounts/{id}/transfers/{id}')
-  // describe('POST /participants/{name}/initialPositionAndLimits')
+
   // describe('GET  /participants/{name}/positions')
 
 

@@ -87,8 +87,8 @@ export function checkSnapshotString(actual: string, snapshot: string): SnapshotR
   let match = true
 
   for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
-    const left = actualLines[lineIdx]
-    const right = snapshotLines[lineIdx]
+    const left = actualLines[lineIdx] || ''
+    const right = snapshotLines[lineIdx] || ''
     if (left.length > maxColumnLengthLeft) {
       maxColumnLengthLeft = left.length
     }

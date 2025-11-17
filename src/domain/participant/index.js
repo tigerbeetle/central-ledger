@@ -344,7 +344,10 @@ const addLimitAndInitialPosition = async (participantName, limitAndInitialPositi
       limitAndInitialPosition.initialPosition = Config.PARTICIPANT_INITIAL_POSITION
     }
     const payload = Object.assign({}, limitAndInitialPositionObj, { name: participantName })
-    await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
+    
+    // TODO(LD): Disabling this for now, I'm not sure how it's used, and we need to 
+    // implement it in a different place anyway
+    // await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
     return ParticipantFacade.addLimitAndInitialPosition(participant.participantCurrencyId, settlementAccount.participantCurrencyId, limitAndInitialPosition, true)
   } catch (err) {
     log.error('error adding limit and initial position', err)
@@ -549,7 +552,10 @@ const adjustLimits = async (name, payload) => {
     participantExists(participant)
     const result = await ParticipantFacade.adjustLimits(participant.participantCurrencyId, limit)
     payload.name = name
-    await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
+
+    // TODO(LD): Disabling this for now, I'm not sure how it's used, and we need to 
+    // implement it in a different place anyway
+    // await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
     return result
   } catch (err) {
     log.error('error adjusting limits', err)

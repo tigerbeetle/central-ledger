@@ -1088,8 +1088,9 @@ export default class TigerBeetleLedger implements Ledger {
 
       // Remove the in flight transfers from the maybeTimedOutTransfers set
 
-      // TODO(LD): Ideally we could get the cluster time here, because if the server time has drifted
-      // too far, we might be filtering transfers out that have already timed out.
+      // TODO(LD): In future versions (0.17), create a dummy transfer to get the last timestamp of the
+      // switch, and use this instead of the NodeJS process time here, to protect us from clock
+      // drifts.
       const nowNs = BigInt(new Date().getTime()) * 1_000_000n
       Object.keys(maybeTimedOutTransfers).forEach(key => {
         const transfer = maybeTimedOutTransfers[key]
