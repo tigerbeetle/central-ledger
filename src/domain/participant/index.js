@@ -823,6 +823,8 @@ const recordFundsInOut = async (payload, params, enums) => {
       params,
       enums
     }
+
+    // TODO(LD): reinstate somehow!
     // Skip Kafka message for now - just log and continue
     log.warn('recordFundsInOut() - Skipping Kafka message LD need to refactor')
     return { success: true, kafkaSkipped: true }
