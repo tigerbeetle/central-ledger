@@ -27,7 +27,7 @@ export default class TestLedger implements Ledger {
   withdrawCollateral(cmd: unknown): Promise<unknown> {
     throw new Error("Method not implemented.");
   }
-  getAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+  getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
     throw new Error("Method not implemented.");
   }
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {

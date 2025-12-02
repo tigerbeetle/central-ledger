@@ -1,3 +1,7 @@
+// TODO(LD): I think we can remove this file altogether
+// these cases are all handled now in the integration test
+// although we might want to use these tests to verify that the ledgers return the correct responses
+
 import { describe, it } from "node:test";
 import { CreateDFSPCommand, CreateDFSPResponse } from "../../domain/ledger-v2/types";
 import TestLedger from "../../testing/TestLedger";
@@ -9,8 +13,6 @@ class ApiTestLedger extends TestLedger {
     throw new Error("Method not implemented.");
   }
 }
-
-
 
 describe('api/participants/handler', () => {
   const ledger = new ApiTestLedger()

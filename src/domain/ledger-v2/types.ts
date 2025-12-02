@@ -374,6 +374,23 @@ export interface DFSPAccountResponseFailure {
 export type DFSPAccountResponse = DFSPAccountResponseSuccess
   | DFSPAccountResponseFailure
 
+export interface GetHubAccountsQuery {
+  currency: string
+}
+
+export interface HubAccountResponseSuccess {
+  type: 'SUCCESS',
+  accounts: Array<LegacyLedgerAccount>
+}
+
+export interface HubAccountResponseFailure {
+  type: 'FAILURE',
+  fspiopError: FSPIOPError
+}
+
+export type HubAccountResponse = HubAccountResponseSuccess
+  | HubAccountResponseFailure
+
 export interface GetNetDebitCapQuery {
   dfspId: string,
   currency: string

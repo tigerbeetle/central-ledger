@@ -105,7 +105,8 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const result = await ParticipantHandler.getAll(request)
+      // const result = await ParticipantHandler.getAll(request)
+      const result = await ParticipantHandler.getAllV2(request)
 
       // Assert
       assert(result, 'Expected a response from getAll()')

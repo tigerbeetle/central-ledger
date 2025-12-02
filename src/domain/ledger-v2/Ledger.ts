@@ -10,7 +10,9 @@ import {
   DFSPAccountResponse,
   FulfilResult,
   GetDFSPAccountsQuery,
+  GetHubAccountsQuery,
   GetNetDebitCapQuery,
+  HubAccountResponse,
   LookupTransferQuery,
   LookupTransferQueryResponse,
   NetDebitCapResponse,
@@ -31,7 +33,8 @@ export interface Ledger {
   enableDfsp(cmd: unknown): Promise<unknown>;
   depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
   withdrawCollateral(cmd: unknown): Promise<unknown>;
-  getAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse>
+  getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
+  getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse>
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse>
   // setLimits(cmd: SetLimitsCommand): Promise<SetLimitsResponse>;
   // getLimits(cmd: GetLimitsCommand): Promise<GetLimitsResponse>;

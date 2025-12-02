@@ -51,7 +51,6 @@ export class HarnessApi implements Harness {
     this.harnessTigerBeetle = new HarnessTigerBeetle(config.tigerBeetleConfig)
   }
 
-  // public async start(): Promise<{dbConfig: DatabaseConfig, tbConfig: TigerBeetleConfig}> {
   public async start(): Promise<{ ledger: Ledger }> {
     logger.info('HarnessApi - start()')
     // Start the respective harnesses
@@ -72,10 +71,6 @@ export class HarnessApi implements Harness {
         database: dbConfig.database
       }
     };
-    // const testTBConfig = {
-    //   ...this.config.applicationConfig,
-    // }
-
 
     // Initialize database connection to test container
     await this.dbLib.connect(testDbConfig);

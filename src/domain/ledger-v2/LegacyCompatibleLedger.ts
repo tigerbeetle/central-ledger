@@ -20,7 +20,9 @@ import {
   FulfilResult,
   FulfilResultType,
   GetDFSPAccountsQuery,
+  GetHubAccountsQuery,
   GetNetDebitCapQuery,
+  HubAccountResponse,
   LegacyLedgerAccount,
   LookupTransferQuery,
   LookupTransferQueryResponse,
@@ -557,7 +559,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     throw new Error('not implemented')
   }
 
-  public async getAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+  public async getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
     const legacyQuery = { currency: query.currency }
     try {
       const accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
@@ -594,7 +596,13 @@ export default class LegacyCompatibleLedger implements Ledger {
       }
     }
   }
+  
+  public async getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
+    
+    throw new Error('Not Implemented')
+  }
 
+  
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
     const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP' }
     try {

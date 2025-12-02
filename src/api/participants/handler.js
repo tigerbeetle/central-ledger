@@ -266,8 +266,6 @@ const createHubAccount = async function (request, h) {
   }
 }
 
-// TODO(LD): lower priority, but probably required
-// The question is how we might go about implementing this in TigerBeetle
 const getAll = async function (request) {
   const results = await ParticipantService.getAll()
   const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
@@ -278,8 +276,12 @@ const getAll = async function (request) {
   return results.map(record => entityItem(record, ledgerAccountIds))
 }
 
-// TODO(LD): lower priority, but probably required
-// The question is how we might go about implementing this in TigerBeetle
+const getAllV2 = async function (request) {
+  const ledger = getLedger(request)
+  // look up all TigerBeetle accounts across all participants
+  // translate back to Admin API?
+}
+
 const getByName = async function (request) {
   const entity = await ParticipantService.getByName(request.params.name)
   handleMissingRecord(entity)
@@ -598,6 +600,7 @@ module.exports = {
   create,
   createHubAccount,
   getAll,
+  getAllV2,
   getByName,
   update,
   addEndpoint,

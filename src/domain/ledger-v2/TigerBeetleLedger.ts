@@ -21,7 +21,9 @@ import {
   FulfilResult,
   FulfilResultType,
   GetDFSPAccountsQuery,
+  GetHubAccountsQuery,
   GetNetDebitCapQuery,
+  HubAccountResponse,
   LegacyLedgerAccount,
   LegacyLimit,
   LookupTransferQuery,
@@ -354,7 +356,7 @@ export default class TigerBeetleLedger implements Ledger {
    * @method getAccounts
    * @description Lookup the accounts for a DFSP + Currency
    */
-  public async getAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+  public async getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
     const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
@@ -439,6 +441,10 @@ export default class TigerBeetleLedger implements Ledger {
       type: 'SUCCESS',
       accounts,
     }
+  }
+
+  public async getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
+    throw new Error('Method not implemented.');
   }
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
