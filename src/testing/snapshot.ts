@@ -93,12 +93,16 @@ const matchSpecialToken = (line: string): {
 
   const matchers: Array<[string, SpecialToken]> = [
     ['\":ignore', SpecialToken.IGNORE],
+    ['\':ignore', SpecialToken.IGNORE],
     [':ignore', SpecialToken.IGNORE],
     ['\":string', SpecialToken.MATCH_STRING],
+    ['\':string', SpecialToken.MATCH_STRING],
     [':string', SpecialToken.MATCH_STRING],
     ['":integer', SpecialToken.MATCH_INTEGER],
+    ['\':integer', SpecialToken.MATCH_INTEGER],
     [':integer', SpecialToken.MATCH_INTEGER],
     ['":date', SpecialToken.MATCH_DATE],
+    ['\':date', SpecialToken.MATCH_DATE],
     [':date', SpecialToken.MATCH_DATE],
     [':bigint', SpecialToken.MATCH_BIGINT],
   ]
@@ -175,8 +179,9 @@ export function checkSnapshotString(actual: string, snapshot: string): SnapshotR
           continue;
         }
 
-        // make sure the left side is a string somehow?!
+        // make sure the left side is a string
         const leftCandidate = left.substring(specialToken.index)
+          .replace(',', '') // Workaround for trailing commas
         if (!leftCandidate || leftCandidate.length === 0) {
           mismatchedLines.push(lineIdx)
           continue

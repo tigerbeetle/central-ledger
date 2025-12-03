@@ -148,3 +148,47 @@ export const createsANewDfsp = {
   ],
   isProxy: 0
 }
+
+export const addsASecondCurrencyToExistingDFSP =
+{
+  name: 'dfsp_x',
+  id: 'http://central-ledger/participants/dfsp_x',
+  created: ':ignore',
+  isActive: 1,
+  links: { self: 'http://central-ledger/participants/dfsp_x' },
+  accounts: [
+    {
+      id: ':string',
+      ledgerAccountType: 'POSITION',
+      currency: 'USD',
+      isActive: 0,
+      "createdDate:ignore": true,
+      createdBy: 'unknown'
+    },
+    {
+      id: ':string',
+      ledgerAccountType: 'SETTLEMENT',
+      currency: 'USD',
+      isActive: 0,
+      "createdDate:ignore": true,
+      createdBy: 'unknown'
+    },
+    {
+      id: ':string',
+      ledgerAccountType: 'POSITION',
+      currency: 'KES',
+      isActive: 0,
+      "createdDate:ignore": true,
+      createdBy: 'unknown'
+    },
+    {
+      id: ':string',
+      ledgerAccountType: 'SETTLEMENT',
+      currency: 'KES',
+      isActive: 0,
+      "createdDate:ignore": true,
+      createdBy: 'unknown'
+    }
+  ],
+  isProxy: 0
+}

@@ -166,7 +166,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.createV2(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
 
       // Assert
       assert.equal(code, 201)
@@ -192,52 +192,11 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.createV2(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
 
       // Assert
       assert.equal(code, 201)
-      const snapshot = {
-        name: 'dfsp_x',
-        id: 'http://central-ledger/participants/dfsp_x',
-        created: ':ignore',
-        isActive: 1,
-        links: { self: 'http://central-ledger/participants/dfsp_x' },
-        accounts: [
-          {
-            id: 7,
-            ledgerAccountType: 'POSITION',
-            currency: 'USD',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          },
-          {
-            id: 8,
-            ledgerAccountType: 'SETTLEMENT',
-            currency: 'USD',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          },
-          {
-            id: 9,
-            ledgerAccountType: 'POSITION',
-            currency: 'KES',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          },
-          {
-            id: 10,
-            ledgerAccountType: 'SETTLEMENT',
-            currency: 'KES',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          }
-        ],
-        isProxy: 0
-      }
+      const snapshot = snapshots.addsASecondCurrencyToExistingDFSP
       unwrapSnapshot(checkSnapshotObject(body, snapshot))
     })
 

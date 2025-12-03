@@ -408,43 +408,34 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.startingDeposits)
     assert.equal(cmd.currencies.length, cmd.startingDeposits.length, 'Expected currencies and startingDeposits to have the same length')
 
-    // Write Last, Read First
-
-
     try {
       const participant = await this.deps.lifecycle.participantService.getByName(cmd.dfspId);
+
       if (participant) {
-        return {
-          type: 'ALREADY_EXISTS'
+        // If any of the new currencies to be registered are already created, then return 'ALREADY_EXISTS'
+        const existingCurrencies = participant.currencyList.map(c => c.currencyId)
+        if (existingCurrencies.length === 0) {
+          throw new Error('no currencies found in participantService.getByName()')
         }
+
+        const currencyAlreadyRegistered = existingCurrencies.reduce((acc, curr) => {
+          if (acc) {
+            return acc
+          }
+          if (cmd.currencies.indexOf(curr) > -1) {
+            return true
+          }
+        }, false)
+
+        if (currencyAlreadyRegistered) {
+          return {
+            type: 'ALREADY_EXISTS'
+          }
+        }
+        // all currencies are new, continue
       }
 
-
-      // Create the account
-
-      // Mock callback to suit the handler expectations
-      const mockCallback = {
-        response: (body: any) => {
-          return {
-            code: (code: number) => { }
-          }
-        }
-      };
-      // TODO: this is so hacky
-      const positionAccountRequests = cmd.currencies.map(currency => {
-        return {
-          payload: {
-            name: cmd.dfspId,
-            currency
-          },
-          server: {
-            app: {
-              ledger: this
-            }
-          }
-        }
-      })
-      // Create participant and currency accounts directly (bypassing handler to avoid circular dependency)
+      // Create participant and currency accounts directly
       for (const currency of cmd.currencies) {
         await this.createParticipantWithCurrency(cmd.dfspId, currency);
       }

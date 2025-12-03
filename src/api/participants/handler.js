@@ -43,6 +43,7 @@ const { randomUUID } = require('crypto')
 const { log } = require('console')
 const { assertString, safeStringToNumber } = require('../../shared/config/util')
 const { isProxy } = require('util/types')
+const { type } = require('os')
 
 const LocalEnum = {
   activated: 'activated',
@@ -88,7 +89,6 @@ const handleMissingRecord = (entity) => {
   return entity
 }
 
-// original create - no ledger!
 const create = async function (request, h) {
   try {
     const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
@@ -358,6 +358,37 @@ const update = async function (request) {
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantUpdate' })
   }
+}
+
+const updateV2 = async function (request) {
+  try {
+    assert(request)
+    assert(request.params)
+    assert(request.params.name)
+    assert(request.payload)
+    assert(request.payload.isActive)
+
+    const { isActive } = request.payload
+    assert.equal(typeof isActive, 'boolean')
+    const ledger = getLedger(request)
+
+    let response
+    if (isActive === false) {
+      response = await ledger.disableDfsp()
+    } else {
+      response = await ledger.enableDfsp()
+    }
+
+
+
+
+    // now look up the participant
+    const getByNameReply = await internalGetByName(ledger, request.payload.name)
+    return h.response(getByNameReply).code(201)
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
+  }
+
 }
 
 const addEndpoint = async function (request, h) {
@@ -651,8 +682,7 @@ const recordFunds = async function (request, h) {
 }
 
 module.exports = {
-  create,
-  createV2,
+  create: createV2,
   createHubAccount,
   // Working through the new Ledger implementations
   getAll: getAllV2,
