@@ -665,9 +665,11 @@ const recordFunds = async function (request, h) {
 module.exports = {
   create,
   createHubAccount,
-  getAll,
-  getAllV2,
-  getByName,
+  // Working through the new Ledger implementations
+  getAll: getAllV2,
+  getByName: () => {
+    throw new Error('getByName() has been deprecated in Ledger Migration.')
+  },
   update,
   addEndpoint,
   getEndpoint,

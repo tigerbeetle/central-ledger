@@ -1,4 +1,5 @@
 import assert from "assert"
+import { Ignore } from "glob"
 
 const BG_YELLOW = '\x1b[43m'
 const BLACK = '\x1b[30m'
@@ -14,7 +15,7 @@ export interface SnapshotMatch<T> {
   type: SnapshotResultType.MATCH
   actual: T
   snapshot: T
-  
+
 }
 
 export interface SnapshotMismatch<T> {
@@ -73,6 +74,52 @@ export function checkSnapshotObject(actual: object, snapshot: object): SnapshotR
   };
 }
 
+enum SpecialToken {
+  IGNORE = 'IGNORE',
+  MATCH_STRING = 'MATCH_STRING',
+  MATCH_INTEGER = 'MATCH_INTEGER',
+  MATCH_DATE = 'MATCH_DATE',
+  MATCH_BIGINT = 'MATCH_BIGINT',
+  NONE = 'NONE',
+}
+
+/**
+ * Search the line for special tokens.
+ */
+const matchSpecialToken = (line: string): { 
+  token: SpecialToken,
+  index: number 
+} => {
+
+  const matchers: Array<[string, SpecialToken]> = [
+    ['\":ignore', SpecialToken.IGNORE],
+    [':ignore', SpecialToken.IGNORE],
+    ['\":string', SpecialToken.MATCH_STRING],
+    [':string', SpecialToken.MATCH_STRING],
+    ['":integer', SpecialToken.MATCH_INTEGER],
+    [':integer', SpecialToken.MATCH_INTEGER],
+    ['":date', SpecialToken.MATCH_DATE],
+    [':date', SpecialToken.MATCH_DATE],
+    [':bigint', SpecialToken.MATCH_BIGINT],
+  ]
+
+  for (const matcher of matchers) {
+    let index = line.indexOf(matcher[0])
+    if (index > -1) {
+      return {
+        token: matcher[1],
+        index
+      }
+    }
+  }
+
+  // catch all - no matches
+  return {
+    token: SpecialToken.NONE,
+    index: 0
+  }
+}
+
 export function checkSnapshotString(actual: string, snapshot: string): SnapshotResult<string> {
   assert(actual)
   assert(typeof actual === 'string')
@@ -98,25 +145,96 @@ export function checkSnapshotString(actual: string, snapshot: string): SnapshotR
       continue
     }
 
-    const skipTokenIdx = right.indexOf(':ignore')
-    if (skipTokenIdx === -1) {
-      if (left !== right) {
-        mismatchedLines.push(lineIdx)
-        continue;
-      }
-    }
-    // if we found a skip token, then only match the line up to the token
-    if (left.length < skipTokenIdx) {
-      mismatchedLines.push(lineIdx)
-      continue;
-    }
+    const specialToken = matchSpecialToken(right)
+    switch (specialToken.token) {
+      /**
+       * We ignore the rest of the line after the index of the `:ignore`
+       */
+      case SpecialToken.IGNORE: {
+        // if we found a skip token, then only match the line up to the token
+        if (left.length < specialToken.index) {
+          mismatchedLines.push(lineIdx)
+          continue;
+        }
 
-    const leftTruncated = left.substring(0, skipTokenIdx)
-    const rightTruncated = right.substring(0, skipTokenIdx)
-    assert(leftTruncated.length === rightTruncated.length)
-    if (leftTruncated !== rightTruncated) {
-      mismatchedLines.push(lineIdx)
-      continue;
+        const leftTruncated = left.substring(0, specialToken.index)
+        const rightTruncated = right.substring(0, specialToken.index)
+        assert(leftTruncated.length === rightTruncated.length)
+        if (leftTruncated !== rightTruncated) {
+          mismatchedLines.push(lineIdx)
+          continue;
+        }
+        break;
+      }
+      /**
+       * We expect the left side to be a string
+       */
+      case SpecialToken.MATCH_STRING: {
+        if (left.length < specialToken.index) {
+          mismatchedLines.push(lineIdx)
+          continue;
+        }
+
+        // make sure the left side is a string somehow?!
+        const leftCandidate = left.substring(specialToken.index)
+        if (!leftCandidate || leftCandidate.length === 0) {
+          mismatchedLines.push(lineIdx)
+          continue
+        }
+
+        // Parse and see what it might be
+        try {
+          const leftParsed = JSON.parse(leftCandidate)
+          if (typeof leftParsed !== 'string') {
+            mismatchedLines.push(lineIdx)
+          }
+
+        } catch (err) {
+          mismatchedLines.push(lineIdx)
+        }
+
+        break;
+      }
+      /**
+       * We expect the left side to be a string
+       */
+      case SpecialToken.MATCH_INTEGER: {
+        if (left.length < specialToken.index) {
+          mismatchedLines.push(lineIdx)
+          continue;
+        }
+
+        // make sure the left side is a string somehow?!
+        const leftCandidate = left.substring(specialToken.index)
+          .replace(',', '') // Strip off trailing commas, a little hacky but it works!
+        if (!leftCandidate || leftCandidate.length === 0) {
+          mismatchedLines.push(lineIdx)
+          continue
+        }
+
+        // Parse and see what it might be
+        try {
+          const leftParsed = JSON.parse(leftCandidate)
+          if (typeof leftParsed !== 'number') {
+            mismatchedLines.push(lineIdx)
+          }
+
+        } catch (err) {
+          mismatchedLines.push(lineIdx)
+        }
+
+        break;
+      }
+      case SpecialToken.NONE: {
+        if (left !== right) {
+          mismatchedLines.push(lineIdx)
+          continue;
+        }
+        break;
+      }
+      default: {
+        throw new Error(`${specialToken.token} not yet implemented!`)
+      }
     }
   }
 
@@ -127,7 +245,6 @@ export function checkSnapshotString(actual: string, snapshot: string): SnapshotR
       snapshot: snapshot
     }
   }
-
 
   let diff = `${RESET}\n`
   diff += `${'Actual:'.padEnd(maxColumnLengthLeft)} | Snapshot:\n`

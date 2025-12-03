@@ -48,7 +48,6 @@ import {
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
-import { parseBool } from '../../shared/util';
 
 
 export enum PrepareDuplicateResult {

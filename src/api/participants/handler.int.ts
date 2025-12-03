@@ -11,6 +11,7 @@ import { HarnessApi, HarnessApiConfig } from '../../testing/harness/harness-api'
 import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 import { TestUtils } from '../../testing/testutils';
 import * as ParticipantHandler from './handler';
+import * as snapshots from './__snapshots__/handler.int.snapshots';
 
 type GetAccountResponseDTO = {
   changedDate: unknown,
@@ -105,55 +106,11 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      // const result = await ParticipantHandler.getAll(request)
-      const result = await ParticipantHandler.getAllV2(request)
+      const result = await ParticipantHandler.getAll(request)
 
       // Assert
       assert(result, 'Expected a response from getAll()')
-      const snapshot = [
-        {
-          name: 'Hub',
-          id: 'http://central-ledger/participants/Hub',
-          "created:ignore": true,
-          isActive: 1,
-          links: { self: 'http://central-ledger/participants/Hub' },
-          accounts: [
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "USD",
-              id: '1',
-              isActive: 1,
-              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
-            },
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "USD",
-              id: '2',
-              isActive: 1,
-              ledgerAccountType: "HUB_RECONCILIATION"
-            },
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "KES",
-              id: '3',
-              isActive: 1,
-              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
-            },
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "KES",
-              id: '4',
-              isActive: 1,
-              ledgerAccountType: "HUB_RECONCILIATION"
-            }
-          ],
-          isProxy: 0
-        }
-      ]
+      const snapshot = snapshots.returnsHubInformation
       unwrapSnapshot(checkSnapshotObject(result, snapshot))
     })
 
@@ -180,82 +137,10 @@ describe('api/participants/handler', () => {
       } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
 
       // Assert
-      const result = await ParticipantHandler.getAllV2(request)
-      // const result = await ParticipantHandler.getAll(request)
+      const result = await ParticipantHandler.getAll(request)
 
       assert(result, 'Expected a response from getAll()')
-      const snapshot = [
-        {
-          accounts: [
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "USD",
-              id: '5',
-              isActive: 0,
-              ledgerAccountType: "POSITION"
-            },
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "USD",
-              id: '6',
-              isActive: 0,
-              ledgerAccountType: "SETTLEMENT"
-            }
-          ],
-          "created:ignore": true,
-          id: "http://central-ledger/participants/dfsp_d",
-          isActive: 1,
-          isProxy: 0,
-          links: {
-            self: "http://central-ledger/participants/dfsp_d"
-          },
-          name: "dfsp_d"
-        },
-        {
-          name: 'Hub',
-          id: 'http://central-ledger/participants/Hub',
-          "created:ignore": true,
-          isActive: 1,
-          links: { self: 'http://central-ledger/participants/Hub' },
-          accounts: [
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "USD",
-              id: '1',
-              isActive: 1,
-              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
-            },
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "USD",
-              id: '2',
-              isActive: 1,
-              ledgerAccountType: "HUB_RECONCILIATION"
-            },
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "KES",
-              id: '3',
-              isActive: 1,
-              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
-            },
-            {
-              createdBy: "unknown",
-              createdDate: null,
-              currency: "KES",
-              id: '4',
-              isActive: 1,
-              ledgerAccountType: "HUB_RECONCILIATION"
-            }
-          ],
-          isProxy: 0
-        }
-      ]
+      const snapshot = snapshots.createsNewDfspThenCallsGetAll
       unwrapSnapshot(checkSnapshotObject(result, snapshot))
     })
   })
@@ -285,33 +170,7 @@ describe('api/participants/handler', () => {
 
       // Assert
       assert.equal(code, 201)
-      const snapshot = {
-        name: 'dfsp_x',
-        id: 'http://central-ledger/participants/dfsp_x',
-        created: ':ignore',
-        isActive: 1,
-        links: { self: 'http://central-ledger/participants/dfsp_x' },
-        accounts: [
-          {
-            id: 7,
-            ledgerAccountType: 'POSITION',
-            currency: 'USD',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          },
-          {
-            id: 8,
-            ledgerAccountType: 'SETTLEMENT',
-            currency: 'USD',
-            isActive: 0,
-            "createdDate:ignore": true,
-            createdBy: 'unknown'
-          }
-        ],
-        isProxy: 0
-      }
-      unwrapSnapshot(checkSnapshotObject(body, snapshot))
+      unwrapSnapshot(checkSnapshotObject(body, snapshots.createsANewDfsp))
     })
 
     it('02 Adds a second currency to an existing DFSP', async () => {
