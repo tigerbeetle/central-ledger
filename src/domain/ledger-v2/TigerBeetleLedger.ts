@@ -12,21 +12,21 @@ import { DfspAccountIds, MetadataStore } from "./MetadataStore";
 import { TransferBatcher } from "./TransferBatcher";
 import {
   AnyQuery,
-  CreateDFSPCommand,
-  CreateDFSPResponse,
+  CreateDfspCommand,
+  CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
   DepositCollateralCommand,
   DepositCollateralResponse,
-  DFSPAccountResponse,
+  DfspAccountResponse,
   FulfilResult,
   FulfilResultType,
-  GetAllDFSPSResponse,
-  GetDFSPAccountsQuery,
+  GetAllDfspsResponse,
+  GetDfspAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
-  LedgerDFSP,
+  LedgerDfsp,
   LegacyLedgerAccount,
   LegacyLimit,
   LookupTransferQuery,
@@ -83,7 +83,7 @@ export default class TigerBeetleLedger implements Ledger {
   constructor(private deps: TigerBeetleLedgerDependencies) {
 
   }
-  getDFSP(query: { dfspId: string; }): Promise<QueryResult<LedgerDFSP>> {
+  getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
     throw new Error('Method not implemented.');
   }
 
@@ -97,7 +97,7 @@ export default class TigerBeetleLedger implements Ledger {
    */
   public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
     // TODO(LD): I don't know if we need this at the moment, since we won't have common accounts
-    // but instead use separate collateral accounts for each DFSP + Currency combination
+    // but instead use separate collateral accounts for each Dfsp + Currency combination
     //
     // We will however need to set up:
     // 1. Settlement Models/Configuration
@@ -120,9 +120,9 @@ export default class TigerBeetleLedger implements Ledger {
    * Dr Reserve
    *  Cr Liquidity
    * 
-   * Based on the `startingDeposits` in CreateDFSPCommand.
+   * Based on the `startingDeposits` in CreateDfspCommand.
    */
-  public async createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> {
+  public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     assert(cmd.dfspId)
     assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
     assert.equal(cmd.currencies[0], 'USD', 'Currently only USD is supported.')
@@ -158,7 +158,7 @@ export default class TigerBeetleLedger implements Ledger {
       // TODO:
       // This is potentially dangerous because somebody could tamper with the metadata store by
       // inserting an invalid id, and calling `createDfsp` again. It would be better to be able to 
-      // look up a DFSP's accounts based on a query filter on TigerBeetle itself.
+      // look up a Dfsp's accounts based on a query filter on TigerBeetle itself.
     }
 
     const accountIds: DfspAccountIds = {
@@ -169,7 +169,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     const accounts: Array<Account> = [
-      // Collateral Account. Funds Switch holds in security to ensure DFSP meets it's obligations
+      // Collateral Account. Funds Switch holds in security to ensure Dfsp meets it's obligations
       {
         id: accountIds.collateral,
         debits_pending: 0n,
@@ -185,8 +185,8 @@ export default class TigerBeetleLedger implements Ledger {
         flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
         timestamp: 0n,
       },
-      // Liquidity Account. Depositing Collateral unlocks liquidity that a DFSP can use to make
-      // commitments to other DFSPs.
+      // Liquidity Account. Depositing Collateral unlocks liquidity that a Dfsp can use to make
+      // commitments to other Dfsps.
       {
         id: accountIds.liquidity,
         debits_pending: 0n,
@@ -202,8 +202,8 @@ export default class TigerBeetleLedger implements Ledger {
         flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         timestamp: 0n,
       },
-      // Clearing Account. Payments from this DFSP where DFSP is Payer are debits, payments to this
-      // DFSP where DFSP is Payee, are credits.
+      // Clearing Account. Payments from this Dfsp where Dfsp is Payer are debits, payments to this
+      // Dfsp where Dfsp is Payee, are credits.
       {
         id: accountIds.clearing,
         debits_pending: 0n,
@@ -219,8 +219,8 @@ export default class TigerBeetleLedger implements Ledger {
         flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         timestamp: 0n,
       },
-      // Settlement_Multilateral. Records the settlement obligations that this DFSP holds
-      // to other DFSPs in the scheme.
+      // Settlement_Multilateral. Records the settlement obligations that this Dfsp holds
+      // to other Dfsps in the scheme.
       {
         id: accountIds.settlementMultilateral,
         debits_pending: 0n,
@@ -361,9 +361,9 @@ export default class TigerBeetleLedger implements Ledger {
 
   /**
    * @method getAccounts
-   * @description Lookup the accounts for a DFSP + Currency
+   * @description Lookup the accounts for a Dfsp + Currency
    */
-  public async getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+  public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
     const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
@@ -454,7 +454,7 @@ export default class TigerBeetleLedger implements Ledger {
     throw new Error('Method not implemented.');
   }
 
-  public async getAllDFSPS(query: AnyQuery): Promise<QueryResult<GetAllDFSPSResponse>> {
+  public async getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
     throw new Error('Method not implemented.');
   }
 

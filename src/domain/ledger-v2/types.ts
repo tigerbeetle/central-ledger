@@ -330,7 +330,7 @@ export type CreateHubAccountResponse = CreateHubAccountResponseSuccess
   | CreateHubAccountResponseFailure
 
 
-export interface CreateDFSPCommand {
+export interface CreateDfspCommand {
   dfspId: string,
   // TODO: limit this to just one currency for now!
   currencies: Array<string>
@@ -338,22 +338,22 @@ export interface CreateDFSPCommand {
   startingDeposits: Array<number>
 }
 
-export interface CreateDFSPResponseSuccess {
+export interface CreateDfspResponseSuccess {
   type: 'SUCCESS'
 }
 
-export interface CreateDFSPResponseAlreadyExists {
+export interface CreateDfspResponseAlreadyExists {
   type: 'ALREADY_EXISTS'
 }
 
-export interface CreateDFSPResponseFailure {
+export interface CreateDfspResponseFailure {
   type: 'FAILURE',
   error: Error
 }
 
-export type CreateDFSPResponse = CreateDFSPResponseSuccess
-  | CreateDFSPResponseAlreadyExists
-  | CreateDFSPResponseFailure
+export type CreateDfspResponse = CreateDfspResponseSuccess
+  | CreateDfspResponseAlreadyExists
+  | CreateDfspResponseFailure
 
 
 export interface DepositCollateralCommand {
@@ -406,7 +406,7 @@ export type QueryResultFailure = {
 
 export type QueryResult<T> = QueryResultSuccess<T> | QueryResultFailure
 
-export interface LedgerDFSP {
+export interface LedgerDfsp {
   name: string,
   // TODO(LD): rename to simply active
   isActive: boolean
@@ -414,27 +414,27 @@ export interface LedgerDFSP {
   accounts: Array<LegacyLedgerAccount>
 }
 
-export interface GetAllDFSPSResponse {
-  dfsps: Array<LedgerDFSP>
+export interface GetAllDfspsResponse {
+  dfsps: Array<LedgerDfsp>
 }
 
-export interface GetDFSPAccountsQuery {
+export interface GetDfspAccountsQuery {
   dfspId: string,
   currency: string
 }
 
-export interface DFSPAccountResponseSuccess {
+export interface DfspAccountResponseSuccess {
   type: 'SUCCESS',
   accounts: Array<LegacyLedgerAccount>
 }
 
-export interface DFSPAccountResponseFailure {
+export interface DfspAccountResponseFailure {
   type: 'FAILURE',
   fspiopError: FSPIOPError
 }
 
-export type DFSPAccountResponse = DFSPAccountResponseSuccess
-  | DFSPAccountResponseFailure
+export type DfspAccountResponse = DfspAccountResponseSuccess
+  | DfspAccountResponseFailure
 
 export interface GetHubAccountsQuery {
   // TODO(LD): should we specify currency here?

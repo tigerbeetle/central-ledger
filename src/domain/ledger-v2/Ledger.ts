@@ -2,20 +2,20 @@ import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler"
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler"
 import {
   AnyQuery,
-  CreateDFSPCommand,
-  CreateDFSPResponse,
+  CreateDfspCommand,
+  CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
   DepositCollateralCommand,
   DepositCollateralResponse,
-  DFSPAccountResponse,
+  DfspAccountResponse,
   FulfilResult,
-  GetAllDFSPSResponse,
-  GetDFSPAccountsQuery,
+  GetAllDfspsResponse,
+  GetDfspAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
-  LedgerDFSP,
+  LedgerDfsp,
   LookupTransferQuery,
   LookupTransferQueryResponse,
   NetDebitCapResponse,
@@ -32,16 +32,16 @@ export interface Ledger {
    * Onboarding/Lifecycle Management
    */
   createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse>;
-  createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse>;
+  createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse>;
   disableDfsp(cmd: unknown): Promise<unknown>;
   enableDfsp(cmd: unknown): Promise<unknown>;
   depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
   withdrawCollateral(cmd: unknown): Promise<unknown>;
   getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
 
-  getDFSP(query: {dfspId: string}): Promise<QueryResult<LedgerDFSP>>
-  getAllDFSPS(query: AnyQuery): Promise<QueryResult<GetAllDFSPSResponse>>
-  getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse>
+  getDfsp(query: {dfspId: string}): Promise<QueryResult<LedgerDfsp>>
+  getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>>
+  getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse>
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse>
   // setLimits(cmd: SetLimitsCommand): Promise<SetLimitsResponse>;
   // getLimits(cmd: GetLimitsCommand): Promise<GetLimitsResponse>;

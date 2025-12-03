@@ -11,21 +11,21 @@ import { ApplicationConfig } from "../../shared/config";
 import { logger } from '../../shared/logger';
 import {
   AnyQuery,
-  CreateDFSPCommand,
-  CreateDFSPResponse,
+  CreateDfspCommand,
+  CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
   DepositCollateralCommand,
   DepositCollateralResponse,
-  DFSPAccountResponse,
+  DfspAccountResponse,
   FulfilResult,
   FulfilResultType,
-  GetAllDFSPSResponse,
-  GetDFSPAccountsQuery,
+  GetAllDfspsResponse,
+  GetDfspAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
-  LedgerDFSP,
+  LedgerDfsp,
   LegacyLedgerAccount,
   LookupTransferQuery,
   LookupTransferQueryResponse,
@@ -400,7 +400,7 @@ export default class LegacyCompatibleLedger implements Ledger {
    * @description Create the dfsp accounts. Returns a duplicate response if the dfsp is already
    *   created.
    */
-  public async createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> {
+  public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     assert(cmd.dfspId)
     assert(cmd.currencies)
     assert(cmd.currencies.length > 0)
@@ -557,7 +557,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     throw new Error('not implemented')
   }
 
-  public async getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+  public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
     const legacyQuery = { currency: query.currency }
     try {
       const accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
@@ -639,7 +639,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
-  public async getAllDFSPS(_query: AnyQuery): Promise<QueryResult<GetAllDFSPSResponse>> {
+  public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
     // TODO(LD): inject as dependency!
     const Enums = require('../../lib/enumCached')
 
@@ -652,7 +652,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         return acc
       }, {})
 
-      const dfsps: Array<LedgerDFSP> = []
+      const dfsps: Array<LedgerDfsp> = []
       participants.forEach(participant => {
         // Filter out the Hub accounts
         if (participant.name === 'Hub') {
@@ -700,7 +700,7 @@ export default class LegacyCompatibleLedger implements Ledger {
   }
 
   // TODO: can we refactor all the mapping stuff to combine it with above?
-  public async getDFSP(query: { dfspId: string; }): Promise<QueryResult<LedgerDFSP>> {
+  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
     // TODO(LD): inject as dependency!
     const Enums = require('../../lib/enumCached')
 
@@ -731,7 +731,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         formattedAccounts.push(formattedAccount)
       })
 
-      const dfsp: LedgerDFSP = {
+      const dfsp: LedgerDfsp = {
         // name: participant.name,
         // isActive: participant.isActive === 1,
         // TODO(LD): why is getByName so different?
