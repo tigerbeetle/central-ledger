@@ -130,7 +130,7 @@ export const createsANewDfsp = {
   links: { self: 'http://central-ledger/participants/dfsp_x' },
   accounts: [
     {
-      id: 7,
+      id: ':string',
       ledgerAccountType: 'POSITION',
       currency: 'USD',
       isActive: 0,
@@ -138,7 +138,7 @@ export const createsANewDfsp = {
       createdBy: 'unknown'
     },
     {
-      id: 8,
+      id: ':string',
       ledgerAccountType: 'SETTLEMENT',
       currency: 'USD',
       isActive: 0,

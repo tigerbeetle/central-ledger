@@ -692,13 +692,67 @@ export default class LegacyCompatibleLedger implements Ledger {
           created: undefined,
           accounts: formattedAccounts
         })
-      })    
-      
+      })
+
       return {
         type: 'SUCCESS',
         result: {
           dfsps
         }
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        fspiopError: err
+      }
+    }
+  }
+
+  // TODO: can we refactor all the mapping stuff to combine it with above?
+  public async getDFSP(query: { dfspId: string; }): Promise<QueryResult<LedgerDFSP>> {
+    // TODO(LD): inject as dependency!
+    const Enums = require('../../lib/enumCached')
+
+    try {
+      const participant = await this.deps.lifecycle.participantService.getByName(query.dfspId)
+      const ledgerAccountTypes: Record<string, number> = await Enums.getEnums('ledgerAccountType')
+      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
+        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
+        acc[ledgerAccountId] = ledgerAccountType
+        return acc
+      }, {})
+
+      const formattedAccounts: Array<LegacyLedgerAccount> = []
+      participant.currencyList.forEach(currency => {
+        const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
+        assert(ledgerAccountType)
+        const formattedAccount: LegacyLedgerAccount = {
+          id: BigInt(currency.participantCurrencyId),
+          ledgerAccountType,
+          currency: currency.currencyId,
+          isActive: Boolean(currency.isActive),
+          changedDate: new Date(currency.createdDate),
+          // These feel wrong to me - we should just return the value anyway
+          // but the getByName query doesn't look up account values.
+          value: 0,
+          reservedValue: 0,
+        }
+        formattedAccounts.push(formattedAccount)
+      })
+
+      const dfsp: LedgerDFSP = {
+        // name: participant.name,
+        // isActive: participant.isActive === 1,
+        // TODO(LD): why is getByName so different?
+        name: query.dfspId,
+        isActive: true,
+        created: undefined,
+        accounts: formattedAccounts
+      }
+
+      return {
+        type: 'SUCCESS',
+        result: dfsp
       }
     } catch (err) {
       return {

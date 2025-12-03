@@ -158,17 +158,7 @@ const createV2 = async function (request, h) {
     })
 
     if (createDfspResult.type === 'ALREADY_EXISTS') {
-      // throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
-      Logger.warn(`participants.create() - participant: ${name} already exists in Ledger. Continuing.`)
-
-      // TODO(LD): should return:
-      // {
-      //   "errorInformation": {
-      //     "errorCode": "3000",
-      //     "errorDescription": "Generic client error - Participant currency has already been registered"
-      //   }
-      // }
-
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
     }
 
     if (createDfspResult.type === 'FAILED') {
@@ -176,47 +166,9 @@ const createV2 = async function (request, h) {
       throw createDfspResult.error
     }
 
-
-    // Get the participant that was created by the ledger's createDfsp method
-    let participant = await ParticipantService.getByName(request.payload.name)
-    const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
-    const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
-
-
-    /**
-     * response from the switch should look something like:
-     * 
-     * {
-          "name": "dfsp_1",                                  <-- metadata database
-          "id": "http://central-ledger/participants/dfsp_1", <-- not sure
-          "created": "\"2025-11-10T07:31:44.000Z\"",         <-- timestamp of account creation
-          "isActive": 1,                                     <-- is position account open/closed
-          "links": {
-            "self": "http://central-ledger/participants/dfsp_1" <-- generated
-          },
-          "accounts": [                                       <-- from account response
-            {
-              "id": 7,
-              "ledgerAccountType": "POSITION",
-              "currency": "USD",
-              "isActive": 1,
-              "createdDate": null,
-              "createdBy": "unknown"
-            },
-            {
-              "id": 8,
-              "ledgerAccountType": "SETTLEMENT",
-              "currency": "USD",
-              "isActive": 1,
-              "createdDate": null,
-              "createdBy": "unknown"
-            }
-          ],
-          "isProxy": 0                                              <-- hardcoded to false
-        }
-     */
-
-    return h.response(entityItem(participant, ledgerAccountIds)).code(201)
+    // now look up the participant
+    const getByNameReply = await internalGetByName(ledger, request.payload.name)
+    return h.response(getByNameReply).code(201)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
   }
@@ -346,6 +298,42 @@ const getAllV2 = async function (request) {
   })
 
   return reply
+}
+
+const internalGetByName = async function (ledger, dfspName) {
+  assert(ledger)
+  assert(dfspName)
+
+  const resultGetDfsp = await ledger.getDFSP({ dfspId: dfspName })
+  if (resultGetDfsp.type === 'FAILURE') {
+    throw resultGetDfsp.fspiopError
+  }
+
+  // Map from Ledger format DFSP to Existing API
+  const ledgerDfsp = resultGetDfsp.result
+  const apiMappedAccounts = ledgerDfsp.accounts.map(acc => ({
+    createdBy: 'unknown',
+    createdDate: null,
+    currency: acc.currency,
+    id: acc.id.toString(),
+    isActive: acc.isActive ? 1 : 0,
+    ledgerAccountType: acc.ledgerAccountType
+  }))
+
+  const url = `${Config.HOSTNAME}/participants/${ledgerDfsp.name}`
+  return {
+    name: ledgerDfsp.name,
+    id: url,
+    // created: ledgerDfsp.created,
+    created: null,
+    isActive: ledgerDfsp.isActive ? 1 : 0,
+    // TODO(LD): hardcoded for now
+    isProxy: 0,
+    links: {
+      self: url
+    },
+    accounts: apiMappedAccounts
+  }
 }
 
 const getByName = async function (request) {
@@ -664,6 +652,7 @@ const recordFunds = async function (request, h) {
 
 module.exports = {
   create,
+  createV2,
   createHubAccount,
   // Working through the new Ledger implementations
   getAll: getAllV2,

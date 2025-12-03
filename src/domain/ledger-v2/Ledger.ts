@@ -15,6 +15,7 @@ import {
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
+  LedgerDFSP,
   LookupTransferQuery,
   LookupTransferQueryResponse,
   NetDebitCapResponse,
@@ -38,6 +39,7 @@ export interface Ledger {
   withdrawCollateral(cmd: unknown): Promise<unknown>;
   getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
 
+  getDFSP(query: {dfspId: string}): Promise<QueryResult<LedgerDFSP>>
   getAllDFSPS(query: AnyQuery): Promise<QueryResult<GetAllDFSPSResponse>>
   getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse>
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse>

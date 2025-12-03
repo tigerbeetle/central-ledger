@@ -166,7 +166,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.createV2(request, h))
 
       // Assert
       assert.equal(code, 201)
@@ -192,7 +192,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.createV2(request, h))
 
       // Assert
       assert.equal(code, 201)
@@ -358,6 +358,8 @@ describe('api/participants/handler', () => {
       // Assert
       assert.equal(body.isActive, 0)
     })
+
+    it.todo('08 cannot create the same currency for the dfsp twice')
   })
 
   describe('Limits', () => {

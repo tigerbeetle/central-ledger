@@ -26,6 +26,7 @@ import {
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
+  LedgerDFSP,
   LegacyLedgerAccount,
   LegacyLimit,
   LookupTransferQuery,
@@ -81,6 +82,9 @@ export type InterledgerValidationResult = InterledgerValidationPass
 export default class TigerBeetleLedger implements Ledger {
   constructor(private deps: TigerBeetleLedgerDependencies) {
 
+  }
+  getDFSP(query: { dfspId: string; }): Promise<QueryResult<LedgerDFSP>> {
+    throw new Error('Method not implemented.');
   }
 
   /**
