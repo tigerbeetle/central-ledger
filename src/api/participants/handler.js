@@ -137,10 +137,10 @@ const createV2 = async function (request, h) {
     assert(request.payload.currency)
     assert(request.payload.name)
 
-    // startingDeposit allows us to create an opening balance for the DFSP while onboarding.
+    // startingDeposit allows us to create an opening balance for the Dfsp while onboarding.
     // We added this feature to the Admin API to help limit the breaking changes when moving to
     // TigerBeetle, as the TigerBeetleLedger doesn't allow `initialPositionAndLimits` to be 
-    // called _before_ funds have been deposited for the DFSP.
+    // called _before_ funds have been deposited for the Dfsp.
     let startingDeposit = 0
     if (request.payload.startingDeposit) {
       assertString(request.payload.startingDeposit)
@@ -232,7 +232,7 @@ const getAll = async function (request) {
 const getAllV2 = async function (request) {
   const ledger = getLedger(request)
 
-  const resultDfsps = await ledger.getAllDFSPS({})
+  const resultDfsps = await ledger.getAllDfsps({})
   if (resultDfsps.type === 'FAILURE') {
     throw resultDfsps.fspiopError
   }
@@ -245,7 +245,7 @@ const getAllV2 = async function (request) {
 
   const reply = []
 
-  // Map from Ledger format DFSP to Existing API
+  // Map from Ledger format Dfsp to Existing API
   resultDfsps.result.dfsps.forEach(ledgerDfsp => {
     const apiMappedAccounts = ledgerDfsp.accounts.map(acc => ({
       createdBy: 'unknown',
@@ -304,12 +304,12 @@ const internalGetByName = async function (ledger, dfspName) {
   assert(ledger)
   assert(dfspName)
 
-  const resultGetDfsp = await ledger.getDFSP({ dfspId: dfspName })
+  const resultGetDfsp = await ledger.getDfsp({ dfspId: dfspName })
   if (resultGetDfsp.type === 'FAILURE') {
     throw resultGetDfsp.fspiopError
   }
 
-  // Map from Ledger format DFSP to Existing API
+  // Map from Ledger format Dfsp to Existing API
   const ledgerDfsp = resultGetDfsp.result
   const apiMappedAccounts = ledgerDfsp.accounts.map(acc => ({
     createdBy: 'unknown',
@@ -366,7 +366,7 @@ const updateV2 = async function (request) {
     assert(request.params)
     assert(request.params.name)
     assert(request.payload)
-    assert(request.payload.isActive)
+    assert(request.payload.isActive !== undefined)
 
     const { isActive } = request.payload
     assert.equal(typeof isActive, 'boolean')
@@ -374,17 +374,18 @@ const updateV2 = async function (request) {
 
     let response
     if (isActive === false) {
-      response = await ledger.disableDfsp()
+      response = await ledger.disableDfsp({dfspId: request.params.name})
     } else {
-      response = await ledger.enableDfsp()
+      response = await ledger.enableDfsp({dfspId: request.params.name})
     }
 
-
-
+    if (response.type === 'FAILURE') {
+      throw response.fspiopError
+    }
 
     // now look up the participant
-    const getByNameReply = await internalGetByName(ledger, request.payload.name)
-    return h.response(getByNameReply).code(201)
+    const getByNameReply = await internalGetByName(ledger, request.params.name)
+    return getByNameReply
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
   }
@@ -690,6 +691,7 @@ module.exports = {
     throw new Error('getByName() has been deprecated in Ledger Migration.')
   },
   update,
+  updateV2,
   addEndpoint,
   getEndpoint,
   addLimitAndInitialPosition,

@@ -388,6 +388,21 @@ export interface SetLimitsCommand {
 }
 
 /**
+ * Generic interface for Ledger Commands
+ */
+
+export type CommandResultSuccess<T> = {
+  type: 'SUCCESS'
+  result: T
+}
+
+export type CommandResultFailure = {
+  type: 'FAILURE',
+  fspiopError: Error
+}
+
+export type CommandResult<T> = CommandResultSuccess<T> | CommandResultFailure
+/**
  * Empty interface for queries that have no params
  */
 export interface AnyQuery {

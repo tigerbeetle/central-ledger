@@ -11,6 +11,7 @@ import { ApplicationConfig } from "../../shared/config";
 import { logger } from '../../shared/logger';
 import {
   AnyQuery,
+  CommandResult,
   CreateDfspCommand,
   CreateDfspResponse,
   CreateHubAccountCommand,
@@ -97,27 +98,28 @@ export interface LegacyCompatibleLedgerDependencies {
       createHubAccount: (request: { params: { name: string }, payload: { type: string, currency: string } }, callback: any) => Promise<void>
     }
     participantService: {
-      getAll: () => Promise<Array<ParticipantServiceParticipant>>,
-      getByName: (name: string) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number }>
-      getById: (id: number) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number }>
-      getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
-      getLimits: (name: string, query: { currency: string, type: string }) => Promise<Array<unknown>>
       create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
       createParticipantCurrency: (participantId: number, currency: string, ledgerAccountTypeId: number, isActive?: boolean) => Promise<number>
+      getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
+      getAll: () => Promise<Array<ParticipantServiceParticipant>>,
+      getByName: (name: string) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string }>
+      getById: (id: number) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string  }>
+      getLimits: (name: string, query: { currency: string, type: string }) => Promise<Array<unknown>>
       getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
-      validateHubAccounts: (currency: string) => Promise<void>
+      update: (name: string, payload: {isActive: boolean}) => Promise<unknown>
+      validateHubAccounts: (currency: string) => Promise<void>,
     },
     settlementModelDomain: {
       createSettlementModel: (model: { name: string, settlementGranularity: string, settlementInterchange: string, settlementDelay: string, currency: string, requireLiquidityCheck: boolean, ledgerAccountType: string, settlementAccountType: string, autoPositionReset: boolean }) => Promise<void>
       getAll: () => Promise<Array<{ currencyId: string | null, ledgerAccountTypeId: number, settlementAccountTypeId: number }>>
     },
     participantFacade: {
-      getByNameAndCurrency: (name: string, currency: string, accountType: any) => Promise<{ participantCurrencyId: number }>
       addLimitAndInitialPosition: (positionParticipantCurrencyId: number, settlementParticipantCurrencyId: number, payload: any, processLimitsOnly: boolean) => Promise<void>
+      getByNameAndCurrency: (name: string, currency: string, accountType: any) => Promise<{ participantCurrencyId: number }>
     }
     transferService: {
-      saveTransferDuplicateCheck: (transferId: string, payload: any) => Promise<void>
       recordFundsIn: (payload: any, transactionTimestamp: string, enums: any) => Promise<void>
+      saveTransferDuplicateCheck: (transferId: string, payload: any) => Promise<void>
     }
     enums: any
   },
@@ -493,12 +495,50 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
-  public async disableDfsp(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
+  public async disableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+
+    try {
+      const dfspId = cmd.dfspId
+      const updateResult = await this.deps.lifecycle.participantService.update(
+        dfspId, {isActive: false}
+      )
+
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        fspiopError: err
+      }
+    }
   }
 
-  public async enableDfsp(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
+  public async enableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+
+    try {
+      const dfspId = cmd.dfspId
+      await this.deps.lifecycle.participantService.update(
+        dfspId, {isActive: true}
+      )
+
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        fspiopError: err
+      }
+    }
   }
 
   public async depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse> {
@@ -732,12 +772,9 @@ export default class LegacyCompatibleLedger implements Ledger {
       })
 
       const dfsp: LedgerDfsp = {
-        // name: participant.name,
-        // isActive: participant.isActive === 1,
-        // TODO(LD): why is getByName so different?
-        name: query.dfspId,
-        isActive: true,
-        created: undefined,
+        name: participant.name,
+        isActive: participant.isActive === 1,
+        created: new Date(participant.createdDate),
         accounts: formattedAccounts
       }
 

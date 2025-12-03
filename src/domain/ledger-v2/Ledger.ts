@@ -2,6 +2,7 @@ import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler"
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler"
 import {
   AnyQuery,
+  CommandResult,
   CreateDfspCommand,
   CreateDfspResponse,
   CreateHubAccountCommand,
@@ -33,8 +34,8 @@ export interface Ledger {
    */
   createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse>;
   createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse>;
-  disableDfsp(cmd: unknown): Promise<unknown>;
-  enableDfsp(cmd: unknown): Promise<unknown>;
+  disableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>>;
+  enableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>>;
   depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
   withdrawCollateral(cmd: unknown): Promise<unknown>;
   getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>

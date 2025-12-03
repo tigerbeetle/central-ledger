@@ -12,6 +12,7 @@ import { DfspAccountIds, MetadataStore } from "./MetadataStore";
 import { TransferBatcher } from "./TransferBatcher";
 import {
   AnyQuery,
+  CommandResult,
   CreateDfspCommand,
   CreateDfspResponse,
   CreateHubAccountCommand,
@@ -337,11 +338,11 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  public async disableDfsp(thing: unknown): Promise<unknown> {
+  public async disableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
     throw new Error('not implemented')
   }
 
-  public async enableDfsp(thing: unknown): Promise<unknown> {
+  public async enableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
     throw new Error('not implemented')
   }
 
@@ -411,12 +412,12 @@ export default class TigerBeetleLedger implements Ledger {
     assert(clearingAccount)
     assert(collateralAccount)
 
-    // Legacy Settlement Balance: How much DFSP has available to settle.
+    // Legacy Settlement Balance: How much Dfsp has available to settle.
     // Was a negative number in the legacy API once the dfsp had deposited funds.
     const legacySettlementBalancePosted = (collateralAccount.debits_posted - collateralAccount.credits_posted) * BigInt(-1)
     const legacySettlementBalancePending = (collateralAccount.debits_pending - collateralAccount.credits_pending) * BigInt(-1)
 
-    // Legacy Position Balance: How much DFSP is owed or how much this DFSP owes.
+    // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
     const clearingBalancePosted = clearingAccount.credits_posted - clearingAccount.debits_posted
     const clearingBalancePending = clearingAccount.credits_pending - clearingAccount.debits_pending
     const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
