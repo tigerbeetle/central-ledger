@@ -122,7 +122,7 @@ describe('api/participants/handler', () => {
               createdBy: "unknown",
               createdDate: null,
               currency: "USD",
-              id: 1,
+              id: '1',
               isActive: 1,
               ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
             },
@@ -130,7 +130,7 @@ describe('api/participants/handler', () => {
               createdBy: "unknown",
               createdDate: null,
               currency: "USD",
-              id: 2,
+              id: '2',
               isActive: 1,
               ledgerAccountType: "HUB_RECONCILIATION"
             },
@@ -138,7 +138,7 @@ describe('api/participants/handler', () => {
               createdBy: "unknown",
               createdDate: null,
               currency: "KES",
-              id: 3,
+              id: '3',
               isActive: 1,
               ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
             },
@@ -146,7 +146,109 @@ describe('api/participants/handler', () => {
               createdBy: "unknown",
               createdDate: null,
               currency: "KES",
-              id: 4,
+              id: '4',
+              isActive: 1,
+              ledgerAccountType: "HUB_RECONCILIATION"
+            }
+          ],
+          isProxy: 0
+        }
+      ]
+      unwrapSnapshot(checkSnapshotObject(result, snapshot))
+    })
+
+    it('02 Creates a new DFSP and then calls getAll', async () => {
+      // Arrange
+      const request = {
+        query: {
+          isProxy: false
+        },
+        payload: {
+          currency: 'USD',
+          name: 'dfsp_d',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const {
+        code, body
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+
+      // Assert
+      const result = await ParticipantHandler.getAllV2(request)
+      // const result = await ParticipantHandler.getAll(request)
+
+      assert(result, 'Expected a response from getAll()')
+      const snapshot = [
+        {
+          accounts: [
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "USD",
+              id: '5',
+              isActive: 0,
+              ledgerAccountType: "POSITION"
+            },
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "USD",
+              id: '6',
+              isActive: 0,
+              ledgerAccountType: "SETTLEMENT"
+            }
+          ],
+          "created:ignore": true,
+          id: "http://central-ledger/participants/dfsp_d",
+          isActive: 1,
+          isProxy: 0,
+          links: {
+            self: "http://central-ledger/participants/dfsp_d"
+          },
+          name: "dfsp_d"
+        },
+        {
+          name: 'Hub',
+          id: 'http://central-ledger/participants/Hub',
+          "created:ignore": true,
+          isActive: 1,
+          links: { self: 'http://central-ledger/participants/Hub' },
+          accounts: [
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "USD",
+              id: '1',
+              isActive: 1,
+              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+            },
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "USD",
+              id: '2',
+              isActive: 1,
+              ledgerAccountType: "HUB_RECONCILIATION"
+            },
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "KES",
+              id: '3',
+              isActive: 1,
+              ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+            },
+            {
+              createdBy: "unknown",
+              createdDate: null,
+              currency: "KES",
+              id: '4',
               isActive: 1,
               ledgerAccountType: "HUB_RECONCILIATION"
             }
@@ -191,7 +293,7 @@ describe('api/participants/handler', () => {
         links: { self: 'http://central-ledger/participants/dfsp_x' },
         accounts: [
           {
-            id: 5,
+            id: 7,
             ledgerAccountType: 'POSITION',
             currency: 'USD',
             isActive: 0,
@@ -199,7 +301,7 @@ describe('api/participants/handler', () => {
             createdBy: 'unknown'
           },
           {
-            id: 6,
+            id: 8,
             ledgerAccountType: 'SETTLEMENT',
             currency: 'USD',
             isActive: 0,
@@ -243,7 +345,7 @@ describe('api/participants/handler', () => {
         links: { self: 'http://central-ledger/participants/dfsp_x' },
         accounts: [
           {
-            id: 5,
+            id: 7,
             ledgerAccountType: 'POSITION',
             currency: 'USD',
             isActive: 0,
@@ -251,7 +353,7 @@ describe('api/participants/handler', () => {
             createdBy: 'unknown'
           },
           {
-            id: 6,
+            id: 8,
             ledgerAccountType: 'SETTLEMENT',
             currency: 'USD',
             isActive: 0,
@@ -259,7 +361,7 @@ describe('api/participants/handler', () => {
             createdBy: 'unknown'
           },
           {
-            id: 7,
+            id: 9,
             ledgerAccountType: 'POSITION',
             currency: 'KES',
             isActive: 0,
@@ -267,7 +369,7 @@ describe('api/participants/handler', () => {
             createdBy: 'unknown'
           },
           {
-            id: 8,
+            id: 10,
             ledgerAccountType: 'SETTLEMENT',
             currency: 'KES',
             isActive: 0,

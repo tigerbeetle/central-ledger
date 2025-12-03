@@ -42,6 +42,7 @@ const assert = require('assert')
 const { randomUUID } = require('crypto')
 const { log } = require('console')
 const { assertString, safeStringToNumber } = require('../../shared/config/util')
+const { isProxy } = require('util/types')
 
 const LocalEnum = {
   activated: 'activated',
@@ -278,8 +279,73 @@ const getAll = async function (request) {
 
 const getAllV2 = async function (request) {
   const ledger = getLedger(request)
-  // look up all TigerBeetle accounts across all participants
-  // translate back to Admin API?
+
+  const resultDfsps = await ledger.getAllDFSPS({})
+  if (resultDfsps.type === 'FAILURE') {
+    throw resultDfsps.fspiopError
+  }
+
+  const resultHub = await ledger.getHubAccounts()
+  if (resultHub.type === 'FAILURE') {
+    throw resultHub.fspiopError
+  }
+  const hubLedgerAccounts = resultHub.accounts
+
+  const reply = []
+
+  // Map from Ledger format DFSP to Existing API
+  resultDfsps.result.dfsps.forEach(ledgerDfsp => {
+    const apiMappedAccounts = ledgerDfsp.accounts.map(acc => ({
+      createdBy: 'unknown',
+      createdDate: null,
+      currency: acc.currency,
+      id: acc.id.toString(),
+      isActive: acc.isActive ? 1 : 0,
+      ledgerAccountType: acc.ledgerAccountType
+    }))
+
+    const url = `${Config.HOSTNAME}/participants/${ledgerDfsp.name}`
+    reply.push({
+      name: ledgerDfsp.name,
+      id: url,
+      // created: ledgerDfsp.created,
+      created: null,
+      isActive: ledgerDfsp.isActive ? 1 : 0,
+      // TODO(LD): hardcoded for now
+      isProxy: 0,
+      links: {
+        self: url
+      },
+      accounts: apiMappedAccounts
+    })
+  })
+
+  // Now do the same for the Hub accounts
+  const hubUrl = `${Config.HOSTNAME}/participants/Hub`
+  const hubAccounts = hubLedgerAccounts.map(acc => ({
+    createdBy: 'unknown',
+    createdDate: null,
+    currency: acc.currency,
+    id: acc.id.toString(),
+    isActive: acc.isActive ? 1 : 0,
+    ledgerAccountType: acc.ledgerAccountType
+  }))
+  reply.push({
+    name: 'Hub',
+    id: hubUrl,
+    // TODO(LD): this could be simply when the first account was created
+    created: new Date(),
+    // TODO(LD): Load from some hub account metadata?
+    isActive: 1,
+    // TODO(LD): hardcoded for now
+    isProxy: 0,
+    links: {
+      self: hubUrl
+    },
+    accounts: hubAccounts
+  })
+
+  return reply
 }
 
 const getByName = async function (request) {
@@ -422,7 +488,7 @@ const getLimitsV2 = async function (request) {
 
     const ledger = getLedger(request)
     const limitResponse = await ledger.getNetDebitCap({
-      dfspId: request.params.name, 
+      dfspId: request.params.name,
       currency: request.query.currency
     })
 

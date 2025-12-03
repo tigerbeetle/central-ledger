@@ -17,6 +17,37 @@ export interface ParticipantWithCurrency {
   currencyIsActive: boolean;
 }
 
+export interface ParticipantServiceParticipant {
+  participantId: number,
+  name: string,
+  isActive: number,
+  createdDate: string,
+  createdBy: string,
+  isProxy: number,
+  currencyList: Array<ParticipantServiceCurrency>
+}
+
+export interface ParticipantServiceCurrency {
+  participantCurrencyId: number,
+  participantId: number,
+  currencyId: string,
+  ledgerAccountTypeId: number,
+  isActive: number,
+  createdDate: string,
+  createdBy: string,
+}
+
+export interface ParticipantServiceAccount {
+  id: number,
+  ledgerAccountType: string,
+  currency: string,
+  isActive: number,
+  value: string,
+  reservedValue: string,
+  changedDate: string
+}
+
+
 export interface TransferStateChange {
   transferId: string;
   transferStateId: string | number;
@@ -57,7 +88,7 @@ export interface ErrorPayload {
 
 export type PayeeResponsePayload = FulfilmentPayload | ErrorPayload;
 
-export interface TransformredTransfer {
+export interface TransformedTransfer {
   transferId: string;
   transferState: string;
   completedTimestamp: string;
@@ -356,6 +387,37 @@ export interface SetLimitsCommand {
 
 }
 
+/**
+ * Empty interface for queries that have no params
+ */
+export interface AnyQuery {
+
+}
+
+export type QueryResultSuccess<T> = {
+  type: 'SUCCESS',
+  result: T
+}
+
+export type QueryResultFailure = {
+  type: 'FAILURE',
+  fspiopError: Error
+}
+
+export type QueryResult<T> = QueryResultSuccess<T> | QueryResultFailure
+
+export interface LedgerDFSP {
+  name: string,
+  // TODO(LD): rename to simply active
+  isActive: boolean
+  created: Date,
+  accounts: Array<LegacyLedgerAccount>
+}
+
+export interface GetAllDFSPSResponse {
+  dfsps: Array<LedgerDFSP>
+}
+
 export interface GetDFSPAccountsQuery {
   dfspId: string,
   currency: string
@@ -375,6 +437,7 @@ export type DFSPAccountResponse = DFSPAccountResponseSuccess
   | DFSPAccountResponseFailure
 
 export interface GetHubAccountsQuery {
+  // TODO(LD): should we specify currency here?
   currency: string
 }
 
@@ -461,9 +524,9 @@ export interface LookupTransferQueryResponseFailed {
 }
 
 export type LookupTransferQueryResponse = LookupTransferQueryResponseFoundNonFinal
- | LookupTransferQueryResponseFoundFinal
- | LookupTransferQueryResponseNotFound
- | LookupTransferQueryResponseFailed
+  | LookupTransferQueryResponseFoundFinal
+  | LookupTransferQueryResponseNotFound
+  | LookupTransferQueryResponseFailed
 
 export interface SettlementModel {
   name: string,
@@ -475,16 +538,6 @@ export interface SettlementModel {
   ledgerAccountType: string,
   settlementAccountType: string,
   autoPositionReset: boolean
-}
-
-export interface ParticipantServiceAccount {
-  id: number,
-  ledgerAccountType: string,
-  currency: string,
-  isActive: number,
-  value: string,
-  reservedValue: string,
-  changedDate: string
 }
 
 
@@ -501,8 +554,13 @@ export interface LegacyLedgerAccount {
   ledgerAccountType: string,
   currency: string,
   isActive: boolean,
+  // TODO(LD): this should be a bigint, shouldn't it?
   value: number,
   reservedValue: number,
+  // TODO(LD): When do we actually use this? What does it mean?
+  // E.g. in the TigerBeetle world, can it be just the creation date since 
+  // accounts cannot be modified? Or should it include the reopen date
+  // if we closed and reopened an account?
   changedDate: Date
 }
 

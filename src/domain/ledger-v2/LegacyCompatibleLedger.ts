@@ -10,6 +10,7 @@ import { ProxyObligation } from "src/handlers/transfers/prepare";
 import { ApplicationConfig } from "../../shared/config";
 import { logger } from '../../shared/logger';
 import {
+  AnyQuery,
   CreateDFSPCommand,
   CreateDFSPResponse,
   CreateHubAccountCommand,
@@ -19,29 +20,35 @@ import {
   DFSPAccountResponse,
   FulfilResult,
   FulfilResultType,
+  GetAllDFSPSResponse,
   GetDFSPAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
+  LedgerDFSP,
   LegacyLedgerAccount,
   LookupTransferQuery,
   LookupTransferQueryResponse,
   LookupTransferResultType,
   NetDebitCapResponse,
   ParticipantServiceAccount,
+  ParticipantServiceCurrency,
+  ParticipantServiceParticipant,
   ParticipantWithCurrency,
   PayeeResponsePayload,
   PrepareResult,
   PrepareResultType,
+  QueryResult,
   SweepResult,
   TimedOutTransfer,
   TransferParticipantInfo,
   TransferReadModel,
   TransferStateChange,
-  TransformredTransfer
+  TransformedTransfer
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
+import { parseBool } from '../../shared/util';
 
 
 export enum PrepareDuplicateResult {
@@ -91,8 +98,9 @@ export interface LegacyCompatibleLedgerDependencies {
       createHubAccount: (request: { params: { name: string }, payload: { type: string, currency: string } }, callback: any) => Promise<void>
     }
     participantService: {
-      getByName: (name: string) => Promise<{ currencyList: any[], participantId: number }>
-      getById: (id: number) => Promise<{ currencyList: any[], participantId: number }>
+      getAll: () => Promise<Array<ParticipantServiceParticipant>>,
+      getByName: (name: string) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number }>
+      getById: (id: number) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number }>
       getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
       getLimits: (name: string, query: { currency: string, type: string }) => Promise<Array<unknown>>
       create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
@@ -134,7 +142,7 @@ export interface LegacyCompatibleLedgerDependencies {
     validateParticipantTransferId: (participantName: string, transferId: string) => Promise<boolean>;
     validateFulfilCondition: (fulfilment: string, condition: string) => boolean;
     validationReasons: string[];
-    handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any, fspiopError?: any) => Promise<TransformredTransfer>;
+    handlePayeeResponse: (transferId: string, payload: PayeeResponsePayload, action: any, fspiopError?: any) => Promise<TransformedTransfer>;
     getTransferById: (transferId: string) => Promise<TransferReadModel | null>;
     getTransferInfoToChangePosition: (transferId: string, roleType: any, entryType: any) => Promise<TransferParticipantInfo | null>;
     getTransferFulfilmentDuplicateCheck: any;
@@ -202,7 +210,7 @@ export default class LegacyCompatibleLedger implements Ledger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) {
 
   }
-  
+
   async sweepTimedOut(): Promise<SweepResult> {
     try {
       // Get timeout segments
@@ -234,10 +242,10 @@ export default class LegacyCompatibleLedger implements Ledger {
 
       const simplifiedTransfers: TimedOutTransfer[] = transferTimeoutList && Array.isArray(transferTimeoutList)
         ? transferTimeoutList.map(tt => ({
-            id: tt.transferId,
-            payerId: tt.payerFsp,
-            payeeId: tt.payeeFsp,
-          }))
+          id: tt.transferId,
+          payerId: tt.payerFsp,
+          payeeId: tt.payeeFsp,
+        }))
         : [];
 
       return {
@@ -596,13 +604,111 @@ export default class LegacyCompatibleLedger implements Ledger {
       }
     }
   }
-  
+
   public async getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
-    
-    throw new Error('Not Implemented')
+    // TODO(LD): inject as dependency!
+    const Enums = require('../../lib/enumCached')
+
+    try {
+      const participants = await this.deps.lifecycle.participantService.getByName('Hub')
+      const ledgerAccountTypes: Record<string, number> = await Enums.getEnums('ledgerAccountType')
+      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
+        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
+        acc[ledgerAccountId] = ledgerAccountType
+        return acc
+      }, {})
+
+      const formattedAccounts: Array<LegacyLedgerAccount> = []
+      participants.currencyList.forEach(currency => {
+        const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
+        assert(ledgerAccountType)
+        const formattedAccount: LegacyLedgerAccount = {
+          id: BigInt(currency.participantCurrencyId),
+          ledgerAccountType,
+          currency: currency.currencyId,
+          isActive: Boolean(currency.isActive),
+          changedDate: new Date(currency.createdDate),
+          // These feel wrong to me - we should just return the value anyway
+          // but the getByName query doesn't look up account values.
+          value: 0,
+          reservedValue: 0,
+        }
+        formattedAccounts.push(formattedAccount)
+      })
+
+      return {
+        type: 'SUCCESS',
+        accounts: formattedAccounts,
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        fspiopError: err
+      }
+    }
   }
 
-  
+  public async getAllDFSPS(_query: AnyQuery): Promise<QueryResult<GetAllDFSPSResponse>> {
+    // TODO(LD): inject as dependency!
+    const Enums = require('../../lib/enumCached')
+
+    try {
+      const participants = await this.deps.lifecycle.participantService.getAll()
+      const ledgerAccountTypes: Record<string, number> = await Enums.getEnums('ledgerAccountType')
+      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
+        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
+        acc[ledgerAccountId] = ledgerAccountType
+        return acc
+      }, {})
+
+      const dfsps: Array<LedgerDFSP> = []
+      participants.forEach(participant => {
+        // Filter out the Hub accounts
+        if (participant.name === 'Hub') {
+          return
+        }
+
+        const formattedAccounts: Array<LegacyLedgerAccount> = []
+        participant.currencyList.forEach(currency => {
+          const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
+          assert(ledgerAccountType)
+          const formattedAccount: LegacyLedgerAccount = {
+            id: BigInt(currency.participantCurrencyId),
+            ledgerAccountType,
+            currency: currency.currencyId,
+            isActive: Boolean(currency.isActive),
+            changedDate: new Date(currency.createdDate),
+            // These feel wrong to me - we should just return the value anyway
+            // but the getByName query doesn't look up account values.
+            value: 0,
+            reservedValue: 0,
+          }
+          formattedAccounts.push(formattedAccount)
+        })
+
+        dfsps.push({
+          name: participant.name,
+          isActive: participant.isActive === 1,
+          created: undefined,
+          accounts: formattedAccounts
+        })
+      })    
+      
+      return {
+        type: 'SUCCESS',
+        result: {
+          dfsps
+        }
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        fspiopError: err
+      }
+    }
+  }
+
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
     const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP' }
     try {
@@ -988,7 +1094,7 @@ export default class LegacyCompatibleLedger implements Ledger {
       return {
         type: FulfilResultType.PASS
       }
-      
+
     } catch (err) {
       return {
         type: FulfilResultType.FAIL_OTHER,

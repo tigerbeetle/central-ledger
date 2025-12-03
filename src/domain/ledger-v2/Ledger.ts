@@ -1,6 +1,7 @@
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler"
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler"
 import {
+  AnyQuery,
   CreateDFSPCommand,
   CreateDFSPResponse,
   CreateHubAccountCommand,
@@ -9,6 +10,7 @@ import {
   DepositCollateralResponse,
   DFSPAccountResponse,
   FulfilResult,
+  GetAllDFSPSResponse,
   GetDFSPAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
@@ -17,6 +19,7 @@ import {
   LookupTransferQueryResponse,
   NetDebitCapResponse,
   PrepareResult,
+  QueryResult,
   SweepResult,
 } from './types'
 
@@ -34,6 +37,8 @@ export interface Ledger {
   depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
   withdrawCollateral(cmd: unknown): Promise<unknown>;
   getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
+
+  getAllDFSPS(query: AnyQuery): Promise<QueryResult<GetAllDFSPSResponse>>
   getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse>
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse>
   // setLimits(cmd: SetLimitsCommand): Promise<SetLimitsResponse>;

@@ -11,6 +11,7 @@ import { Ledger } from "./Ledger";
 import { DfspAccountIds, MetadataStore } from "./MetadataStore";
 import { TransferBatcher } from "./TransferBatcher";
 import {
+  AnyQuery,
   CreateDFSPCommand,
   CreateDFSPResponse,
   CreateHubAccountCommand,
@@ -20,6 +21,7 @@ import {
   DFSPAccountResponse,
   FulfilResult,
   FulfilResultType,
+  GetAllDFSPSResponse,
   GetDFSPAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
@@ -32,6 +34,7 @@ import {
   NetDebitCapResponse,
   PrepareResult,
   PrepareResultType,
+  QueryResult,
   SweepResult,
   TimedOutTransfer
 } from "./types";
@@ -444,6 +447,10 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
+    throw new Error('Method not implemented.');
+  }
+
+  public async getAllDFSPS(query: AnyQuery): Promise<QueryResult<GetAllDFSPSResponse>> {
     throw new Error('Method not implemented.');
   }
 
