@@ -434,10 +434,10 @@ export default class LegacyCompatibleLedger implements Ledger {
             type: 'ALREADY_EXISTS'
           }
         }
-        // all currencies are new, continue
+        // All currencies are new, continue.
       }
 
-      // Create participant and currency accounts directly
+      // Create participant and currency accounts directly.
       for (const currency of cmd.currencies) {
         await this.createParticipantWithCurrency(cmd.dfspId, currency);
       }
@@ -1519,10 +1519,6 @@ export default class LegacyCompatibleLedger implements Ledger {
    * This extracts the core logic from the participants handler create method
    */
   private async createParticipantWithCurrency(dfspId: string, currency: string): Promise<void> {
-    const Enums = require('../../lib/enumCached')
-    const Util = require('@mojaloop/central-services-shared').Util
-
-    // Validate hub accounts first
     await this.deps.lifecycle.participantService.validateHubAccounts(currency)
 
     let participant = await this.deps.lifecycle.participantService.getByName(dfspId)
@@ -1541,7 +1537,6 @@ export default class LegacyCompatibleLedger implements Ledger {
       participant = await this.deps.lifecycle.participantService.getById(participantId)
     }
 
-    const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
     const allSettlementModels = await this.deps.lifecycle.settlementModelDomain.getAll()
     let settlementModels = allSettlementModels.filter(model => model.currencyId === currency)
     if (settlementModels.length === 0) {
@@ -1555,20 +1550,20 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
 
     for (const settlementModel of settlementModels) {
-      const [participantCurrencyId1, participantCurrencyId2] = await Promise.all([
-        this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.ledgerAccountTypeId, false),
-        this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.settlementAccountTypeId, false)
-      ])
+      // TODO(LD): Ideally these would be created in a transaction - as it stands right now, these are non
+      // atomically created.
+      const participantCurrencyPosition = await this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.ledgerAccountTypeId, false)
+      const participantCurrencySettlement = await this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.settlementAccountTypeId, false)
 
       if (Array.isArray(participant.currencyList)) {
         participant.currencyList = participant.currencyList.concat([
-          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId1),
-          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId2)
+          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyPosition),
+          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencySettlement)
         ])
       } else {
         participant.currencyList = await Promise.all([
-          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId1),
-          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyId2)
+          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyPosition),
+          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencySettlement)
         ])
       }
     }

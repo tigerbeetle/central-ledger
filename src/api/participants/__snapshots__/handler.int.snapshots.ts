@@ -192,3 +192,8 @@ export const addsASecondCurrencyToExistingDFSP =
   ],
   isProxy: 0
 }
+
+
+export const cannotCreateTheSameCurrencyTwice = {
+  
+}

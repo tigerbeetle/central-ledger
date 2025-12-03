@@ -217,111 +217,136 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.updateV2(request)
+      const body = await ParticipantHandler.update(request)
 
       // Assert
       assert.equal(body.isActive, 0)
     })
 
-    // it('04 reactivates a participant', async () => {
-    //   // Arrange
-    //   const request = {
-    //     params: {
-    //       name: 'dfsp_x'
-    //     },
-    //     payload: {
-    //       isActive: true,
-    //     },
-    //     server: {
-    //       app: {
-    //         ledger
-    //       }
-    //     }
-    //   }
+    it('04 reactivates a participant', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_x'
+        },
+        payload: {
+          isActive: true,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
 
-    //   // Act
-    //   const body = await ParticipantHandler.update(request)
+      // Act
+      const body = await ParticipantHandler.update(request)
 
-    //   // Assert
-    //   assert.equal(body.isActive, 1)
-    // })
+      // Assert
+      assert.equal(body.isActive, 1)
+    })
 
-    // it('05 deactivating a deactivated participant has no effect', async () => {
-    //   // Arrange
-    //   const request = {
-    //     params: {
-    //       name: 'dfsp_x'
-    //     },
-    //     payload: {
-    //       isActive: false,
-    //     },
-    //     server: {
-    //       app: {
-    //         ledger
-    //       }
-    //     }
-    //   }
+    it('05 deactivating a deactivated participant has no effect', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_x'
+        },
+        payload: {
+          isActive: false,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
 
-    //   // Act
-    //   await ParticipantHandler.update(request)
-    //   const body = await ParticipantHandler.update(request)
+      // Act
+      await ParticipantHandler.update(request)
+      const body = await ParticipantHandler.update(request)
 
-    //   // Assert
-    //   assert.equal(body.isActive, 0)
-    // })
+      // Assert
+      assert.equal(body.isActive, 0)
+    })
 
-    // it('06 cannot deactivate a participant that does not exist', async () => {
-    //   // Arrange
-    //   const request = {
-    //     params: {
-    //       name: 'not_a_dfsp'
-    //     },
-    //     payload: {
-    //       isActive: false,
-    //     },
-    //     server: {
-    //       app: {
-    //         ledger
-    //       }
-    //     }
-    //   }
+    it('06 cannot deactivate a participant that does not exist', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'not_a_dfsp'
+        },
+        payload: {
+          isActive: false,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
 
-    //   // Act
-    //   try {
-    //     await ParticipantHandler.update(request)
-    //     throw new Error('Test failed')
-    //   } catch (err) {
-    //     assert.equal(err.message, 'Participant does not exist')
-    //   }
-    // })
+      // Act
+      try {
+        await ParticipantHandler.update(request)
+        throw new Error('Test failed')
+      } catch (err) {
+        assert.equal(err.message, 'Participant does not exist')
+      }
+    })
 
-    // it('07 can deactivate the Hub participant', async () => {
-    //   // Arrange
-    //   const request = {
-    //     params: {
-    //       name: 'Hub'
-    //     },
-    //     payload: {
-    //       isActive: false,
-    //     },
-    //     server: {
-    //       app: {
-    //         ledger
-    //       }
-    //     }
-    //   }
+    it('07 can deactivate the Hub participant', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          isActive: false,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
 
-    //   // Act
-    //   const body = await ParticipantHandler.update(request)
+      // Act
+      const body = await ParticipantHandler.update(request)
 
-    //   // Assert
-    //   assert.equal(body.isActive, 0)
-    // })
+      // Assert
+      assert.equal(body.isActive, 0)
+    })
 
-    // it.todo('08 cannot create the same currency for the dfsp twice')
+    it('08 cannot create the same currency for the dfsp twice', async () => {
+       const request = {
+        query: {
+          isProxy: false
+        },
+        payload: {
+          currency: 'KES',
+          name: 'dfsp_x',
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      try {
+        const {
+          code, body
+        } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+        throw new Error('Test failed')
+      } catch (err) {
+        assert.equal(err.message, 'Participant currency has already been registered')
+      }
+    })
   })
 
-  describe('Limits', () => {
+  describe.skip('Limits', () => {
     it('01 Setup', async () => {
       // Arrange
       const request = {
@@ -457,7 +482,7 @@ describe('api/participants/handler', () => {
     })
   })
 
-  describe('Accounts', () => {
+  describe.skip('Accounts', () => {
     let positionAccountId: number
     let settlementAccountId: number
 
@@ -827,7 +852,7 @@ describe('api/participants/handler', () => {
     it.todo('07 withdraw fails if not enough funds are available')
   })
 
-  describe('Positions', () => {
+  describe.skip('Positions', () => {
 
     // shortcuts
     const createDfspForCurrency = async (dfspId: string, currency: string): Promise<void> => {

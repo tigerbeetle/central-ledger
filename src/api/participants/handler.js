@@ -690,8 +690,7 @@ module.exports = {
   getByName: () => {
     throw new Error('getByName() has been deprecated in Ledger Migration.')
   },
-  update,
-  updateV2,
+  update: updateV2,
   addEndpoint,
   getEndpoint,
   addLimitAndInitialPosition,
