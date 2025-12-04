@@ -109,11 +109,13 @@ describe('LegacyCompatibleLedger', () => {
 
       const deps: LegacyCompatibleLedgerDependencies = {
         config,
+        knex: Db.getKnex(),
         lifecycle: {
           participantsHandler: require('../../api/participants/handler'),
           participantService: require('../../domain/participant'),
           participantFacade: require('../../models/participant/facade'),
           transferService: require('../../domain/transfer'),
+          transferFacade: require('../../models/transfer/facade'),
           enums: await require('../../lib/enumCached').getEnums('all'),
           settlementModelDomain: require('../../domain/settlement'),
         },

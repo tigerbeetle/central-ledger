@@ -440,6 +440,11 @@ const addLimitAndInitialPosition = async function (request, h) {
   }
 }
 
+/**
+ * Unfortunately the API is mismatched here between request.payload.limit.value (a number)
+ * and what we have in deposit. So recordFundsV2 must adapt from a string formatted
+ * amount to a real number
+ */
 const addLimitAndInitialPositionV2 = async function (request, h) {
   try {
     assert(request)
@@ -447,20 +452,20 @@ const addLimitAndInitialPositionV2 = async function (request, h) {
     assert(request.params.name)
     assert(request.payload)
     assert(request.payload.currency)
-    assert(request.payload.initialPosition !== undefined)
+    // assert(request.payload.initialPosition !== undefined)
     assert(request.payload.limit)
     assert(request.payload.limit.type)
     assert(request.payload.limit.value !== undefined)
 
     const ledger = getLedger(request)
 
-    const depositCollateralCmd = {
+    const depositCmd = {
       transferId: randomUUID(), // TODO: should be defined by the user in the API
       dfspId: request.params.name,
       currency: request.payload.currency,
       amount: request.payload.limit.value
     }
-    const result = await ledger.depositCollateral(depositCollateralCmd)
+    const result = await ledger.deposit(depositCmd)
     if (result.type === 'FAILURE') {
       throw result.error
     }
@@ -503,7 +508,7 @@ const getLimitsV2 = async function (request) {
     assert(request.params.name)
     assert(request.query)
     assert(request.query.currency)
-    // only limits of type NET_DEBIT_CAP are supported by this API
+    // Only limits of type NET_DEBIT_CAP are supported
     assert.equal(request.query.type, 'NET_DEBIT_CAP')
 
     const ledger = getLedger(request)
@@ -513,6 +518,14 @@ const getLimitsV2 = async function (request) {
     })
 
     if (limitResponse.type !== 'SUCCESS') {
+      // special case 
+      if (limitResponse.fspiopError.apiErrorCode &&
+        limitResponse.fspiopError.apiErrorCode.code &&
+        limitResponse.fspiopError.apiErrorCode.code === '3200'
+      ) {
+        return []
+      }
+      
       throw limitResponse.fspiopError
     }
 
@@ -522,23 +535,6 @@ const getLimitsV2 = async function (request) {
         limit: limitResponse.limit
       }
     ]
-
-
-    // const result = await ParticipantService.getLimits(request.params.name, request.query)
-    // const limits = []
-    // if (Array.isArray(result) && result.length > 0) {
-    //   result.forEach(item => {
-    //     limits.push({
-    //       currency: (item.currencyId || request.query.currency),
-    //       limit: {
-    //         type: item.name,
-    //         value: new MLNumber(item.value).toNumber(),
-    //         alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
-    //       }
-    //     })
-    //   })
-    // }
-    // return limits
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetLimits' })
   }
@@ -638,7 +634,7 @@ const getAccountsV2 = async function (request) {
   const name = request.params.name
   const currency = request.query.currency
   const ledger = getLedger(request)
-  const ledgerAccountsResponse = await ledger.getAccounts({ dfspId: name, currency })
+  const ledgerAccountsResponse = await ledger.getDfspAccounts({ dfspId: name, currency })
 
   if (ledgerAccountsResponse.type === 'FAILURE') {
     Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.fspiopError.message}`)
@@ -672,11 +668,128 @@ const updateAccount = async function (request, h) {
   }
 }
 
+const updateAccountV2 = async function (request, h) {
+  try {
+    assert(request)
+    assert(request.params)
+    assert(request.params.name)
+    assert(request.params.id)
+    assert(request.payload)
+    assert(request.payload.isActive !== undefined)
+
+    const ledger = getLedger(request)
+    const { name, id } = request.params
+    const { isActive } = request.payload
+
+    let result
+    if (isActive) {
+      result = await ledger.enableDfspAccount({ dfspId: name, accountId: id })
+    } else {
+      result = await ledger.disableDfspAccount({ dfspId: name, accountId: id })
+    }
+
+    if (result.type === 'FAILURE') {
+      throw result.fspiopError
+    }
+
+    return h.response().code(200)
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantUpdateAccount' })
+  }
+}
+
 const recordFunds = async function (request, h) {
   try {
     const enums = await Enums.getEnums('all')
     await ParticipantService.recordFundsInOut(request.payload, request.params, enums)
     return h.response().code(202)
+  } catch (err) {
+    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })
+  }
+}
+
+const recordFundsV2 = async function (request, h) {
+  try {
+    assert(request)
+    assert(request.params)
+    assert(request.params.name)
+    assert(request.payload)
+    assert(request.payload.action)
+    assert(request.payload.transferId)
+
+    const ledger = getLedger(request)
+    const { name } = request.params
+    const { action, amount, transferId } = request.payload
+
+    // Validate amount is present for actions that require it
+    if (action !== 'recordFundsOutCommit') {
+      assert(amount, 'amount is required')
+      assert(amount.amount, 'amount.amount is required')
+      assert(amount.currency, 'amount.currency is required')
+    }
+
+    if (action === 'recordFundsIn') {
+      const depositCmd = {
+        transferId,
+        dfspId: name,
+        currency: amount.currency,
+        amount: new MLNumber(amount.amount).toNumber(),
+      }
+
+      const result = await ledger.deposit(depositCmd)
+
+      if (result.type === 'FAILURE') {
+        throw result.error
+      }
+
+      if (result.type === 'ALREADY_EXISTS') {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
+          'Transfer with this ID already exists'
+        )
+      }
+
+      return h.response().code(202)
+    } else if (action === 'recordFundsOutPrepareReserve') {
+      const withdrawPrepareCmd = {
+        transferId,
+        dfspId: name,
+        currency: amount.currency,
+        amount: new MLNumber(amount.amount).toNumber(),
+      }
+
+      const result = await ledger.withdrawPrepare(withdrawPrepareCmd)
+
+      if (result.type === 'FAILURE') {
+        throw result.error
+      }
+
+      if (result.type === 'INSUFFICIENT_FUNDS') {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.PAYER_FSP_INSUFFICIENT_LIQUIDITY,
+          `Insufficient funds for withdrawal. Available: ${result.availableBalance}, Requested: ${result.requestedAmount}`
+        )
+      }
+
+      return h.response().code(202)
+    } else if (action === 'recordFundsOutCommit') {
+      const withdrawCommitCmd = {
+        transferId
+      }
+
+      const result = await ledger.withdrawCommit(withdrawCommitCmd)
+
+      if (result.type === 'FAILURE') {
+        throw result.error
+      }
+
+      return h.response().code(202)
+    } else {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+        `Invalid action: ${action}`
+      )
+    }
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })
   }
@@ -688,17 +801,20 @@ module.exports = {
   // Working through the new Ledger implementations
   getAll: getAllV2,
   getByName: () => {
+    // I couldn't find any uses of is, so I removed it
     throw new Error('getByName() has been deprecated in Ledger Migration.')
   },
   update: updateV2,
+  getLimits,
+  getLimitsV2,
   addEndpoint,
   getEndpoint,
-  addLimitAndInitialPosition,
-  getLimits,
+  addLimitAndInitialPosition: addLimitAndInitialPositionV2,
   adjustLimits,
   getPositions,
   getAccounts,
-  updateAccount,
-  recordFunds,
+  getAccountsV2,
+  updateAccount: updateAccountV2,
+  recordFunds: recordFundsV2,
   getLimitsForAllParticipants
 }

@@ -16,7 +16,7 @@ import * as snapshots from './__snapshots__/handler.int.snapshots';
 type GetAccountResponseDTO = {
   changedDate: unknown,
   currency: string,
-  id: number,
+  id: string,
   isActive: number,
   ledgerAccountType: 'POSITION' | 'SETTLEMENT'
   reservedValue: number
@@ -319,7 +319,7 @@ describe('api/participants/handler', () => {
     })
 
     it('08 cannot create the same currency for the dfsp twice', async () => {
-       const request = {
+      const request = {
         query: {
           isProxy: false
         },
@@ -346,7 +346,7 @@ describe('api/participants/handler', () => {
     })
   })
 
-  describe.skip('Limits', () => {
+  describe('Limits', () => {
     it('01 Setup', async () => {
       // Arrange
       const request = {
@@ -385,7 +385,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.getLimits(request)
+      const body = await ParticipantHandler.getLimitsV2(request)
 
       // Assert
       unwrapSnapshot(checkSnapshotString(JSON.stringify(body), "[]"))
@@ -443,7 +443,6 @@ describe('api/participants/handler', () => {
           alarmPercentage: 10,
         }
       }]))
-
     })
 
     it('04 Changes the limit', async () => {
@@ -482,9 +481,9 @@ describe('api/participants/handler', () => {
     })
   })
 
-  describe.skip('Accounts', () => {
-    let positionAccountId: number
-    let settlementAccountId: number
+  describe('Accounts', () => {
+    let positionAccountId: string
+    let settlementAccountId: string
 
     // Helpers
     const getDFSPAccounts = async (dsfpId: string): Promise<Array<GetAccountResponseDTO>> => {
@@ -503,7 +502,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.getAccounts(request)
+      const body = await ParticipantHandler.getAccountsV2(request)
       return body
     }
 
@@ -556,37 +555,32 @@ describe('api/participants/handler', () => {
       const accounts = await getDFSPAccounts('dfsp_u')
 
       // Assert
-      unwrapSnapshot(checkSnapshotObject(accounts, [{
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "POSITION",
-        reservedValue: 0,
-        value: 0
-      },
-      {
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "SETTLEMENT",
-        reservedValue: 0,
-        value: 0
-      }]))
+      unwrapSnapshot(checkSnapshotObject(accounts, [
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "SETTLEMENT",
+          reservedValue: 0,
+          value: -50000
+        },
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "POSITION",
+          reservedValue: 0,
+          value: 0
+        },
+      ]))
 
       positionAccountId = accounts.filter(acc => acc.ledgerAccountType === 'POSITION')[0].id
       settlementAccountId = accounts.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0].id
     })
 
 
-    /**
-     * TODO: this needs to be revisited once we've figured out how to inject the 
-     * position messages into the test environment. The trouble at the moment is that I'm
-     * trying to set up these tests to be as simple as possible (i.e. no kafka or eventually
-     * consistent components), but the current method for implementing position changes
-     * depends on kafka.
-     */
     it('03 Deposits working capital', async () => {
       // Arrange
       assert(positionAccountId, 'value expected from previous `it` block')
@@ -600,12 +594,12 @@ describe('api/participants/handler', () => {
           reason: "deposit",
           amount: {
             currency: 'USD',
-            amount: '100,000.00'
+            amount: '100000.00'
           }
         },
         params: {
           name: 'dfsp_u',
-          id: settlementAccountId, // accountId from above
+          id: Number.parseInt(settlementAccountId), // accountId from above
           transferId: '67890',
         },
         server: {
@@ -629,28 +623,27 @@ describe('api/participants/handler', () => {
 
       const updatedAccounts = await getDFSPAccounts('dfsp_u')
 
-
       // Assert
-      unwrapSnapshot(checkSnapshotObject(updatedAccounts, [{
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "POSITION",
-        reservedValue: 0,
-        value: 0
-      },
-      {
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "SETTLEMENT",
-        // TODO(LD): uncomment me!
-        // reservedValue: -100000,
-        "reservedValue:ignore": "",
-        value: 0
-      }]))
+      unwrapSnapshot(checkSnapshotObject(updatedAccounts, [
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "SETTLEMENT",
+          reservedValue: 0,
+          value: -150000
+        },
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "POSITION",
+          reservedValue: 0,
+          value: 0
+        },
+      ]))
     })
 
     it('04 deactivates and reactivates the position account', async () => {
@@ -662,7 +655,7 @@ describe('api/participants/handler', () => {
         },
         params: {
           name: 'dfsp_u',
-          id: positionAccountId, // accountId from above
+          id: Number.parseInt(positionAccountId), // accountId from above
         },
         server: {
           app: {
@@ -717,7 +710,7 @@ describe('api/participants/handler', () => {
         },
         params: {
           name: 'dfsp_u',
-          id: settlementAccountId, // accountId from above
+          id: Number.parseInt(settlementAccountId), // accountId from above
         },
         server: {
           app: {
@@ -754,7 +747,7 @@ describe('api/participants/handler', () => {
           reason: "withdrawal",
           amount: {
             currency: 'USD',
-            amount: '50,000.00'
+            amount: '50000.00'
           }
         },
         params: {
@@ -779,26 +772,26 @@ describe('api/participants/handler', () => {
       let updatedAccounts = await getDFSPAccounts('dfsp_u')
 
       // Assert
-      unwrapSnapshot(checkSnapshotObject(updatedAccounts, [{
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "POSITION",
-        reservedValue: 0,
-        value: 0
-      },
-      {
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "SETTLEMENT",
-        // TODO(LD): uncomment me!
-        // reservedValue: -100000,
-        "reservedValue:ignore": "",
-        value: 0
-      }]))
+      unwrapSnapshot(checkSnapshotObject(updatedAccounts, [
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "SETTLEMENT",
+          reservedValue: -100000,
+          value: -100000
+        },
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "POSITION",
+          reservedValue: 0,
+          value: 0
+        },
+      ]))
 
       const requestConfirm = {
         payload: {
@@ -827,26 +820,26 @@ describe('api/participants/handler', () => {
       updatedAccounts = await getDFSPAccounts('dfsp_u')
 
       // Assert
-      unwrapSnapshot(checkSnapshotObject(updatedAccounts, [{
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "POSITION",
-        reservedValue: 0,
-        value: 0
-      },
-      {
-        changedDate: ":ignore",
-        currency: "USD",
-        "id:ignore": "",
-        isActive: 1,
-        ledgerAccountType: "SETTLEMENT",
-        // TODO(LD): uncomment me!
-        // reservedValue: -100000,
-        "reservedValue:ignore": "",
-        value: 0
-      }]))
+       unwrapSnapshot(checkSnapshotObject(updatedAccounts, [
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "SETTLEMENT",
+          reservedValue: -100000,
+          value: -100000
+        },
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "POSITION",
+          reservedValue: 0,
+          value: 0
+        },
+      ]))
     })
 
     it.todo('07 withdraw fails if not enough funds are available')

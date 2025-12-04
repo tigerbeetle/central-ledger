@@ -13,6 +13,7 @@ import { HarnessDatabase, HarnessDatabaseConfig } from "./harness-database";
 import { HarnessTigerBeetle, HarnessTigerBeetleConfig } from "./harness-tigerbeetle";
 
 import Cache from '../../lib/cache';
+import Db from '../../lib/db';
 import EnumCached from '../../lib/enumCached';
 import externalParticipantCached from '../../models/participant/externalParticipantCached';
 import ParticipantCached from '../../models/participant/participantCached';
@@ -155,11 +156,13 @@ export class HarnessApi implements Harness {
 
     const deps: LegacyCompatibleLedgerDependencies = {
       config: this.config.applicationConfig,
+      knex: Db.getKnex(),
       lifecycle: {
         participantsHandler: require('../../api/participants/handler'),
         participantService: require('../../domain/participant'),
         participantFacade: require('../../models/participant/facade'),
         transferService: require('../../domain/transfer'),
+        transferFacade: require('../../models/transfer/facade'),
         enums: await require('../../lib/enumCached').getEnums('all'),
         settlementModelDomain: require('../../domain/settlement'),
       },

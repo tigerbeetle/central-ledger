@@ -1,5 +1,5 @@
 import { Ledger } from "src/domain/ledger-v2/Ledger";
-import { CreateHubAccountCommand, CreateHubAccountResponse, CreateDFSPCommand, CreateDFSPResponse, DepositCollateralCommand, DepositCollateralResponse, GetDFSPAccountsQuery, DFSPAccountResponse, GetNetDebitCapQuery, NetDebitCapResponse, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse } from "src/domain/ledger-v2/types";
+import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, NetDebitCapResponse, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, QueryResult, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse } from "src/domain/ledger-v2/types";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 
@@ -9,25 +9,7 @@ import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
  * @description Use TestLedger as a superclass for test-specific ledger mocks
  */
 export default class TestLedger implements Ledger {
-  createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
-    throw new Error("Method not implemented.");
-  }
-  createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> {
-    throw new Error("Method not implemented.");
-  }
-  disableDfsp(cmd: unknown): Promise<unknown> {
-    throw new Error("Method not implemented.");
-  }
-  enableDfsp(cmd: unknown): Promise<unknown> {
-    throw new Error("Method not implemented.");
-  }
-  depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse> {
-    throw new Error("Method not implemented.");
-  }
-  withdrawCollateral(cmd: unknown): Promise<unknown> {
-    throw new Error("Method not implemented.");
-  }
-  getDFSPAccounts(query: GetDFSPAccountsQuery): Promise<DFSPAccountResponse> {
+  createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     throw new Error("Method not implemented.");
   }
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
@@ -51,5 +33,43 @@ export default class TestLedger implements Ledger {
   settleClosedWindows(cmd: unknown): Promise<unknown> {
     throw new Error("Method not implemented.");
   }
+  disableDfsp(cmd: { dfspId: string; }): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  enableDfsp(cmd: { dfspId: string; }): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  enableDfspAccount(cmd: { dfspId: string; accountId: number; }): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  disableDfspAccount(cmd: { dfspId: string; accountId: number; }): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  deposit(cmd: DepositCommand): Promise<DepositResponse> {
+    throw new Error("Method not implemented.");
+  }
+  withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse> {
+    throw new Error("Method not implemented.");
+  }
+  withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse> {
+    throw new Error("Method not implemented.");
+  }
+  getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
+    throw new Error("Method not implemented.");
+  }
+  getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
+    throw new Error("Method not implemented.");
+  }
+  getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
+    throw new Error("Method not implemented.");
+  }
+  getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
+    throw new Error("Method not implemented.");
+  }
+  createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
+    throw new Error("Method not implemented.");
+  }
+  
+  
   
 }

@@ -3,13 +3,13 @@
 // although we might want to use these tests to verify that the ledgers return the correct responses
 
 import { describe, it } from "node:test";
-import { CreateDFSPCommand, CreateDFSPResponse } from "../../domain/ledger-v2/types";
 import TestLedger from "../../testing/TestLedger";
 import { TestUtils } from "../../testing/testutils";
 import { create } from "./handler";
+import { CreateDfspCommand, CreateDfspResponse } from "src/domain/ledger-v2/types";
 
 class ApiTestLedger extends TestLedger {
-  createDfsp(cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> {
+  createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     throw new Error("Method not implemented.");
   }
 }
@@ -21,7 +21,7 @@ describe('api/participants/handler', () => {
   describe('create', () => {
     it('creates a new DFSP', async () => {
       // Arrange
-      ledger.createDfsp = async (cmd: CreateDFSPCommand): Promise<CreateDFSPResponse> => {
+      ledger.createDfsp = async (cmd: CreateDfspCommand): Promise<CreateDfspResponse> => {
         return {
           type: 'SUCCESS'
         }

@@ -7,8 +7,8 @@ import {
   CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
-  DepositCollateralCommand,
-  DepositCollateralResponse,
+  DepositCommand,
+  DepositResponse,
   DfspAccountResponse,
   FulfilResult,
   GetAllDfspsResponse,
@@ -23,6 +23,10 @@ import {
   PrepareResult,
   QueryResult,
   SweepResult,
+  WithdrawCommitCommand,
+  WithdrawCommitResponse,
+  WithdrawPrepareCommand,
+  WithdrawPrepareResponse,
 } from './types'
 
 /**
@@ -36,8 +40,11 @@ export interface Ledger {
   createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse>;
   disableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>>;
   enableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>>;
-  depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse>;
-  withdrawCollateral(cmd: unknown): Promise<unknown>;
+  enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>>;
+  disableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>>;
+  deposit(cmd: DepositCommand): Promise<DepositResponse>;
+  withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse>;
+  withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse>;
   getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
 
   getDfsp(query: {dfspId: string}): Promise<QueryResult<LedgerDfsp>>

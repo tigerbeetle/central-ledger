@@ -356,7 +356,7 @@ export type CreateDfspResponse = CreateDfspResponseSuccess
   | CreateDfspResponseFailure
 
 
-export interface DepositCollateralCommand {
+export interface DepositCommand {
   // TODO: should this be named idempotenceId? Or depositId?
   transferId: string,
   dfspId: string,
@@ -366,22 +366,74 @@ export interface DepositCollateralCommand {
   amount: number
 }
 
-export interface DepositCollateralResponseSuccess {
+export interface DepositResponseSuccess {
   type: 'SUCCESS'
 }
 
-export interface DepositCollateralResponseAlreadyExists {
+export interface DepositResponseAlreadyExists {
   type: 'ALREADY_EXISTS'
 }
 
-export interface DepositCollateralResponseFailure {
+export interface DepositResponseFailure {
   type: 'FAILURE',
   error: Error
 }
 
-export type DepositCollateralResponse = DepositCollateralResponseSuccess
-  | DepositCollateralResponseAlreadyExists
-  | DepositCollateralResponseFailure
+export type DepositResponse = DepositResponseSuccess
+  | DepositResponseAlreadyExists
+  | DepositResponseFailure
+
+export interface WithdrawPrepareCommand {
+  transferId: string,
+  dfspId: string,
+  currency: string,
+  amount: number
+}
+
+export interface WithdrawPrepareResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface WithdrawPrepareResponseInsufficientFunds {
+  type: 'INSUFFICIENT_FUNDS',
+  availableBalance: number,
+  requestedAmount: number
+}
+
+export interface WithdrawPrepareResponseFailure {
+  type: 'FAILURE',
+  error: Error
+}
+
+export type WithdrawPrepareResponse = WithdrawPrepareResponseSuccess
+  | WithdrawPrepareResponseInsufficientFunds
+  | WithdrawPrepareResponseFailure
+
+export interface WithdrawCommitCommand {
+  transferId: string
+}
+
+export interface WithdrawCommitResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface WithdrawCommitResponseFailure {
+  type: 'FAILURE',
+  error: Error
+}
+
+export type WithdrawCommitResponse = WithdrawCommitResponseSuccess
+  | WithdrawCommitResponseFailure
+
+export interface EnableDfspAccountCommand {
+  dfspId: string,
+  accountId: number
+}
+
+export interface DisableDfspAccountCommand {
+  dfspId: string,
+  accountId: number
+}
 
 export interface SetLimitsCommand {
 

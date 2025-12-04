@@ -17,8 +17,8 @@ import {
   CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
-  DepositCollateralCommand,
-  DepositCollateralResponse,
+  DepositCommand,
+  DepositResponse,
   DfspAccountResponse,
   FulfilResult,
   FulfilResultType,
@@ -38,7 +38,11 @@ import {
   PrepareResultType,
   QueryResult,
   SweepResult,
-  TimedOutTransfer
+  TimedOutTransfer,
+  WithdrawCommitCommand,
+  WithdrawCommitResponse,
+  WithdrawPrepareCommand,
+  WithdrawPrepareResponse,
 } from "./types";
 import { Enum } from '@mojaloop/central-services-shared';
 
@@ -346,17 +350,29 @@ export default class TigerBeetleLedger implements Ledger {
     throw new Error('not implemented')
   }
 
+  public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
+    throw new Error('not implemented')
+  }
+
+  public async disableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
+    throw new Error('not implemented')
+  }
+
   // TODO(LD): Come back to the design on this one. I'm a little unsure about how to handle the
   // mismatch between single entry accounting in the original ledger, and double entry here.
-  public async depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse> {
-    logger.warn('depositCollateral() - noop')
+  public async deposit(cmd: DepositCommand): Promise<DepositResponse> {
+    logger.warn('deposit() - noop')
 
     return {
       type: 'SUCCESS'
     }
   }
 
-  public async withdrawCollateral(thing: unknown): Promise<unknown> {
+  public async withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse> {
+    throw new Error('not implemented')
+  }
+
+  public async withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse> {
     throw new Error('not implemented')
   }
 

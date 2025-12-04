@@ -59,7 +59,7 @@ export default class DFSPProvisioner {
         assert(currency)
         assert(startingDeposit)
 
-        const depositResult = await this.deps.ledger.depositCollateral({
+        const depositResult = await this.deps.ledger.deposit({
           transferId: randomUUID(),
           dfspId: config.dfspId,
           currency,

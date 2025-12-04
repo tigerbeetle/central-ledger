@@ -1,6 +1,7 @@
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 const { Enum, Util: { Time } } = require('@mojaloop/central-services-shared');
 import assert from "assert";
+import { Knex } from "knex";
 import { FusedFulfilHandlerInput } from '../../handlers-v2/FusedFulfilHandler';
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { MessageContext, PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult } from "src/handlers-v2/PositionHandler";
@@ -16,8 +17,8 @@ import {
   CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
-  DepositCollateralCommand,
-  DepositCollateralResponse,
+  DepositCommand,
+  DepositResponse,
   DfspAccountResponse,
   FulfilResult,
   FulfilResultType,
@@ -45,7 +46,11 @@ import {
   TransferParticipantInfo,
   TransferReadModel,
   TransferStateChange,
-  TransformedTransfer
+  TransformedTransfer,
+  WithdrawCommitCommand,
+  WithdrawCommitResponse,
+  WithdrawPrepareCommand,
+  WithdrawPrepareResponse,
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
@@ -87,6 +92,7 @@ export enum FulfilDuplicateResult {
 
 export interface LegacyCompatibleLedgerDependencies {
   config: ApplicationConfig
+  knex: Knex
 
   /**
    * Legacy functions used for Onboarding the Hub, DFSP, Setting up the switch and Settlement
@@ -107,6 +113,7 @@ export interface LegacyCompatibleLedgerDependencies {
       getLimits: (name: string, query: { currency: string, type: string }) => Promise<Array<unknown>>
       getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
       update: (name: string, payload: {isActive: boolean}) => Promise<unknown>
+      updateAccount: (payload: { isActive: boolean }, params: { name: string, id: number }, enums: any) => Promise<void>
       validateHubAccounts: (currency: string) => Promise<void>,
     },
     settlementModelDomain: {
@@ -120,6 +127,13 @@ export interface LegacyCompatibleLedgerDependencies {
     transferService: {
       recordFundsIn: (payload: any, transactionTimestamp: string, enums: any) => Promise<void>
       saveTransferDuplicateCheck: (transferId: string, payload: any) => Promise<void>
+    }
+    transferFacade: {
+      reconciliationTransferPrepare: (payload: any, transactionTimestamp: string, enums: any, trx?: any) => Promise<number>
+      reconciliationTransferReserve: (payload: any, transactionTimestamp: string, enums: any, trx?: any) => Promise<number>
+      reconciliationTransferCommit: (payload: any, transactionTimestamp: string, enums: any, trx?: any) => Promise<any>
+      getTransferStateByTransferId: (transferId: string) => Promise<string>
+      getById: (transferId: string) => Promise<any>
     }
     enums: any
   },
@@ -208,9 +222,7 @@ export interface LegacyCompatibleLedgerDependencies {
  *   interface which can be abstracted out and reimplemented with TigerBeetle
  */
 export default class LegacyCompatibleLedger implements Ledger {
-  constructor(private deps: LegacyCompatibleLedgerDependencies) {
-
-  }
+  constructor(private deps: LegacyCompatibleLedgerDependencies) { }
 
   async sweepTimedOut(): Promise<SweepResult> {
     try {
@@ -322,7 +334,6 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
-
   /**
    * Onboarding/Lifecycle Management
    */
@@ -399,8 +410,8 @@ export default class LegacyCompatibleLedger implements Ledger {
   }
 
   /**
-   * @description Create the dfsp accounts. Returns a duplicate response if the dfsp is already
-   *   created.
+   * @description Create the dfsp accounts. Returns a duplicate response if any of the dfsp + 
+   *   currency combinations already exist.
    */
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     assert(cmd.dfspId)
@@ -501,7 +512,7 @@ export default class LegacyCompatibleLedger implements Ledger {
 
     try {
       const dfspId = cmd.dfspId
-      const updateResult = await this.deps.lifecycle.participantService.update(
+      await this.deps.lifecycle.participantService.update(
         dfspId, {isActive: false}
       )
 
@@ -541,7 +552,57 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
-  public async depositCollateral(cmd: DepositCollateralCommand): Promise<DepositCollateralResponse> {
+  public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(cmd.accountId)
+
+    try {
+      await this.deps.lifecycle.participantService.updateAccount(
+        { isActive: true },
+        { name: cmd.dfspId, id: cmd.accountId },
+        this.deps.lifecycle.enums
+      )
+
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        fspiopError: err
+      }
+    }
+  }
+
+  public async disableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(cmd.accountId)
+
+    try {
+      await this.deps.lifecycle.participantService.updateAccount(
+        { isActive: false },
+        { name: cmd.dfspId, id: cmd.accountId },
+        this.deps.lifecycle.enums
+      )
+
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        fspiopError: err
+      }
+    }
+  }
+
+  public async deposit(cmd: DepositCommand): Promise<DepositResponse> {
     assert(cmd.amount)
     assert(cmd.amount > 0, 'depositCollateral amount must be greater than 0')
     assert(cmd.dfspId)
@@ -555,6 +616,49 @@ export default class LegacyCompatibleLedger implements Ledger {
         Enum.Accounts.LedgerAccountType.SETTLEMENT
       );
       assert(settlementAccount);
+
+      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+      assert(positionAccount);
+
+      // Create participantPosition records if they don't exist and activate the accounts
+      const existingSettlementPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', settlementAccount.participantCurrencyId)
+        .first();
+
+      if (!existingSettlementPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: settlementAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the settlement account
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', settlementAccount.participantCurrencyId);
+      }
+
+      const existingPositionPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', positionAccount.participantCurrencyId)
+        .first();
+
+      if (!existingPositionPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: positionAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the position account
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', positionAccount.participantCurrencyId);
+      }
+
       const now = new Date()
       const payload = {
         transferId: cmd.transferId,
@@ -593,8 +697,124 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
-  public async withdrawCollateral(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
+  public async withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse> {
+    assert(cmd.amount)
+    assert(cmd.amount > 0, 'withdraw amount must be greater than 0')
+    assert(cmd.dfspId)
+    assert(cmd.currency)
+    assert(cmd.transferId)
+
+    try {
+      const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.SETTLEMENT
+      );
+      assert(settlementAccount);
+
+      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+      assert(positionAccount);
+
+      const now = new Date()
+      const payload = {
+        transferId: cmd.transferId,
+        participantCurrencyId: settlementAccount.participantCurrencyId,
+        action: 'recordFundsOutPrepareReserve',
+        reason: 'Withdrawal',
+        externalReference: `withdrawal-${cmd.dfspId}`,
+        amount: {
+          amount: cmd.amount.toString(),
+          currency: cmd.currency
+        }
+      };
+
+      // Create duplicate check entry first (required by foreign key constraint)
+      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, payload);
+
+      // Step 1: Prepare the transfer
+      await this.deps.lifecycle.transferFacade.reconciliationTransferPrepare(
+        payload,
+        Time.getUTCString(now),
+        this.deps.lifecycle.enums
+      );
+
+      // Step 2: Reserve (this will check for sufficient funds)
+      await this.deps.lifecycle.transferFacade.reconciliationTransferReserve(
+        payload,
+        Time.getUTCString(now),
+        this.deps.lifecycle.enums
+      );
+
+      // Check if the withdrawal was aborted due to insufficient funds
+      const transferState = await this.deps.lifecycle.transferFacade.getTransferStateByTransferId(cmd.transferId)
+      if (transferState === 'ABORTED_REJECTED') {
+        // Get current balance for error message
+        const currentPosition = await this.deps.knex('participantPosition')
+          .join('participantCurrency', 'participantPosition.participantCurrencyId', 'participantCurrency.participantCurrencyId')
+          .where('participantCurrency.participantCurrencyId', settlementAccount.participantCurrencyId)
+          .select('participantPosition.value')
+          .first();
+
+        return {
+          type: 'INSUFFICIENT_FUNDS',
+          availableBalance: Math.abs(currentPosition?.value || 0),
+          requestedAmount: cmd.amount
+        }
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  public async withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse> {
+    assert(cmd.transferId)
+
+    try {
+      const now = new Date()
+
+      // Get the transfer to reconstruct the payload
+      const transfer = await this.deps.lifecycle.transferFacade.getById(cmd.transferId)
+      if (!transfer) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+          `Transfer ${cmd.transferId} not found`
+        )
+      }
+
+      const payload = {
+        transferId: cmd.transferId,
+        action: 'recordFundsOutCommit'
+      };
+
+      // Commit the withdrawal
+      await this.deps.lifecycle.transferFacade.reconciliationTransferCommit(
+        payload,
+        Time.getUTCString(now),
+        this.deps.lifecycle.enums
+      );
+
+      return {
+        type: 'SUCCESS'
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
   public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
@@ -603,8 +823,6 @@ export default class LegacyCompatibleLedger implements Ledger {
       const accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
       const formattedAccounts: Array<LegacyLedgerAccount> = []
       accounts.forEach(account => {
-        // TODO: parse out the silly strings into proper numbers
-
         // Map from the internal legacy participantService representation to 
         // a compatible Ledger Interface
         const formattedAccount: LegacyLedgerAccount = {
@@ -619,6 +837,8 @@ export default class LegacyCompatibleLedger implements Ledger {
         }
         formattedAccounts.push(formattedAccount)
       })
+      // ensure they are always ordered by id
+      accounts.toSorted((a, b) => b.id - a.id)
 
       assert(formattedAccounts.length === accounts.length)
 
@@ -798,7 +1018,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         return {
           type: 'FAILURE',
           fspiopError: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
               `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
           )
 
