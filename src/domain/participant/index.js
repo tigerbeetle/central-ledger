@@ -552,9 +552,7 @@ const adjustLimits = async (name, payload) => {
     participantExists(participant)
     const result = await ParticipantFacade.adjustLimits(participant.participantCurrencyId, limit)
     payload.name = name
-
-    // TODO(LD): disable this in favour of directly adjusting the limit
-    await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
+    
     return result
   } catch (err) {
     log.error('error adjusting limits', err)

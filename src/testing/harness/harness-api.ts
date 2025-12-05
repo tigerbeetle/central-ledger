@@ -78,6 +78,9 @@ export class HarnessApi implements Harness {
       }
     };
 
+    // Override Kafka config to use the test message bus
+    this.overrideKafkaBrokerConfig(messageBusConfig.brokerAddress);
+
     // Initialize database connection to test container
     await this.dbLib.connect(testDbConfig);
     assert(this.dbLib._tables, 'expected Db._tables to be defined')
@@ -107,6 +110,10 @@ export class HarnessApi implements Harness {
 
   public async teardown(): Promise<void> {
     logger.info('HarnessApi - teardown()')
+
+    // Disconnect all Kafka producers BEFORE stopping the message bus
+    await this.disconnectAllKafkaProducers();
+
     await this.dbLib.disconnect()
     if (this.client) {
       this.client.destroy()
@@ -126,6 +133,66 @@ export class HarnessApi implements Harness {
 
     if (this.harnessMessageBus) {
       await this.harnessMessageBus.teardown()
+    }
+  }
+
+  /**
+   * Disconnect all Kafka producers using the built-in disconnect function
+   * from @mojaloop/central-services-stream
+   */
+  private async disconnectAllKafkaProducers(): Promise<void> {
+    try {
+      const KafkaProducer = require('@mojaloop/central-services-stream').Util.Producer;
+      logger.info('HarnessApi - disconnecting all Kafka producers');
+
+      // Call disconnect() with null to disconnect ALL producers
+      await KafkaProducer.disconnect();
+
+      logger.debug('HarnessApi - all Kafka producers disconnected');
+    } catch (err) {
+      // Log but don't throw - we want teardown to continue even if this fails
+      logger.warn('HarnessApi - failed to disconnect Kafka producers:', err.message);
+    }
+  }
+
+  /**
+   * Override all Kafka broker configurations to point to the test message bus
+   */
+  private overrideKafkaBrokerConfig(brokerAddress: string): void {
+    logger.info(`HarnessApi - overrideKafkaBrokerConfig() - setting broker to: ${brokerAddress}`);
+
+    // Override the application config KAFKA_CONFIG
+    const kafkaConfig = this.config.applicationConfig.KAFKA_CONFIG;
+    this.overrideKafkaConfigBrokers(kafkaConfig, brokerAddress);
+
+    // Also override the lib/config KAFKA_CONFIG that legacy code uses
+    const libConfig = require('../../lib/config');
+    if (libConfig.KAFKA_CONFIG) {
+      this.overrideKafkaConfigBrokers(libConfig.KAFKA_CONFIG, brokerAddress);
+    }
+
+    logger.debug('HarnessApi - overrideKafkaBrokerConfig() - complete');
+  }
+
+  private overrideKafkaConfigBrokers(kafkaConfig: any, brokerAddress: string): void {
+    // Override consumer configs
+    const consumers = kafkaConfig.CONSUMER;
+    for (const category of Object.values(consumers)) {
+      for (const consumerConfig of Object.values(category)) {
+        if (consumerConfig?.config?.rdkafkaConf) {
+          consumerConfig.config.rdkafkaConf['metadata.broker.list'] = brokerAddress;
+        }
+      }
+    }
+
+    // Override producer configs
+    const producers = kafkaConfig.PRODUCER;
+    for (const category of Object.values(producers)) {
+      for (const producerConfig of Object.values(category)) {
+        if (producerConfig?.config?.rdkafkaConf) {
+          producerConfig.config.rdkafkaConf['metadata.broker.list'] = brokerAddress;
+        }
+      }
     }
   }
 
