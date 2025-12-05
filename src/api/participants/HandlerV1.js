@@ -796,25 +796,29 @@ const recordFundsV2 = async function (request, h) {
 }
 
 module.exports = {
-  create: createV2,
+  // Refactored to use Ledger
+  addLimitAndInitialPosition,
+  create,
+  getAccounts,
+  updateAccount,
+  recordFunds,
+  getAll,
+  update,
+  getLimits,
+
+  // TODO: need to rewrite
+  adjustLimits,
   createHubAccount,
-  // Working through the new Ledger implementations
-  getAll: getAllV2,
+  getPositions,
+  getLimitsForAllParticipants,
+
+  // Deprecated
   getByName: () => {
     // I couldn't find any uses of is, so I removed it
     throw new Error('getByName() has been deprecated in Ledger Migration.')
   },
-  update: updateV2,
-  getLimits,
-  getLimitsV2,
+
+  // Keeping? Endpoints are outside of the scope of Ledger
   addEndpoint,
   getEndpoint,
-  addLimitAndInitialPosition: addLimitAndInitialPositionV2,
-  adjustLimits,
-  getPositions,
-  getAccounts,
-  getAccountsV2,
-  updateAccount: updateAccountV2,
-  recordFunds: recordFundsV2,
-  getLimitsForAllParticipants
 }

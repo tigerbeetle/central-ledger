@@ -36,7 +36,7 @@ const tags = ['api', 'participants']
 const nameValidator = Joi.string().min(2).max(30).required().description('Name of the participant')
 const currencyValidator = Joi.string().valid(...currencyList).description('Currency code')
 
-const Handler = require('./handler')
+const Handler = require('./HandlerV1.js')
 
 module.exports = [
   {

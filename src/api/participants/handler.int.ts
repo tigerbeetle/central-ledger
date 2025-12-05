@@ -10,8 +10,9 @@ import { initializeCache } from '../../shared/setup-new';
 import { HarnessApi, HarnessApiConfig } from '../../testing/harness/harness-api';
 import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 import { TestUtils } from '../../testing/testutils';
-import * as ParticipantHandler from './handler';
+import * as ParticipantHandler from './HandlerV1';
 import * as snapshots from './__snapshots__/handler.int.snapshots';
+import ParticipantAPIHandlerV2 from './HandlerV2';
 
 type GetAccountResponseDTO = {
   changedDate: unknown,
@@ -44,6 +45,7 @@ type GetAccountResponseDTO = {
 describe('api/participants/handler', () => {
   let harnessApi: HarnessApi
   let ledger: Ledger
+  let participantHandler: ParticipantAPIHandlerV2
 
   before(async () => {
     try {
@@ -70,6 +72,8 @@ describe('api/participants/handler', () => {
       // Annoying global that needs to be initialized for database calls to work.
       await initializeCache()
       ledger = harnessApiResult.ledger
+
+      participantHandler = new ParticipantAPIHandlerV2()
 
     } catch (err) {
       logger.error(`before() - failed with error: ${err.message}`)
@@ -106,7 +110,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const result = await ParticipantHandler.getAll(request)
+      const result = await participantHandler.getAll(request)
 
       // Assert
       assert(result, 'Expected a response from getAll()')
@@ -134,10 +138,10 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
 
       // Assert
-      const result = await ParticipantHandler.getAll(request)
+      const result = await participantHandler.getAll(request)
 
       assert(result, 'Expected a response from getAll()')
       const snapshot = snapshots.createsNewDfspThenCallsGetAll
@@ -166,7 +170,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
 
       // Assert
       assert.equal(code, 201)
@@ -192,7 +196,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
 
       // Assert
       assert.equal(code, 201)
@@ -217,7 +221,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.update(request)
+      const body = await participantHandler.update(request)
 
       // Assert
       assert.equal(body.isActive, 0)
@@ -240,7 +244,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.update(request)
+      const body = await participantHandler.update(request)
 
       // Assert
       assert.equal(body.isActive, 1)
@@ -263,8 +267,8 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      await ParticipantHandler.update(request)
-      const body = await ParticipantHandler.update(request)
+      await participantHandler.update(request)
+      const body = await participantHandler.update(request)
 
       // Assert
       assert.equal(body.isActive, 0)
@@ -288,7 +292,7 @@ describe('api/participants/handler', () => {
 
       // Act
       try {
-        await ParticipantHandler.update(request)
+        await participantHandler.update(request)
         throw new Error('Test failed')
       } catch (err) {
         assert.equal(err.message, 'Participant does not exist')
@@ -312,7 +316,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.update(request)
+      const body = await participantHandler.update(request)
 
       // Assert
       assert.equal(body.isActive, 0)
@@ -338,7 +342,7 @@ describe('api/participants/handler', () => {
       try {
         const {
           code, body
-        } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+        } = await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
         throw new Error('Test failed')
       } catch (err) {
         assert.equal(err.message, 'Participant currency has already been registered')
@@ -364,7 +368,7 @@ describe('api/participants/handler', () => {
         }
       }
 
-      await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
     })
 
     it('02 Gets the opening limits', async () => {
@@ -385,7 +389,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.getLimitsV2(request)
+      const body = await participantHandler.getLimits(request)
 
       // Assert
       unwrapSnapshot(checkSnapshotString(JSON.stringify(body), "[]"))
@@ -414,7 +418,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         code, body
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.addLimitAndInitialPosition(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => participantHandler.addLimitAndInitialPosition(request, h))
       const checkLimitRequest = {
         query: {
           currency: 'USD',
@@ -430,7 +434,7 @@ describe('api/participants/handler', () => {
         }
       }
 
-      const newLimit = await ParticipantHandler.getLimits(checkLimitRequest)
+      const newLimit = await participantHandler.getLimits(checkLimitRequest)
 
       // Assert
       assert.equal(code, 201)
@@ -468,6 +472,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         body
+        // TODO (LD): need to implement adjust limits on new Handler!
       } = await TestUtils.unwrapHapiResponse(h => ParticipantHandler.adjustLimits(request, h))
 
       // Assert
@@ -502,7 +507,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await ParticipantHandler.getAccountsV2(request)
+      const body = await participantHandler.getAccounts(request)
       return body
     }
 
@@ -525,7 +530,7 @@ describe('api/participants/handler', () => {
         }
       }
 
-      await TestUtils.unwrapHapiResponse(h => ParticipantHandler.addLimitAndInitialPosition(request, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.addLimitAndInitialPosition(request, h))
     }
 
     it('01 Setup', async () => {
@@ -545,7 +550,7 @@ describe('api/participants/handler', () => {
         }
       }
 
-      await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
       await setInitialPositions('dfsp_u', 'USD', 50_000)
     })
 
@@ -616,7 +621,7 @@ describe('api/participants/handler', () => {
         code,
         body
       } = await TestUtils.unwrapHapiResponse(h =>
-        ParticipantHandler.recordFunds(request, h)
+        participantHandler.recordFunds(request, h)
       )
       assert.equal(code, 202)
       assert.equal(body, undefined)
@@ -666,7 +671,7 @@ describe('api/participants/handler', () => {
 
       // Act
       const deactivateResponse = await TestUtils.unwrapHapiResponse(h =>
-        ParticipantHandler.updateAccount(requestDeactivate, h)
+        participantHandler.updateAccount(requestDeactivate, h)
       )
       assert.equal(deactivateResponse.code, 200)
       assert.equal(deactivateResponse.body, undefined)
@@ -691,7 +696,7 @@ describe('api/participants/handler', () => {
         }
       }
       const reactivateResponse = await TestUtils.unwrapHapiResponse(h =>
-        ParticipantHandler.updateAccount(requestReactivate, h)
+        participantHandler.updateAccount(requestReactivate, h)
       )
       assert.equal(reactivateResponse.code, 200)
       assert.equal(reactivateResponse.body, undefined)
@@ -725,7 +730,7 @@ describe('api/participants/handler', () => {
           code,
           body
         } = await TestUtils.unwrapHapiResponse(h =>
-          ParticipantHandler.updateAccount(request, h)
+          participantHandler.updateAccount(request, h)
         )
         throw new Error('Test Error')
       } catch (err) {
@@ -764,7 +769,7 @@ describe('api/participants/handler', () => {
 
       // Act
       const responseWithdraw = await TestUtils.unwrapHapiResponse(h =>
-        ParticipantHandler.recordFunds(requestWithdraw, h)
+        participantHandler.recordFunds(requestWithdraw, h)
       )
       assert.equal(responseWithdraw.code, 202)
       assert.equal(responseWithdraw.body, undefined)
@@ -812,7 +817,7 @@ describe('api/participants/handler', () => {
 
       // Act
       const responseConfirm = await TestUtils.unwrapHapiResponse(h =>
-        ParticipantHandler.recordFunds(requestConfirm, h)
+        participantHandler.recordFunds(requestConfirm, h)
       )
       assert.equal(responseConfirm.code, 202)
       assert.equal(responseConfirm.body, undefined)
@@ -864,7 +869,7 @@ describe('api/participants/handler', () => {
         }
       }
 
-      await TestUtils.unwrapHapiResponse(h => ParticipantHandler.create(request, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
 
     }
     const setInitialPositions = async (dfspId: string, currency: string, limit: number): Promise<void> => {
@@ -886,7 +891,7 @@ describe('api/participants/handler', () => {
         }
       }
 
-      await TestUtils.unwrapHapiResponse(h => ParticipantHandler.addLimitAndInitialPosition(request, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.addLimitAndInitialPosition(request, h))
     }
 
     it('01 Setup', async () => {
@@ -915,6 +920,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
+      // TODO(LD): implement in new handler!
       const body = await ParticipantHandler.getPositions(request)
 
       // Assert
@@ -947,6 +953,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
+      // TODO(LD): implement in new handler!
       const body = await ParticipantHandler.getPositions(request)
 
       // Assert

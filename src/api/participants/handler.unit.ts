@@ -5,7 +5,7 @@
 import { describe, it } from "node:test";
 import TestLedger from "../../testing/TestLedger";
 import { TestUtils } from "../../testing/testutils";
-import { create } from "./handler";
+import { create } from "./HandlerV1";
 import { CreateDfspCommand, CreateDfspResponse } from "src/domain/ledger-v2/types";
 
 class ApiTestLedger extends TestLedger {

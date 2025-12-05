@@ -345,9 +345,9 @@ const addLimitAndInitialPosition = async (participantName, limitAndInitialPositi
     }
     const payload = Object.assign({}, limitAndInitialPositionObj, { name: participantName })
     
-    // TODO(LD): Disabling this for now, I'm not sure how it's used, and we need to 
-    // implement it in a different place anyway
-    // await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
+
+    // TODO(LD): Disable this!
+    await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
     return ParticipantFacade.addLimitAndInitialPosition(participant.participantCurrencyId, settlementAccount.participantCurrencyId, limitAndInitialPosition, true)
   } catch (err) {
     log.error('error adding limit and initial position', err)
@@ -553,9 +553,8 @@ const adjustLimits = async (name, payload) => {
     const result = await ParticipantFacade.adjustLimits(participant.participantCurrencyId, limit)
     payload.name = name
 
-    // TODO(LD): Disabling this for now, I'm not sure how it's used, and we need to 
-    // implement it in a different place anyway
-    // await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
+    // TODO(LD): disable this in favour of directly adjusting the limit
+    await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
     return result
   } catch (err) {
     log.error('error adjusting limits', err)
@@ -824,10 +823,8 @@ const recordFundsInOut = async (payload, params, enums) => {
       enums
     }
 
-    // TODO(LD): reinstate somehow!
-    // Skip Kafka message for now - just log and continue
-    log.warn('recordFundsInOut() - Skipping Kafka message LD need to refactor')
-    return { success: true, kafkaSkipped: true }
+    // TODO(LD): refactor to remove this!
+    return await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.ADMIN, Enum.Events.Event.Action.TRANSFER, messageProtocol, Enum.Events.EventStatus.SUCCESS)
   } catch (err) {
     log.error('error recording funds in/out', err)
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
