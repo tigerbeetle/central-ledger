@@ -1,5 +1,6 @@
 import assert from "assert";
 import { Client, createClient } from "tigerbeetle-node";
+import { AdminHandler } from "../../handlers-v2/AdminHandler";
 import { Ledger } from "../../domain/ledger-v2/Ledger";
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from "../../domain/ledger-v2/LegacyCompatibleLedger";
 import { PersistedMetadataStore } from "../../domain/ledger-v2/PersistedMetadataStore";
@@ -103,6 +104,17 @@ export class HarnessApi implements Harness {
     const provisioner = new Provisioner(provisionConfig, { ledger })
     await provisioner.run();
 
+    // Register the admin handler to consume ADMIN TRANSFER messages
+    logger.info('HarnessApi - registering admin handlers...');
+    const AdminHandlers = require('../../handlers/admin/handler');
+    await AdminHandlers.registerAllHandlers();
+    logger.info('HarnessApi - admin handlers registered successfully');
+
+    // Give the consumer time to connect
+    logger.debug('HarnessApi - waiting for admin handler consumer to connect...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    logger.debug('HarnessApi - admin handler consumer should be connected');
+
     return {
       ledger
     }
@@ -111,8 +123,9 @@ export class HarnessApi implements Harness {
   public async teardown(): Promise<void> {
     logger.info('HarnessApi - teardown()')
 
-    // Disconnect all Kafka producers BEFORE stopping the message bus
+    // Disconnect all Kafka producers and consumers BEFORE stopping the message bus
     await this.disconnectAllKafkaProducers();
+    await this.disconnectAllKafkaConsumers();
 
     await this.dbLib.disconnect()
     if (this.client) {
@@ -152,6 +165,40 @@ export class HarnessApi implements Harness {
     } catch (err) {
       // Log but don't throw - we want teardown to continue even if this fails
       logger.warn('HarnessApi - failed to disconnect Kafka producers:', err.message);
+    }
+  }
+
+  /**
+   * Disconnect all Kafka consumers using the built-in functions
+   * from @mojaloop/central-services-stream
+   */
+  private async disconnectAllKafkaConsumers(): Promise<void> {
+    try {
+      const KafkaConsumer = require('@mojaloop/central-services-stream').Util.Consumer;
+      logger.info('HarnessApi - disconnecting all Kafka consumers');
+
+      // Get all consumer topic names and disconnect each one
+      const topics = KafkaConsumer.getListOfTopics();
+      logger.debug(`HarnessApi - found ${topics.length} consumers to disconnect`);
+
+      for (const topic of topics) {
+        try {
+          const consumer = KafkaConsumer.getConsumer(topic);
+          await new Promise((resolve) => {
+            consumer.disconnect(() => {
+              logger.debug(`HarnessApi - disconnected consumer for topic: ${topic}`);
+              resolve(null);
+            });
+          });
+        } catch (err) {
+          logger.warn(`HarnessApi - failed to disconnect consumer for topic ${topic}:`, err.message);
+        }
+      }
+
+      logger.debug('HarnessApi - all Kafka consumers disconnected');
+    } catch (err) {
+      // Log but don't throw - we want teardown to continue even if this fails
+      logger.warn('HarnessApi - failed to disconnect Kafka consumers:', err.message);
     }
   }
 
@@ -230,6 +277,15 @@ export class HarnessApi implements Harness {
     const PositionService = require('../../domain/position');
     const prepareModule = require('../../handlers/transfers/prepare');
 
+    // Initialize AdminHandler
+    const adminHandler = new AdminHandler({
+      committer: null as any, // Not needed for direct calls
+      config: this.config.applicationConfig,
+      transferService: TransferService,
+      comparators: Comparators,
+      db: Db
+    });
+
     const deps: LegacyCompatibleLedgerDependencies = {
       config: this.config.applicationConfig,
       knex: Db.getKnex(),
@@ -239,6 +295,7 @@ export class HarnessApi implements Harness {
         participantFacade: require('../../models/participant/facade'),
         transferService: require('../../domain/transfer'),
         transferFacade: require('../../models/transfer/facade'),
+        adminHandler: adminHandler,
         enums: await require('../../lib/enumCached').getEnums('all'),
         settlementModelDomain: require('../../domain/settlement'),
       },

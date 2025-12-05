@@ -230,7 +230,7 @@ export class AdminHandler {
     };
   }
 
-  private async createRecordFundsInOut(payload: AdminTransferDto, transactionTimestamp: string, enums: any): Promise<void> {
+  public async createRecordFundsInOut(payload: AdminTransferDto, transactionTimestamp: string, enums: any): Promise<void> {
     const knex = this.deps.db.getKnex();
 
     logger.info(`AdminTransferHandler::${payload.action}::validationPassed::newEntry`);
@@ -251,7 +251,7 @@ export class AdminHandler {
     }
   }
 
-  private async changeStatusOfRecordFundsOut(
+  public async changeStatusOfRecordFundsOut(
     payload: AdminTransferDto, 
     transferId: string, 
     transactionTimestamp: string, 

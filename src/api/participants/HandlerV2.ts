@@ -378,20 +378,28 @@ export default class ParticipantAPIHandlerV2 {
       assert(request.params.name)
       assert(request.payload)
       assert(request.payload.action)
-      assert(request.payload.transferId)
-
+      
       const ledger = getLedger(request)
       const { name } = request.params
-      const { action, amount, transferId } = request.payload
+      const { action, amount } = request.payload
 
-      // Validate amount is present for actions that require it
-      if (action !== 'recordFundsOutCommit') {
+      // Special validation rules based on different http request params and payloads
+      if (action === 'recordFundsIn') {
+        assert(request.payload.transferId)
+        assert(amount, 'amount is required')
+        assert(amount.amount, 'amount.amount is required')
+        assert(amount.currency, 'amount.currency is required')
+      }
+      if (action === 'recordFundsOutPrepareReserve') {
+        assert(request.payload.transferId)
         assert(amount, 'amount is required')
         assert(amount.amount, 'amount.amount is required')
         assert(amount.currency, 'amount.currency is required')
       }
 
       if (action === 'recordFundsIn') {
+        const transferId = request.payload.transferId
+
         const depositCmd = {
           transferId,
           dfspId: name,
@@ -414,6 +422,8 @@ export default class ParticipantAPIHandlerV2 {
 
         return h.response().code(202)
       } else if (action === 'recordFundsOutPrepareReserve') {
+        const transferId = request.payload.transferId
+
         const withdrawPrepareCmd = {
           transferId,
           dfspId: name,
@@ -436,10 +446,10 @@ export default class ParticipantAPIHandlerV2 {
 
         return h.response().code(202)
       } else if (action === 'recordFundsOutCommit') {
+        const transferId = request.params.transferId
         const withdrawCommitCmd = {
           transferId
         }
-
         const result = await ledger.withdrawCommit(withdrawCommitCmd)
 
         if (result.type === 'FAILURE') {

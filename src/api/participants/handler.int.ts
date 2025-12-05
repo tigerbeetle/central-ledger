@@ -77,7 +77,7 @@ describe('api/participants/handler', () => {
       await initializeCache()
       ledger = harnessApiResult.ledger
 
-      
+
 
     } catch (err) {
       logger.error(`before() - failed with error: ${err.message}`)
@@ -281,17 +281,9 @@ describe('api/participants/handler', () => {
     it('06 cannot deactivate a participant that does not exist', async () => {
       // Arrange
       const request = {
-        params: {
-          name: 'not_a_dfsp'
-        },
-        payload: {
-          isActive: false,
-        },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        params: { name: 'not_a_dfsp' },
+        payload: { isActive: false, },
+        server: { app: { ledger } }
       }
 
       // Act
@@ -306,17 +298,9 @@ describe('api/participants/handler', () => {
     it('07 can deactivate the Hub participant', async () => {
       // Arrange
       const request = {
-        params: {
-          name: 'Hub'
-        },
-        payload: {
-          isActive: false,
-        },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        params: { name: 'Hub' },
+        payload: { isActive: false, },
+        server: { app: { ledger } }
       }
 
       // Act
@@ -328,18 +312,12 @@ describe('api/participants/handler', () => {
 
     it('08 cannot create the same currency for the dfsp twice', async () => {
       const request = {
-        query: {
-          isProxy: false
-        },
+        query: { isProxy: false },
         payload: {
           currency: 'KES',
           name: 'dfsp_x',
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
@@ -497,17 +475,9 @@ describe('api/participants/handler', () => {
     // Helpers
     const getDFSPAccounts = async (dsfpId: string): Promise<Array<GetAccountResponseDTO>> => {
       const request = {
-        query: {
-          currency: 'USD',
-        },
-        params: {
-          name: dsfpId
-        },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        query: { currency: 'USD' },
+        params: { name: dsfpId },
+        server: { app: { ledger } }
       }
 
       // Act
@@ -524,18 +494,11 @@ describe('api/participants/handler', () => {
             type: 'NET_DEBIT_CAP',
           }
         },
-        params: {
-          name: dfspId
-        },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        params: { name: dfspId },
+        server: { app: { ledger } }
       }
 
-      // await TestUtils.unwrapHapiResponse(h => participantHandler.addLimitAndInitialPosition(request, h))
-      await TestUtils.unwrapHapiResponse(h => ParticipantHandlerV1.addLimitAndInitialPosition(request, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.addLimitAndInitialPosition(request, h))
     }
 
     it('01 Setup', async () => {
@@ -548,18 +511,14 @@ describe('api/participants/handler', () => {
           currency: 'USD',
           name: 'dfsp_u',
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
-      await TestUtils.unwrapHapiResponse(h => ParticipantHandlerV1.create(request, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
       await setInitialPositions('dfsp_u', 'USD', 50_000)
     })
 
-    it.skip('02 Gets the opening accounts', async () => {
+    it('02 Gets the opening accounts', async () => {
       // Arrange
       // Act
       const accounts = await getDFSPAccounts('dfsp_u')
@@ -571,18 +530,18 @@ describe('api/participants/handler', () => {
           currency: "USD",
           id: ':string',
           isActive: 1,
-          ledgerAccountType: "SETTLEMENT",
+          ledgerAccountType: "POSITION",
           reservedValue: 0,
-          value: -50000
+          value: 0
         },
         {
           changedDate: ":string",
           currency: "USD",
           id: ':string',
           isActive: 1,
-          ledgerAccountType: "POSITION",
+          ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
-          value: 0
+          value: -50000
         },
       ]))
 
@@ -590,7 +549,7 @@ describe('api/participants/handler', () => {
       settlementAccountId = accounts.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0].id
     })
 
-    it.skip('03 Deposits working capital', async () => {
+    it('03 Deposits working capital', async () => {
       // Arrange
       assert(positionAccountId, 'value expected from previous `it` block')
       assert(settlementAccountId, 'value expected from previous `it` block')
@@ -611,25 +570,23 @@ describe('api/participants/handler', () => {
           id: Number.parseInt(settlementAccountId), // accountId from above
           transferId: '67890',
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
-      // Equivalent of:
-      // POST /participants/${dfspId}/accounts/${accountId}`
       const {
         code,
         body
       } = await TestUtils.unwrapHapiResponse(h =>
         participantHandler.recordFunds(request, h)
+        // ParticipantHandlerV1.recordFunds(request, h)
       )
       assert.equal(code, 202)
       assert.equal(body, undefined)
 
+      // sleep, wait for eventually consistent stuff
+      // remove this eventually!
+      // await new Promise(resolve => setTimeout(resolve, 5000));
       const updatedAccounts = await getDFSPAccounts('dfsp_u')
 
       // Assert
@@ -639,18 +596,18 @@ describe('api/participants/handler', () => {
           currency: "USD",
           id: ':string',
           isActive: 1,
-          ledgerAccountType: "SETTLEMENT",
+          ledgerAccountType: "POSITION",
           reservedValue: 0,
-          value: -150000
+          value: 0
         },
         {
           changedDate: ":string",
           currency: "USD",
           id: ':string',
           isActive: 1,
-          ledgerAccountType: "POSITION",
+          ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
-          value: 0
+          value: -150000
         },
       ]))
     })
@@ -742,7 +699,7 @@ describe('api/participants/handler', () => {
       }
     })
 
-    it.skip('06 withdraws funds in 2 steps', async () => {
+    it('06 withdraws funds in 2 steps', async () => {
       // Arrange
       assert(positionAccountId, 'value expected from previous `it` block')
       assert(settlementAccountId, 'value expected from previous `it` block')
@@ -762,7 +719,6 @@ describe('api/participants/handler', () => {
         params: {
           name: 'dfsp_u',
           id: settlementAccountId, // accountId from above
-          transferId: '67890',
         },
         server: {
           app: {
@@ -778,6 +734,9 @@ describe('api/participants/handler', () => {
       assert.equal(responseWithdraw.code, 202)
       assert.equal(responseWithdraw.body, undefined)
 
+      // sleep, wait for eventually consistent stuff
+      // remove this eventually!
+      // await new Promise(resolve => setTimeout(resolve, 5000));
       let updatedAccounts = await getDFSPAccounts('dfsp_u')
 
       // Assert
@@ -787,18 +746,19 @@ describe('api/participants/handler', () => {
           currency: "USD",
           id: ':string',
           isActive: 1,
-          ledgerAccountType: "SETTLEMENT",
-          reservedValue: -100000,
-          value: -100000
+          ledgerAccountType: "POSITION",
+          reservedValue: 0,
+          value: 0
         },
         {
           changedDate: ":string",
           currency: "USD",
           id: ':string',
           isActive: 1,
-          ledgerAccountType: "POSITION",
+          ledgerAccountType: "SETTLEMENT",
+          // Funds out has no effect on `reservedValue`
           reservedValue: 0,
-          value: 0
+          value: -100000
         },
       ]))
 
@@ -822,6 +782,7 @@ describe('api/participants/handler', () => {
       // Act
       const responseConfirm = await TestUtils.unwrapHapiResponse(h =>
         participantHandler.recordFunds(requestConfirm, h)
+        // ParticipantHandlerV1.recordFunds(requestConfirm, h)
       )
       assert.equal(responseConfirm.code, 202)
       assert.equal(responseConfirm.body, undefined)
@@ -829,16 +790,7 @@ describe('api/participants/handler', () => {
       updatedAccounts = await getDFSPAccounts('dfsp_u')
 
       // Assert
-       unwrapSnapshot(checkSnapshotObject(updatedAccounts, [
-        {
-          changedDate: ":string",
-          currency: "USD",
-          id: ':string',
-          isActive: 1,
-          ledgerAccountType: "SETTLEMENT",
-          reservedValue: -100000,
-          value: -100000
-        },
+      unwrapSnapshot(checkSnapshotObject(updatedAccounts, [
         {
           changedDate: ":string",
           currency: "USD",
@@ -847,6 +799,15 @@ describe('api/participants/handler', () => {
           ledgerAccountType: "POSITION",
           reservedValue: 0,
           value: 0
+        },
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "SETTLEMENT",
+          reservedValue: 0,
+          value: -100000
         },
       ]))
     })

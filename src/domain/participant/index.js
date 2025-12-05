@@ -815,14 +815,17 @@ const recordFundsInOut = async (payload, params, enums) => {
       throw ErrorHandler.Factory.createInternalServerFSPIOPError(AccountNotSettlementTypeErrorText)
     }
     transferId && (payload.transferId = transferId)
-    const messageProtocol = createRecordFundsMessageProtocol(setPayerPayeeFundsInOut(name, payload, enums))
-    messageProtocol.metadata.request = {
-      params,
-      enums
-    }
+    // const messageProtocol = createRecordFundsMessageProtocol(setPayerPayeeFundsInOut(name, payload, enums))
+    // messageProtocol.metadata.request = {
+    //   params,
+    //   enums
+    // }
 
-    // TODO(LD): refactor to remove this!
-    return await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.ADMIN, Enum.Events.Event.Action.TRANSFER, messageProtocol, Enum.Events.EventStatus.SUCCESS)
+    // TODO(LD): refactor to remove this! - DISABLED FOR NOW
+    // return await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.ADMIN, Enum.Events.Event.Action.TRANSFER, messageProtocol, Enum.Events.EventStatus.SUCCESS)
+
+    // Validation passed - return the validated data for direct processing
+    return { accountMatched, payload }
   } catch (err) {
     log.error('error recording funds in/out', err)
     throw ErrorHandler.Factory.reformatFSPIOPError(err)

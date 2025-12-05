@@ -12,6 +12,7 @@ const Logger = require('../shared/logger').logger
 
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
+import { AdminHandler } from '../handlers-v2/AdminHandler';
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../domain/ledger-v2/LegacyCompatibleLedger';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from '../domain/ledger-v2/TigerBeetleLedger';
 import { PersistedMetadataStore } from '../domain/ledger-v2/PersistedMetadataStore';
@@ -295,6 +296,14 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
   const prepareModule = require('../handlers/transfers/prepare')
   const TimeoutService = require('../domain/timeout')
 
+  // Initialize AdminHandler
+  const adminHandler = new AdminHandler({
+    committer: null as any, // Not needed for direct calls
+    config: config,
+    transferService: TransferService,
+    comparators: Comparators,
+    db: Db
+  });
 
   const deps: LegacyCompatibleLedgerDependencies = {
     config,
@@ -305,6 +314,7 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
       participantFacade: require('../models/participant/facade'),
       transferService: require('../domain/transfer'),
       transferFacade: require('../models/transfer/facade'),
+      adminHandler: adminHandler,
       enums: undefined, // Will be initialized separately
       settlementModelDomain: require('../domain/settlement'),
     },

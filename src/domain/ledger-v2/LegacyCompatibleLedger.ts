@@ -2,6 +2,7 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 const { Enum, Util: { Time } } = require('@mojaloop/central-services-shared');
 import assert from "assert";
 import { Knex } from "knex";
+import { AdminHandler } from '../../handlers-v2/AdminHandler';
 import { FusedFulfilHandlerInput } from '../../handlers-v2/FusedFulfilHandler';
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { MessageContext, PositionKafkaMessage, PreparedMessage, PreparePositionsBatchResult } from "src/handlers-v2/PositionHandler";
@@ -115,7 +116,31 @@ export interface LegacyCompatibleLedgerDependencies {
       getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
       update: (name: string, payload: {isActive: boolean}) => Promise<unknown>
       updateAccount: (payload: { isActive: boolean }, params: { name: string, id: number }, enums: any) => Promise<void>
-      validateHubAccounts: (currency: string) => Promise<void>,
+      validateHubAccounts: (currency: string) => Promise<void>
+      recordFundsInOut: (
+        payload: {
+          action: string
+          reason: string
+          externalReference: string
+          amount: {
+            amount: string
+            currency: string
+          }
+        },
+        params: {
+          name: string
+          id: number | null
+          transferId: string
+        },
+        enums: any
+      ) => Promise<{
+        accountMatched: {
+          participantCurrencyId: number
+          ledgerAccountTypeId: number
+          accountIsActive: boolean
+        }
+        payload: any
+      }>
     },
     settlementModelDomain: {
       createSettlementModel: (model: { name: string, settlementGranularity: string, settlementInterchange: string, settlementDelay: string, currency: string, requireLiquidityCheck: boolean, ledgerAccountType: string, settlementAccountType: string, autoPositionReset: boolean }) => Promise<void>
@@ -136,6 +161,7 @@ export interface LegacyCompatibleLedgerDependencies {
       getTransferStateByTransferId: (transferId: string) => Promise<string>
       getById: (transferId: string) => Promise<any>
     }
+    adminHandler: AdminHandler
     enums: any
   },
 
@@ -608,24 +634,27 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.amount > 0, 'depositCollateral amount must be greater than 0')
     assert(cmd.dfspId)
     assert(cmd.currency)
-    assert(cmd.dfspId)
+    assert(cmd.transferId)
 
     try {
+      const enums = await require('../../lib/enumCached').getEnums('all')
+
+      // Get both settlement and position accounts
       const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
         cmd.dfspId,
         cmd.currency,
         Enum.Accounts.LedgerAccountType.SETTLEMENT
       );
-      assert(settlementAccount);
+      assert(settlementAccount, 'Settlement account not found');
 
       const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
         cmd.dfspId,
         cmd.currency,
         Enum.Accounts.LedgerAccountType.POSITION
       );
-      assert(positionAccount);
+      assert(positionAccount, 'Position account not found');
 
-      // Create participantPosition records if they don't exist and activate the accounts
+      // Create participantPosition and activate SETTLEMENT account if needed (BEFORE validation)
       const existingSettlementPosition = await this.deps.knex('participantPosition')
         .where('participantCurrencyId', settlementAccount.participantCurrencyId)
         .first();
@@ -637,12 +666,13 @@ export default class LegacyCompatibleLedger implements Ledger {
           reservedValue: 0
         });
 
-        // Activate the settlement account
+        // Activate the settlement account so validation passes
         await this.deps.knex('participantCurrency')
           .update({ isActive: 1 })
           .where('participantCurrencyId', settlementAccount.participantCurrencyId);
       }
 
+      // Create participantPosition and activate POSITION account if needed
       const existingPositionPosition = await this.deps.knex('participantPosition')
         .where('participantCurrencyId', positionAccount.participantCurrencyId)
         .first();
@@ -660,27 +690,38 @@ export default class LegacyCompatibleLedger implements Ledger {
           .where('participantCurrencyId', positionAccount.participantCurrencyId);
       }
 
-      const now = new Date()
+      // Prepare payload for validation
       const payload = {
-        transferId: cmd.transferId,
-        participantCurrencyId: settlementAccount.participantCurrencyId,
-        action: 'recordFundsIn',
-        reason: 'Initial funding for testing',
-        externalReference: `funding-${cmd.dfspId}`,
+        action: Enum.Events.Event.Action.RECORD_FUNDS_IN,
+        reason: 'Deposit',
+        externalReference: `deposit-${cmd.dfspId}`,
         amount: {
           amount: cmd.amount.toString(),
           currency: cmd.currency
         }
       };
 
-      // Create duplicate check entry first (required by foreign key constraint)
-      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, payload);
-
-      // Call the transfer service directly
-      const enums = await require('../../lib/enumCached').getEnums('all')
-      await this.deps.lifecycle.transferService.recordFundsIn(
+      // Call recordFundsInOut for validation (Kafka disabled)
+      const validationResult = await this.deps.lifecycle.participantService.recordFundsInOut(
         payload,
-        Time.getUTCString(now),
+        { name: cmd.dfspId, id: settlementAccount.participantCurrencyId, transferId: cmd.transferId },
+        enums
+      );
+
+      // Use the validated account and payload
+      const { accountMatched, payload: validatedPayload } = validationResult;
+      validatedPayload.participantCurrencyId = accountMatched.participantCurrencyId;
+
+      const now = new Date()
+      const transactionTimestamp = Time.getUTCString(now)
+
+      // Save duplicate check record first (required by foreign key constraint)
+      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, validatedPayload);
+
+      // Call admin handler directly (bypassing Kafka)
+      await this.deps.lifecycle.adminHandler.createRecordFundsInOut(
+        validatedPayload,
+        transactionTimestamp,
         enums
       );
 
@@ -689,8 +730,6 @@ export default class LegacyCompatibleLedger implements Ledger {
       }
 
     } catch (err) {
-      // TODO: catch the duplicate error
-
       return {
         type: 'FAILURE',
         error: err
@@ -706,25 +745,62 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.transferId)
 
     try {
+      const enums = await require('../../lib/enumCached').getEnums('all')
+
+      // Get both settlement and position accounts
       const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
         cmd.dfspId,
         cmd.currency,
         Enum.Accounts.LedgerAccountType.SETTLEMENT
       );
-      assert(settlementAccount);
+      assert(settlementAccount, 'Settlement account not found');
 
       const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
         cmd.dfspId,
         cmd.currency,
         Enum.Accounts.LedgerAccountType.POSITION
       );
-      assert(positionAccount);
+      assert(positionAccount, 'Position account not found');
 
-      const now = new Date()
+      // Create participantPosition and activate SETTLEMENT account if needed (BEFORE validation)
+      const existingSettlementPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', settlementAccount.participantCurrencyId)
+        .first();
+
+      if (!existingSettlementPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: settlementAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the settlement account so validation passes
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', settlementAccount.participantCurrencyId);
+      }
+
+      // Create participantPosition and activate POSITION account if needed
+      const existingPositionPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', positionAccount.participantCurrencyId)
+        .first();
+
+      if (!existingPositionPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: positionAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the position account
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', positionAccount.participantCurrencyId);
+      }
+
+      // Prepare payload for validation
       const payload = {
-        transferId: cmd.transferId,
-        participantCurrencyId: settlementAccount.participantCurrencyId,
-        action: 'recordFundsOutPrepareReserve',
+        action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_PREPARE_RESERVE,
         reason: 'Withdrawal',
         externalReference: `withdrawal-${cmd.dfspId}`,
         amount: {
@@ -733,21 +809,28 @@ export default class LegacyCompatibleLedger implements Ledger {
         }
       };
 
-      // Create duplicate check entry first (required by foreign key constraint)
-      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, payload);
-
-      // Step 1: Prepare the transfer
-      await this.deps.lifecycle.transferFacade.reconciliationTransferPrepare(
+      // Call recordFundsInOut for validation (Kafka disabled)
+      const validationResult = await this.deps.lifecycle.participantService.recordFundsInOut(
         payload,
-        Time.getUTCString(now),
-        this.deps.lifecycle.enums
+        { name: cmd.dfspId, id: settlementAccount.participantCurrencyId, transferId: cmd.transferId },
+        enums
       );
 
-      // Step 2: Reserve (this will check for sufficient funds)
-      await this.deps.lifecycle.transferFacade.reconciliationTransferReserve(
-        payload,
-        Time.getUTCString(now),
-        this.deps.lifecycle.enums
+      // Use the validated account and payload
+      const { accountMatched, payload: validatedPayload } = validationResult;
+      validatedPayload.participantCurrencyId = accountMatched.participantCurrencyId;
+
+      const now = new Date()
+      const transactionTimestamp = Time.getUTCString(now)
+
+      // Save duplicate check record first (required by foreign key constraint)
+      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, validatedPayload);
+
+      // Call admin handler directly (bypassing Kafka)
+      await this.deps.lifecycle.adminHandler.createRecordFundsInOut(
+        validatedPayload,
+        transactionTimestamp,
+        enums
       );
 
       // Check if the withdrawal was aborted due to insufficient funds
@@ -756,7 +839,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         // Get current balance for error message
         const currentPosition = await this.deps.knex('participantPosition')
           .join('participantCurrency', 'participantPosition.participantCurrencyId', 'participantCurrency.participantCurrencyId')
-          .where('participantCurrency.participantCurrencyId', settlementAccount.participantCurrencyId)
+          .where('participantCurrency.participantCurrencyId', accountMatched.participantCurrencyId)
           .select('participantPosition.value')
           .first();
 
@@ -783,27 +866,22 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.transferId)
 
     try {
-      const now = new Date()
-
-      // Get the transfer to reconstruct the payload
-      const transfer = await this.deps.lifecycle.transferFacade.getById(cmd.transferId)
-      if (!transfer) {
-        throw ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-          `Transfer ${cmd.transferId} not found`
-        )
-      }
+      const enums = await require('../../lib/enumCached').getEnums('all')
 
       const payload = {
         transferId: cmd.transferId,
-        action: 'recordFundsOutCommit'
-      };
+        action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_COMMIT
+      } as any;
 
-      // Commit the withdrawal
-      await this.deps.lifecycle.transferFacade.reconciliationTransferCommit(
+      const now = new Date()
+      const transactionTimestamp = Time.getUTCString(now)
+
+      // Call admin handler directly (bypassing Kafka)
+      await this.deps.lifecycle.adminHandler.changeStatusOfRecordFundsOut(
         payload,
-        Time.getUTCString(now),
-        this.deps.lifecycle.enums
+        cmd.transferId,
+        transactionTimestamp,
+        enums
       );
 
       return {
@@ -821,7 +899,10 @@ export default class LegacyCompatibleLedger implements Ledger {
   public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
     const legacyQuery = { currency: query.currency }
     try {
-      const accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
+      let accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
+      // ensure they are always ordered by id
+      accounts = accounts.toSorted((a, b) =>  a.id - b.id)
+
       const formattedAccounts: Array<LegacyLedgerAccount> = []
       accounts.forEach(account => {
         // Map from the internal legacy participantService representation to 
@@ -838,9 +919,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         }
         formattedAccounts.push(formattedAccount)
       })
-      // ensure they are always ordered by id
-      accounts.toSorted((a, b) => b.id - a.id)
-
+      
       assert(formattedAccounts.length === accounts.length)
 
       return {
