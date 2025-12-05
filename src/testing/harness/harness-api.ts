@@ -11,6 +11,7 @@ import Provisioner, { ProvisioningConfig } from "../../shared/provisioner";
 import { Harness } from "./base";
 import { HarnessDatabase, HarnessDatabaseConfig } from "./harness-database";
 import { HarnessTigerBeetle, HarnessTigerBeetleConfig } from "./harness-tigerbeetle";
+import { HarnessMessageBus, HarnessMessageBusConfig } from "./harness-messagebus";
 
 import Cache from '../../lib/cache';
 import Db from '../../lib/db';
@@ -29,6 +30,7 @@ import SettlementModelCached from '../../models/settlement/settlementModelCached
 export interface HarnessApiConfig {
   databaseConfig: HarnessDatabaseConfig,
   tigerBeetleConfig: HarnessTigerBeetleConfig,
+  messageBusConfig: HarnessMessageBusConfig,
   applicationConfig: ApplicationConfig
 }
 
@@ -40,6 +42,7 @@ export interface HarnessApiConfig {
 export class HarnessApi implements Harness {
   private harnessDatabase: HarnessDatabase
   private harnessTigerBeetle: HarnessTigerBeetle
+  private harnessMessageBus: HarnessMessageBus
   private client: Client
   private transferBatcher: TransferBatcher
 
@@ -50,14 +53,16 @@ export class HarnessApi implements Harness {
   ) {
     this.harnessDatabase = new HarnessDatabase(config.databaseConfig)
     this.harnessTigerBeetle = new HarnessTigerBeetle(config.tigerBeetleConfig)
+    this.harnessMessageBus = new HarnessMessageBus(config.messageBusConfig)
   }
 
   public async start(): Promise<{ ledger: Ledger }> {
     logger.info('HarnessApi - start()')
     // Start the respective harnesses
-    const [dbConfig, tbConfig] = await Promise.all([
+    const [dbConfig, tbConfig, messageBusConfig] = await Promise.all([
       this.harnessDatabase.start(),
-      this.harnessTigerBeetle.start()
+      this.harnessTigerBeetle.start(),
+      this.harnessMessageBus.start()
     ])
 
     // Override database config to use the test container
@@ -118,6 +123,10 @@ export class HarnessApi implements Harness {
     if (this.harnessTigerBeetle) {
       await this.harnessTigerBeetle.teardown()
     }
+
+    if (this.harnessMessageBus) {
+      await this.harnessMessageBus.teardown()
+    }
   }
 
   private async initTigerBeetleLedger(): Promise<TigerBeetleLedger> {
@@ -158,7 +167,7 @@ export class HarnessApi implements Harness {
       config: this.config.applicationConfig,
       knex: Db.getKnex(),
       lifecycle: {
-        participantsHandler: require('../../api/participants/handler'),
+        participantsHandler: require('../../api/participants/HandlerV1'),
         participantService: require('../../domain/participant'),
         participantFacade: require('../../models/participant/facade'),
         transferService: require('../../domain/transfer'),

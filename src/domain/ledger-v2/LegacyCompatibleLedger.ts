@@ -99,6 +99,7 @@ export interface LegacyCompatibleLedgerDependencies {
    * models.
    */
   lifecycle: {
+    // TODO(LD): remove me! some dodgy stuff going on here!
     participantsHandler: {
       create: (request: { payload: { name: string, currency: string } }, callback: any) => Promise<void>
       createHubAccount: (request: { params: { name: string }, payload: { type: string, currency: string } }, callback: any) => Promise<void>

@@ -111,7 +111,7 @@ describe('LegacyCompatibleLedger', () => {
         config,
         knex: Db.getKnex(),
         lifecycle: {
-          participantsHandler: require('../../api/participants/handler'),
+          participantsHandler: require('../../api/participants/HandlerV1'),
           participantService: require('../../domain/participant'),
           participantFacade: require('../../models/participant/facade'),
           transferService: require('../../domain/transfer'),
