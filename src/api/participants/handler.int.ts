@@ -784,7 +784,65 @@ describe('api/participants/handler', () => {
       ]))
     })
 
-    it.todo('07 withdraw fails if not enough funds are available')
+    it('07 withdraw fails if not enough funds are available', async () => {
+      // Arrange
+      assert(settlementAccountId, 'value expected from previous `it` block')
+
+      const transferId = randomUUID()
+      const requestWithdraw = {
+        payload: {
+          transferId,
+          externalReference: "insufficient-funds-test",
+          action: "recordFundsOutPrepareReserve",
+          reason: "withdrawal",
+          amount: {
+            currency: 'USD',
+            amount: '200000.00' // Attempting to withdraw more than available
+          }
+        },
+        params: {
+          name: 'dfsp_u',
+          id: settlementAccountId,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const responseWithdraw = await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.recordFunds(requestWithdraw, h)
+      )
+
+      // Assert - withdrawal request is accepted (202) but silently rejected due to insufficient funds
+      assert.equal(responseWithdraw.code, 202)
+
+      const updatedAccounts = await getDFSPAccounts('dfsp_u')
+
+      // Settlement account balance should remain unchanged (withdrawal was silently rejected)
+      unwrapSnapshot(checkSnapshotObject(updatedAccounts, [
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "POSITION",
+          reservedValue: 0,
+          value: 0
+        },
+        {
+          changedDate: ":string",
+          currency: "USD",
+          id: ':string',
+          isActive: 1,
+          ledgerAccountType: "SETTLEMENT",
+          reservedValue: 0,
+          value: -100000 // Balance unchanged - withdrawal was rejected
+        },
+      ]))
+    })
   })
 
   describe.skip('Positions', () => {
@@ -792,18 +850,12 @@ describe('api/participants/handler', () => {
     // shortcuts
     const createDfspForCurrency = async (dfspId: string, currency: string): Promise<void> => {
       const request = {
-        query: {
-          isProxy: false
-        },
+        query: { isProxy: false },
         payload: {
           currency,
           name: dfspId
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
@@ -821,11 +873,7 @@ describe('api/participants/handler', () => {
         params: {
           name: dfspId
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       await TestUtils.unwrapHapiResponse(h => participantHandler.addLimitAndInitialPosition(request, h))

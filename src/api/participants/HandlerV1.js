@@ -402,8 +402,6 @@ module.exports = {
   getAll,
   update,
   getLimits,
-
-  // TODO: need to rewrite
   adjustLimits,
   createHubAccount,
   getPositions,
