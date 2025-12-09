@@ -140,7 +140,7 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const { code } =await TestUtils.unwrapHapiResponse(h => participantHandler.createHubAccount(request, h))
+      const { code } = await TestUtils.unwrapHapiResponse(h => participantHandler.createHubAccount(request, h))
 
       // Assert
       assert.equal(code, 201)
@@ -611,7 +611,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
+          id: ':integer',
           isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
@@ -620,8 +620,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
-          isActive: 1,
+          id: ':integer', isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
           value: -50000
@@ -672,7 +671,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
+          id: ':integer',
           isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
@@ -681,7 +680,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
+          id: ':integer',
           isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
@@ -800,8 +799,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
-          isActive: 1,
+id: ':integer',          isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
           value: 0
@@ -809,8 +807,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
-          isActive: 1,
+id: ':integer',          isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           // Funds out has no effect on `reservedValue`
           reservedValue: 0,
@@ -849,8 +846,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
-          isActive: 1,
+id: ':integer',          isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
           value: 0
@@ -858,8 +854,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
-          isActive: 1,
+id: ':integer',          isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
           value: -100000
@@ -909,8 +904,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
-          isActive: 1,
+id: ':integer',          isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
           value: 0
@@ -918,8 +912,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-          id: ':string',
-          isActive: 1,
+id: ':integer',          isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
           value: -100000 // Balance unchanged - withdrawal was rejected

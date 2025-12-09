@@ -16,7 +16,7 @@ export const returnsHubInformation = [
         createdBy: "unknown",
         createdDate: null,
         currency: "USD",
-        id: '1',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
@@ -24,7 +24,7 @@ export const returnsHubInformation = [
         createdBy: "unknown",
         createdDate: null,
         currency: "USD",
-        id: '2',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_RECONCILIATION"
       },
@@ -32,7 +32,7 @@ export const returnsHubInformation = [
         createdBy: "unknown",
         createdDate: null,
         currency: "KES",
-        id: '3',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
@@ -40,7 +40,7 @@ export const returnsHubInformation = [
         createdBy: "unknown",
         createdDate: null,
         currency: "KES",
-        id: '4',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_RECONCILIATION"
       },
@@ -48,7 +48,7 @@ export const returnsHubInformation = [
         createdBy: "unknown",
         createdDate: null,
         currency: "MWK",
-        id: '5',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
@@ -56,7 +56,7 @@ export const returnsHubInformation = [
         createdBy: "unknown",
         createdDate: null,
         currency: "MWK",
-        id: '6',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_RECONCILIATION"
       }
@@ -72,7 +72,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "USD",
-        id: ':string',
+        id: ':integer',
         isActive: 0,
         ledgerAccountType: "POSITION"
       },
@@ -80,7 +80,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "USD",
-        id: ':string',
+        id: ':integer',
         isActive: 0,
         ledgerAccountType: "SETTLEMENT"
       }
@@ -105,7 +105,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "USD",
-        id: '1',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
@@ -113,7 +113,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "USD",
-        id: '2',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_RECONCILIATION"
       },
@@ -121,7 +121,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "KES",
-        id: '3',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
@@ -129,7 +129,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "KES",
-        id: '4',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_RECONCILIATION"
       },
@@ -137,7 +137,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "MWK",
-        id: '5',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
@@ -145,7 +145,7 @@ export const createsNewDfspThenCallsGetAll = [
         createdBy: "unknown",
         createdDate: null,
         currency: "MWK",
-        id: '6',
+        id: ':integer',
         isActive: 1,
         ledgerAccountType: "HUB_RECONCILIATION"
       }
@@ -162,7 +162,7 @@ export const createsANewDfsp = {
   links: { self: 'http://central-ledger/participants/dfsp_x' },
   accounts: [
     {
-      id: ':string',
+      id: ':integer',
       ledgerAccountType: 'POSITION',
       currency: 'USD',
       isActive: 0,
@@ -170,7 +170,7 @@ export const createsANewDfsp = {
       createdBy: 'unknown'
     },
     {
-      id: ':string',
+      id: ':integer',
       ledgerAccountType: 'SETTLEMENT',
       currency: 'USD',
       isActive: 0,
@@ -190,7 +190,7 @@ export const addsASecondCurrencyToExistingDFSP =
   links: { self: 'http://central-ledger/participants/dfsp_x' },
   accounts: [
     {
-      id: ':string',
+      id: ':integer',
       ledgerAccountType: 'POSITION',
       currency: 'USD',
       isActive: 0,
@@ -198,7 +198,7 @@ export const addsASecondCurrencyToExistingDFSP =
       createdBy: 'unknown'
     },
     {
-      id: ':string',
+      id: ':integer',
       ledgerAccountType: 'SETTLEMENT',
       currency: 'USD',
       isActive: 0,
@@ -206,7 +206,7 @@ export const addsASecondCurrencyToExistingDFSP =
       createdBy: 'unknown'
     },
     {
-      id: ':string',
+      id: ':integer',
       ledgerAccountType: 'POSITION',
       currency: 'KES',
       isActive: 0,
@@ -214,7 +214,7 @@ export const addsASecondCurrencyToExistingDFSP =
       createdBy: 'unknown'
     },
     {
-      id: ':string',
+      id: ':integer',
       ledgerAccountType: 'SETTLEMENT',
       currency: 'KES',
       isActive: 0,
@@ -243,7 +243,7 @@ export const createsANewHubAccountForCurrencyMWK = {
       createdBy: "unknown",
       createdDate: null,
       currency: "USD",
-      id: ':string',
+      id: ':integer',
       isActive: 1,
       ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
     },
@@ -251,7 +251,7 @@ export const createsANewHubAccountForCurrencyMWK = {
       createdBy: "unknown",
       createdDate: null,
       currency: "USD",
-      id: ':string',
+      id: ':integer',
       isActive: 1,
       ledgerAccountType: "HUB_RECONCILIATION"
     },
@@ -259,7 +259,7 @@ export const createsANewHubAccountForCurrencyMWK = {
       createdBy: "unknown",
       createdDate: null,
       currency: "KES",
-      id: ':string',
+      id: ':integer',
       isActive: 1,
       ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
     },
@@ -267,7 +267,7 @@ export const createsANewHubAccountForCurrencyMWK = {
       createdBy: "unknown",
       createdDate: null,
       currency: "KES",
-      id: ':string',
+      id: ':integer',
       isActive: 1,
       ledgerAccountType: "HUB_RECONCILIATION"
     },
@@ -275,7 +275,7 @@ export const createsANewHubAccountForCurrencyMWK = {
       createdBy: "unknown",
       createdDate: null,
       currency: "MWK",
-      id: ':string',
+      id: ':integer',
       isActive: 1,
       ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
     },
@@ -283,7 +283,7 @@ export const createsANewHubAccountForCurrencyMWK = {
       createdBy: "unknown",
       createdDate: null,
       currency: "MWK",
-      id: ':string',
+      id: ':integer',
       isActive: 1,
       ledgerAccountType: "HUB_RECONCILIATION"
     }

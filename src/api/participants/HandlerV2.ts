@@ -39,7 +39,7 @@ const rethrow = require('../../shared/rethrow')
 const MLNumber = require('@mojaloop/ml-number')
 const assert = require('assert')
 const { randomUUID } = require('crypto')
-const { assertString, safeStringToNumber } = require('../../shared/config/util')
+const { assertString, safeStringToNumber, convertBigIntToNumber } = require('../../shared/config/util')
 const ParticipantService = require('../../domain/participant')
 
 const getLedger = (request): Ledger => {
@@ -143,7 +143,7 @@ export default class ParticipantAPIHandlerV2 {
         createdBy: 'unknown',
         createdDate: null,
         currency: acc.currency,
-        id: acc.id.toString(),
+        id: convertBigIntToNumber(acc.id),
         isActive: acc.isActive ? 1 : 0,
         ledgerAccountType: acc.ledgerAccountType
       }))
@@ -170,7 +170,7 @@ export default class ParticipantAPIHandlerV2 {
       createdBy: 'unknown',
       createdDate: null,
       currency: acc.currency,
-      id: acc.id.toString(),
+      id: convertBigIntToNumber(acc.id),
       isActive: acc.isActive ? 1 : 0,
       ledgerAccountType: acc.ledgerAccountType
     }))
@@ -207,7 +207,7 @@ export default class ParticipantAPIHandlerV2 {
       createdBy: 'unknown',
       createdDate: null,
       currency: acc.currency,
-      id: acc.id.toString(),
+      id: convertBigIntToNumber(acc.id),
       isActive: acc.isActive ? 1 : 0,
       ledgerAccountType: acc.ledgerAccountType
     }))
@@ -472,7 +472,7 @@ export default class ParticipantAPIHandlerV2 {
     return ledgerAccountsResponse.accounts.map(acc => {
       return {
         ...acc,
-        id: acc.id.toString(),
+        id: convertBigIntToNumber(acc.id),
         isActive: acc.isActive ? 1 : 0,
       }
     })
