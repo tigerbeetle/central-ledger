@@ -23,6 +23,7 @@ import {
   FulfilResult,
   FulfilResultType,
   GetAllDfspsResponse,
+  GetAllDfspAccountsQuery,
   GetDfspAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
@@ -468,6 +469,19 @@ export default class TigerBeetleLedger implements Ledger {
     return {
       type: 'SUCCESS',
       accounts,
+    }
+  }
+
+  public async getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse> {
+    // TODO(LD): Implement this method for TigerBeetle
+    // This would require getting account metadata for all currencies for the DFSP
+    // and then looking up all accounts
+    return {
+      type: 'FAILURE',
+      error: ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+        'getAllDfspAccounts not yet implemented for TigerBeetleLedger'
+      )
     }
   }
 

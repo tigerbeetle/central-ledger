@@ -495,6 +495,10 @@ export interface GetDfspAccountsQuery {
   currency: string
 }
 
+export interface GetAllDfspAccountsQuery {
+  dfspId: string
+}
+
 export interface DfspAccountResponseSuccess {
   type: 'SUCCESS',
   accounts: Array<LegacyLedgerAccount>

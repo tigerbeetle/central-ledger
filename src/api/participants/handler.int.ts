@@ -10,7 +10,6 @@ import { initializeCache } from '../../shared/setup-new';
 import { HarnessApi, HarnessApiConfig } from '../../testing/harness/harness-api';
 import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 import { TestUtils } from '../../testing/testutils';
-import * as ParticipantHandlerV1 from './HandlerV1';
 import * as snapshots from './__snapshots__/handler.int.snapshots';
 import ParticipantAPIHandlerV2 from './HandlerV2';
 
@@ -23,24 +22,6 @@ type GetAccountResponseDTO = {
   reservedValue: number
   value: number
 }
-
-// This file tests the following Admin API Endpoints:
-// GET  /participants/limits -> tested incidentally
-// GET  /participants/{name} -> tested incidentally
-// PUT  /participants/{name} ✅
-// GET  /participants/{name}/limits ✅
-// POST /participants/{name}/initialPositionAndLimits ✅
-// PUT  /participants/{name}/limits ✅
-// GET  /participants/{name}/accounts ✅
-// PUT  /participants/{name}/accounts
-// PUT  /participants/{name}/accounts/{id} ✅
-// POST /participants/{name}/accounts/{id} ✅
-// POST /participants/{name}/accounts/{id}/transfers/{id} ✅
-// GET  /participants/{name}/positions ✅
-
-// The following endpoints are covered extensively elsewhere:
-// GET  /participants/{name}/endpoints
-// POST /participants/{name}/endpoints
 
 describe('api/participants/handler', () => {
   let harnessApi: HarnessApi
@@ -77,8 +58,6 @@ describe('api/participants/handler', () => {
       await initializeCache()
       ledger = harnessApiResult.ledger
 
-
-
     } catch (err) {
       logger.error(`before() - failed with error: ${err.message}`)
       if (err.stack) {
@@ -92,7 +71,7 @@ describe('api/participants/handler', () => {
     await harnessApi.teardown()
   })
 
-  describe('GET /participants', () => {
+  describe('Participants', () => {
     /**
      * Note: These tests are prefixed with a number since they depend on the state of the 
      *       previous tests to be completed succesfully and in order. An alternative option
@@ -295,7 +274,6 @@ describe('api/participants/handler', () => {
       }
     })
 
-    // TODO: This is currently possible, but should probably not be
     it('07 can deactivate the Hub participant', async () => {
       // Arrange
       const request = {
@@ -465,6 +443,35 @@ describe('api/participants/handler', () => {
           value: 4_000_000,
         }
       }))
+    })
+
+    it('05 Gets the limits for all participants', async () => {
+      // Arrange
+      const request = {
+        query: {
+          currency: 'USD',
+          type: 'NET_DEBIT_CAP'
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const body = await participantHandler.getLimitsForAllParticipants(request)
+
+      // Assert
+      unwrapSnapshot(checkSnapshotObject(body, [{
+        name: 'dfsp_y',
+        currency: 'USD',
+        limit: {
+          type: 'NET_DEBIT_CAP',
+          value: 4_000_000,
+          alarmPercentage: 10
+        }
+      }]))
     })
   })
 
@@ -845,7 +852,7 @@ describe('api/participants/handler', () => {
     })
   })
 
-  describe.skip('Positions', () => {
+  describe('Positions', () => {
 
     // shortcuts
     const createDfspForCurrency = async (dfspId: string, currency: string): Promise<void> => {
@@ -897,16 +904,11 @@ describe('api/participants/handler', () => {
         params: {
           name: 'dfsp_w',
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
-      // TODO(LD): implement in new handler!
-      const body = await ParticipantHandlerV1.getPositions(request)
+      const body = await participantHandler.getPositions(request)
 
       // Assert
       unwrapSnapshot(checkSnapshotObject(body, [{
@@ -930,16 +932,11 @@ describe('api/participants/handler', () => {
         params: {
           name: 'dfsp_v',
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
-      // TODO(LD): implement in new handler!
-      const body = await ParticipantHandlerV1.getPositions(request)
+      const body = await participantHandler.getPositions(request)
 
       // Assert
       unwrapSnapshot(checkSnapshotObject(body, {
@@ -947,6 +944,171 @@ describe('api/participants/handler', () => {
         currency: "USD",
         value: 0
       }))
+    })
+  })
+
+  describe('Endpoints', () => {
+    it('01 Setup', async () => {
+      // Arrange - create 2 DFSPs for endpoint tests
+      const createDfsp1 = {
+        query: { isProxy: false },
+        payload: {
+          currency: 'USD',
+          name: 'dfsp_endpoint1'
+        },
+        server: { app: { ledger } }
+      }
+
+      const createDfsp2 = {
+        query: { isProxy: false },
+        payload: {
+          currency: 'USD',
+          name: 'dfsp_endpoint2'
+        },
+        server: { app: { ledger } }
+      }
+
+      // Act
+      await TestUtils.unwrapHapiResponse(h => participantHandler.create(createDfsp1, h))
+      await TestUtils.unwrapHapiResponse(h => participantHandler.create(createDfsp2, h))
+    })
+
+    it('02 Adds an endpoint for a participant', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_endpoint1'
+        },
+        payload: {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST',
+          value: 'http://dfsp_endpoint1.example.com/transfers'
+        },
+        server: { app: { ledger } }
+      }
+
+      // Act
+      const { code } = await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.addEndpoint(request, h)
+      )
+
+      // Assert
+      assert.equal(code, 201)
+    })
+
+    it('03 Fails to add an endpoint for an invalid participant', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'invalid_dfsp_that_does_not_exist'
+        },
+        payload: {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST',
+          value: 'http://invalid.example.com/transfers'
+        },
+        server: { app: { ledger } }
+      }
+
+      // Act & Assert
+      try {
+        await TestUtils.unwrapHapiResponse(h =>
+          participantHandler.addEndpoint(request, h)
+        )
+        throw new Error('Test failed - should have thrown an error')
+      } catch (err) {
+        assert(err.message.includes('does not exist') || err.message.includes('not found') || err.message.includes('Participant'),
+          `Expected error about participant not existing, got: ${err.message}`)
+      }
+    })
+
+    it('04 Fails to add an endpoint for an invalid endpoint type', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_endpoint2'
+        },
+        payload: {
+          type: 'INVALID_ENDPOINT_TYPE_THAT_DOES_NOT_EXIST',
+          value: 'http://dfsp_endpoint2.example.com/invalid'
+        },
+        server: { app: { ledger } }
+      }
+
+      // Act & Assert
+      try {
+        await TestUtils.unwrapHapiResponse(h =>
+          participantHandler.addEndpoint(request, h)
+        )
+        throw new Error('Test failed - should have thrown an error')
+      } catch (err) {
+        // The error can be about invalid type or about endpointTypeId not being found
+        assert(
+          err.message.indexOf('Cannot read properties of undefined') > -1,
+          `Expected error about invalid endpoint type, got: ${err.message}`
+        )
+      }
+    })
+
+    it('05 Gets an endpoint for a given type', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_endpoint1'
+        },
+        query: {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST'
+        },
+        server: { app: { ledger } }
+      }
+
+      // Act
+      const body = await participantHandler.getEndpoint(request)
+
+      // Assert
+      unwrapSnapshot(checkSnapshotObject(body, {
+        type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST',
+        value: 'http://dfsp_endpoint1.example.com/transfers'
+      }))
+    })
+
+    it('06 Gets all endpoints across all types', async () => {
+      // Arrange - first add another endpoint for the same participant
+      const addRequest = {
+        params: {
+          name: 'dfsp_endpoint1'
+        },
+        payload: {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_PUT',
+          value: 'http://dfsp_endpoint1.example.com/transfers/{{transferId}}'
+        },
+        server: { app: { ledger } }
+      }
+
+      await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.addEndpoint(addRequest, h)
+      )
+
+      const request = {
+        params: {
+          name: 'dfsp_endpoint1'
+        },
+        query: {},
+        server: { app: { ledger } }
+      }
+
+      // Act
+      const body = await participantHandler.getEndpoint(request)
+
+      // Assert
+      unwrapSnapshot(checkSnapshotObject(body, [
+        {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST',
+          value: 'http://dfsp_endpoint1.example.com/transfers'
+        },
+        {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_PUT',
+          value: 'http://dfsp_endpoint1.example.com/transfers/{{transferId}}'
+        }
+      ]))
     })
   })
 })

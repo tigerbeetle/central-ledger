@@ -40,6 +40,7 @@ const MLNumber = require('@mojaloop/ml-number')
 const assert = require('assert')
 const { randomUUID } = require('crypto')
 const { assertString, safeStringToNumber } = require('../../shared/config/util')
+const ParticipantService = require('../../domain/participant')
 
 const getLedger = (request): Ledger => {
   assert(request, 'request is undefined')
@@ -48,12 +49,23 @@ const getLedger = (request): Ledger => {
   return request.server.app.ledger
 }
 
+interface IParticipantService {
+  addEndpoint(name: string, payload: { type: string, value: string }): Promise<void>
+  getEndpoint(name: string, type: string): Promise<Array<{ name: string, value: string }>>
+  getAllEndpoints(name: string): Promise<Array<{ name: string, value: string }>>
+}
+
 /**
  * @class ParticipantAPIHandlerV2
  * @description A refactored Participant API Handler, written in Typescript
  *   and using the new `Ledger` Interface.
  */
 export default class ParticipantAPIHandlerV2 {
+  private participantService: IParticipantService
+
+  constructor() {
+    this.participantService = ParticipantService
+  }
 
   public async create(request, h): Promise<unknown> {
     try {
@@ -331,7 +343,7 @@ export default class ParticipantAPIHandlerV2 {
       if (limitResponse.type !== 'SUCCESS') {
         // check for fspiop error
         let maybeFspiopError = limitResponse.error as FSPIOPError
-        // special case 
+        // special case
         if (maybeFspiopError && maybeFspiopError.apiErrorCode &&
           maybeFspiopError.apiErrorCode.code &&
           maybeFspiopError.apiErrorCode.code === '3200'
@@ -350,6 +362,71 @@ export default class ParticipantAPIHandlerV2 {
       ]
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetLimits' })
+    }
+  }
+
+  public async getLimitsForAllParticipants(request): Promise<any> {
+    try {
+      assert(request)
+      assert(request.query)
+      assert(request.query.currency)
+      // Only limits of type NET_DEBIT_CAP are supported
+      assert.equal(request.query.type, 'NET_DEBIT_CAP')
+
+      const ledger = getLedger(request)
+      const currency = request.query.currency
+
+
+      // TODO(LD): Ideally we would implement this in the getAllDfsps() method itself
+      // but for now we can stitch this together from a few other methods. The main goal here
+      // is to maintain backwards compatibility while not making the surface area of the
+      // Ledger interface unnessesarily large.
+
+      const resultDfsps = await ledger.getAllDfsps({})
+      if (resultDfsps.type === 'FAILURE') {
+        throw resultDfsps.error
+      }
+
+      const dfspsWithCurrency = resultDfsps.result.dfsps.filter(dfsp =>
+        dfsp.accounts.some(account => account.currency === currency)
+      )
+
+      const limitResponses = await Promise.all(
+        dfspsWithCurrency.map(async (dfsp) => {
+          const limitResponse = await ledger.getNetDebitCap({
+            dfspId: dfsp.name,
+            currency
+          })
+          return { dfsp, limitResponse }
+        })
+      )
+
+      const limits = []
+      for (const { dfsp, limitResponse } of limitResponses) {
+        if (limitResponse.type === 'SUCCESS') {
+          limits.push({
+            name: dfsp.name,
+            currency,
+            limit: limitResponse.result
+          })
+        } else {
+          // Check if this is the "no limit set" error (3200)
+          let maybeFspiopError = limitResponse.error as FSPIOPError
+          if (maybeFspiopError && maybeFspiopError.apiErrorCode &&
+            maybeFspiopError.apiErrorCode.code &&
+            maybeFspiopError.apiErrorCode.code === '3200'
+          ) {
+            // No limit set for this participant, skip
+            continue
+          }
+          // For any other error, fail the entire operation
+          throw limitResponse.error
+        }
+      }
+
+      return limits
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetLimitsForAllParticipants' })
     }
   }
 
@@ -378,6 +455,53 @@ export default class ParticipantAPIHandlerV2 {
         isActive: acc.isActive ? 1 : 0,
       }
     })
+  }
+
+  public async getPositions(request): Promise<any> {
+    try {
+      assert(request)
+      assert(request.params)
+      assert(request.params.name)
+
+      const name = request.params.name
+      const currency = request.query?.currency
+      const ledger = getLedger(request)
+
+      let ledgerAccountsResponse
+      if (currency) {
+        // Get accounts for specific currency
+        ledgerAccountsResponse = await ledger.getDfspAccounts({ dfspId: name, currency })
+      } else {
+        // Get accounts for all currencies
+        ledgerAccountsResponse = await ledger.getAllDfspAccounts({ dfspId: name })
+      }
+
+      if (ledgerAccountsResponse.type === 'FAILURE') {
+        throw ledgerAccountsResponse.error
+      }
+
+      // Filter for POSITION accounts only
+      const positionAccounts = ledgerAccountsResponse.accounts.filter(
+        acc => acc.ledgerAccountType === 'POSITION'
+      )
+
+      // Map to the expected position format
+      const positions = positionAccounts.map(acc => ({
+        currency: acc.currency,
+        value: acc.value,
+        changedDate: acc.changedDate
+      }))
+
+      // If currency was specified, return single position object
+      // Otherwise return array of positions
+      if (currency) {
+        return positions.length > 0 ? positions[0] : null
+      }
+
+      return positions
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetPositions' })
+    }
   }
 
   public async updateAccount(request, h): Promise<unknown> {
@@ -502,6 +626,45 @@ export default class ParticipantAPIHandlerV2 {
       }
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })
+    }
+  }
+
+  public async addEndpoint(request, h): Promise<unknown> {
+    try {
+      await this.participantService.addEndpoint(request.params.name, request.payload)
+      return h.response().code(201)
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddEndpoint' })
+    }
+  }
+
+  public async getEndpoint(request): Promise<any> {
+    try {
+      if (request.query.type) {
+        const result = await this.participantService.getEndpoint(request.params.name, request.query.type)
+        let endpoint = {}
+        if (Array.isArray(result) && result.length > 0) {
+          endpoint = {
+            type: result[0].name,
+            value: result[0].value
+          }
+        }
+        return endpoint
+      } else {
+        const result = await this.participantService.getAllEndpoints(request.params.name)
+        const endpoints = []
+        if (Array.isArray(result) && result.length > 0) {
+          result.forEach(item => {
+            endpoints.push({
+              type: item.name,
+              value: item.value
+            })
+          })
+        }
+        return endpoints
+      }
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetEndpoint' })
     }
   }
 }

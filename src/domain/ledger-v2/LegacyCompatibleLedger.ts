@@ -24,6 +24,7 @@ import {
   FulfilResult,
   FulfilResultType,
   GetAllDfspsResponse,
+  GetAllDfspAccountsQuery,
   GetDfspAccountsQuery,
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
@@ -110,7 +111,7 @@ export interface LegacyCompatibleLedgerDependencies {
     participantService: {
       create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
       createParticipantCurrency: (participantId: number, currency: string, ledgerAccountTypeId: number, isActive?: boolean) => Promise<number>
-      getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
+      getAccounts: (name: string, query: { currency?: string }) => Promise<Array<ParticipantServiceAccount>>
       getAll: () => Promise<Array<ParticipantServiceParticipant>>,
       getByName: (name: string) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string }>
       getById: (id: number) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string }>
@@ -783,7 +784,46 @@ export default class LegacyCompatibleLedger implements Ledger {
 
       const formattedAccounts: Array<LegacyLedgerAccount> = []
       accounts.forEach(account => {
-        // Map from the internal legacy participantService representation to 
+        // Map from the internal legacy participantService representation to
+        // a compatible Ledger Interface
+        const formattedAccount: LegacyLedgerAccount = {
+          id: BigInt(account.id),
+          ledgerAccountType: account.ledgerAccountType,
+          currency: account.currency,
+          isActive: Boolean(account.isActive),
+          // TODO(LD): map the numbers!
+          value: safeStringToNumber(account.value),
+          reservedValue: safeStringToNumber(account.reservedValue),
+          changedDate: new Date(account.changedDate)
+        }
+        formattedAccounts.push(formattedAccount)
+      })
+
+      assert(formattedAccounts.length === accounts.length)
+
+      return {
+        type: 'SUCCESS',
+        accounts: formattedAccounts,
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  public async getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse> {
+    const legacyQuery = {}
+    try {
+      let accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
+      // ensure they are always ordered by id
+      accounts = accounts.toSorted((a, b) => a.id - b.id)
+
+      const formattedAccounts: Array<LegacyLedgerAccount> = []
+      accounts.forEach(account => {
+        // Map from the internal legacy participantService representation to
         // a compatible Ledger Interface
         const formattedAccount: LegacyLedgerAccount = {
           id: BigInt(account.id),

@@ -55,6 +55,7 @@ export interface Ledger {
   getDfsp(query: {dfspId: string}): Promise<QueryResult<LedgerDfsp>>
   getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>>
   getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse>
+  getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse>
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>>
   
 
