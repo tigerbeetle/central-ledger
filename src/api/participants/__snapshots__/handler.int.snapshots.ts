@@ -44,7 +44,7 @@ export const returnsHubInformation = [
         isActive: 1,
         ledgerAccountType: "HUB_RECONCILIATION"
       },
-       {
+      {
         createdBy: "unknown",
         createdDate: null,
         currency: "MWK",
@@ -52,7 +52,7 @@ export const returnsHubInformation = [
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
-       {
+      {
         createdBy: "unknown",
         createdDate: null,
         currency: "MWK",
@@ -141,7 +141,7 @@ export const createsNewDfspThenCallsGetAll = [
         isActive: 1,
         ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
       },
-       {
+      {
         createdBy: "unknown",
         createdDate: null,
         currency: "MWK",
@@ -227,5 +227,66 @@ export const addsASecondCurrencyToExistingDFSP =
 
 
 export const cannotCreateTheSameCurrencyTwice = {
-  
+
+}
+
+export const createsANewHubAccountForCurrencyMWK = {
+  name: 'Hub',
+  id: 'http://central-ledger/participants/Hub',
+  "created:ignore": true,
+  isActive: 1,
+  links: {
+    self: 'http://central-ledger/participants/Hub'
+  },
+  accounts: [
+    {
+      createdBy: "unknown",
+      createdDate: null,
+      currency: "USD",
+      id: ':string',
+      isActive: 1,
+      ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+    },
+    {
+      createdBy: "unknown",
+      createdDate: null,
+      currency: "USD",
+      id: ':string',
+      isActive: 1,
+      ledgerAccountType: "HUB_RECONCILIATION"
+    },
+    {
+      createdBy: "unknown",
+      createdDate: null,
+      currency: "KES",
+      id: ':string',
+      isActive: 1,
+      ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+    },
+    {
+      createdBy: "unknown",
+      createdDate: null,
+      currency: "KES",
+      id: ':string',
+      isActive: 1,
+      ledgerAccountType: "HUB_RECONCILIATION"
+    },
+    {
+      createdBy: "unknown",
+      createdDate: null,
+      currency: "MWK",
+      id: ':string',
+      isActive: 1,
+      ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+    },
+    {
+      createdBy: "unknown",
+      createdDate: null,
+      currency: "MWK",
+      id: ':string',
+      isActive: 1,
+      ledgerAccountType: "HUB_RECONCILIATION"
+    }
+  ],
+  isProxy: 0
 }

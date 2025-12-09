@@ -55,6 +55,27 @@ interface IParticipantService {
   getAllEndpoints(name: string): Promise<Array<{ name: string, value: string }>>
 }
 
+interface ParticipantAccount {
+  createdBy: string
+  createdDate: string | null
+  currency: string
+  id: string
+  isActive: number
+  ledgerAccountType: string
+}
+
+interface ParticipantResponse {
+  name: string
+  id: string
+  created: Date | null
+  isActive: number
+  isProxy: number
+  links: {
+    self: string
+  }
+  accounts: ParticipantAccount[]
+}
+
 /**
  * @class ParticipantAPIHandlerV2
  * @description A refactored Participant API Handler, written in Typescript
@@ -99,7 +120,7 @@ export default class ParticipantAPIHandlerV2 {
     }
   }
 
-  public async getAll(request): Promise<object> {
+  public async getAll(request): Promise<ParticipantResponse[]> {
 
     const ledger = getLedger(request)
 
@@ -626,6 +647,46 @@ export default class ParticipantAPIHandlerV2 {
       }
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })
+    }
+  }
+
+  public async createHubAccount(request, h): Promise<unknown> {
+    try {
+      const ledger = getLedger(request)
+      const currency = request.payload.currency
+      const type = request.payload.type
+
+      Logger.warn(`createHubAccount: ignoring type parameter '${type}' - ledger.createHubAccount() creates all hub accounts for the currency, not individual account types`)
+
+      // Create a default settlement model for the currency
+      const settlementModel = {
+        name: `DEFERRED_MULTILATERAL_NET_${currency}`,
+        settlementGranularity: "NET",
+        settlementInterchange: "MULTILATERAL",
+        settlementDelay: "DEFERRED",
+        currency,
+        requireLiquidityCheck: true,
+        ledgerAccountType: "POSITION",
+        settlementAccountType: "SETTLEMENT",
+        autoPositionReset: true
+      }
+
+      const result = await ledger.createHubAccount({
+        currency,
+        settlementModel
+      })
+
+      if (result.type === 'FAILURE') {
+        throw result.error
+      }
+
+      // Return the Hub participant with all its accounts
+      const hubParticipant = await this.getAll({ query: {}, payload: {}, server: request.server })
+      const hub = hubParticipant.find(p => p.name === 'Hub')
+
+      return h.response(hub).code(201)
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreateHubAccount' })
     }
   }
 

@@ -12,7 +12,6 @@ import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../
 import { TestUtils } from '../../testing/testutils';
 import * as snapshots from './__snapshots__/handler.int.snapshots';
 import ParticipantAPIHandlerV2 from './HandlerV2';
-import ParticipantAPIHandlerV1 from './HandlerV1';
 
 type GetAccountResponseDTO = {
   changedDate: unknown,
@@ -109,80 +108,21 @@ describe('api/participants/handler', () => {
       const {
         code: code1,
         body: body1
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantAPIHandlerV1.createHubAccount(requestMultilateralSettlement, h))
+      } = await TestUtils.unwrapHapiResponse(h => participantHandler.createHubAccount(requestMultilateralSettlement, h))
 
       const {
         code: code2,
         body: body2
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantAPIHandlerV1.createHubAccount(requestReconciliation, h))
+      } = await TestUtils.unwrapHapiResponse(h => participantHandler.createHubAccount(requestReconciliation, h))
 
       // Assert
       assert.equal(code1, 201)
       assert.equal(code2, 201)
 
-      unwrapSnapshot(checkSnapshotObject(body2, {
-        name: 'Hub',
-        id: 'http://central-ledger/participants/Hub',
-        "created:ignore": true,
-        isActive: 1,
-        links: {
-          self: 'http://central-ledger/participants/Hub'
-        },
-        accounts: [
-          {
-            createdBy: "unknown",
-            createdDate: null,
-            currency: "USD",
-            id: ':integer',
-            isActive: 1,
-            ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
-          },
-          {
-            createdBy: "unknown",
-            createdDate: null,
-            currency: "USD",
-            id: ':integer',
-            isActive: 1,
-            ledgerAccountType: "HUB_RECONCILIATION"
-          },
-          {
-            createdBy: "unknown",
-            createdDate: null,
-            currency: "KES",
-            id: ':integer',
-            isActive: 1,
-            ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
-          },
-          {
-            createdBy: "unknown",
-            createdDate: null,
-            currency: "KES",
-            id: ':integer',
-            isActive: 1,
-            ledgerAccountType: "HUB_RECONCILIATION"
-          },
-          {
-            createdBy: "unknown",
-            createdDate: null,
-            currency: "MWK",
-            id: ':integer',
-            isActive: 1,
-            ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
-          },
-          {
-            createdBy: "unknown",
-            createdDate: ':string',
-            currency: "MWK",
-            id: ':integer',
-            isActive: 1,
-            ledgerAccountType: "HUB_RECONCILIATION"
-          }
-        ],
-        isProxy: 0
-      }))
+      unwrapSnapshot(checkSnapshotObject(body2, snapshots.createsANewHubAccountForCurrencyMWK))
     })
 
-    it('02 fails to create a new hub account for a currency that already exists', async () => {
+    it('02 does not throw an error when creating hub accounts for the same currecy twice', async () => {
       // Arrange
       const request = {
         params: {
@@ -199,13 +139,11 @@ describe('api/participants/handler', () => {
         }
       }
 
-      // Act & Assert
-      try {
-        await TestUtils.unwrapHapiResponse(h => ParticipantAPIHandlerV1.createHubAccount(request, h))
-        throw new Error('Test failed - expected error to be thrown')
-      } catch (err) {
-        assert.equal(err.message, 'Hub account has already been registered.')
-      }
+      // Act
+      const { code } =await TestUtils.unwrapHapiResponse(h => participantHandler.createHubAccount(request, h))
+
+      // Assert
+      assert.equal(code, 201)
     })
   })
 
