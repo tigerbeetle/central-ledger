@@ -115,14 +115,10 @@ const create = async function (request, h) {
       }
     }
     for (const settlementModel of settlementModels) {
-
       // create one after the other!
       const participantCurrencyId1 = await ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.ledgerAccountTypeId, false)
       const participantCurrencyId2 = await ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)
 
-      // const [participantCurrencyId1, participantCurrencyId2] = await Promise.all([
-      //   ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.ledgerAccountTypeId, false),
-      //   ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)])
       if (Array.isArray(participant.currencyList)) {
         participant.currencyList = participant.currencyList.concat([await ParticipantService.getParticipantCurrencyById(participantCurrencyId1), await ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
       } else {
@@ -130,50 +126,6 @@ const create = async function (request, h) {
       }
     }
     return h.response(entityItem(participant, ledgerAccountIds)).code(201)
-  } catch (err) {
-    rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
-  }
-}
-
-const createV2 = async function (request, h) {
-  try {
-    assert(request)
-    assert(request.payload)
-    assert(request.payload.currency)
-    assert(request.payload.name)
-
-    // startingDeposit allows us to create an opening balance for the Dfsp while onboarding.
-    // We added this feature to the Admin API to help limit the breaking changes when moving to
-    // TigerBeetle, as the TigerBeetleLedger doesn't allow `initialPositionAndLimits` to be 
-    // called _before_ funds have been deposited for the Dfsp.
-    let startingDeposit = 0
-    if (request.payload.startingDeposit) {
-      assertString(request.payload.startingDeposit)
-      const startingDepositStr = request.payload.startingDeposit
-      startingDeposit = safeStringToNumber(startingDepositStr)
-      assert(startingDeposit >= 0)
-    }
-
-    const { currency, name } = request.payload
-    const ledger = getLedger(request)
-    const createDfspResult = await ledger.createDfsp({
-      dfspId: name,
-      currencies: [currency],
-      startingDeposits: [startingDeposit]
-    })
-
-    if (createDfspResult.type === 'ALREADY_EXISTS') {
-      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
-    }
-
-    if (createDfspResult.type === 'FAILED') {
-      Logger.error(`participants.create() - failed to create: ${name} with error: ${createDfspResult.error.message}`)
-      throw createDfspResult.error
-    }
-
-    // now look up the participant
-    const getByNameReply = await internalGetByName(ledger, request.payload.name)
-    return h.response(getByNameReply).code(201)
   } catch (err) {
     rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
   }
@@ -232,113 +184,6 @@ const getAll = async function (request) {
     return results.map(record => entityItem(record, ledgerAccountIds)).filter(record => record.isProxy)
   }
   return results.map(record => entityItem(record, ledgerAccountIds))
-}
-
-const getAllV2 = async function (request) {
-  const ledger = getLedger(request)
-
-  const resultDfsps = await ledger.getAllDfsps({})
-  if (resultDfsps.type === 'FAILURE') {
-    throw resultDfsps.fspiopError
-  }
-
-  const resultHub = await ledger.getHubAccounts()
-  if (resultHub.type === 'FAILURE') {
-    throw resultHub.fspiopError
-  }
-  const hubLedgerAccounts = resultHub.accounts
-
-  const reply = []
-
-  // Map from Ledger format Dfsp to Existing API
-  resultDfsps.result.dfsps.forEach(ledgerDfsp => {
-    const apiMappedAccounts = ledgerDfsp.accounts.map(acc => ({
-      createdBy: 'unknown',
-      createdDate: null,
-      currency: acc.currency,
-      id: acc.id.toString(),
-      isActive: acc.isActive ? 1 : 0,
-      ledgerAccountType: acc.ledgerAccountType
-    }))
-
-    const url = `${Config.HOSTNAME}/participants/${ledgerDfsp.name}`
-    reply.push({
-      name: ledgerDfsp.name,
-      id: url,
-      // created: ledgerDfsp.created,
-      created: null,
-      isActive: ledgerDfsp.isActive ? 1 : 0,
-      // TODO(LD): hardcoded for now
-      isProxy: 0,
-      links: {
-        self: url
-      },
-      accounts: apiMappedAccounts
-    })
-  })
-
-  // Now do the same for the Hub accounts
-  const hubUrl = `${Config.HOSTNAME}/participants/Hub`
-  const hubAccounts = hubLedgerAccounts.map(acc => ({
-    createdBy: 'unknown',
-    createdDate: null,
-    currency: acc.currency,
-    id: acc.id.toString(),
-    isActive: acc.isActive ? 1 : 0,
-    ledgerAccountType: acc.ledgerAccountType
-  }))
-  reply.push({
-    name: 'Hub',
-    id: hubUrl,
-    // TODO(LD): this could be simply when the first account was created
-    created: new Date(),
-    // TODO(LD): Load from some hub account metadata?
-    isActive: 1,
-    // TODO(LD): hardcoded for now
-    isProxy: 0,
-    links: {
-      self: hubUrl
-    },
-    accounts: hubAccounts
-  })
-
-  return reply
-}
-
-const internalGetByName = async function (ledger, dfspName) {
-  assert(ledger)
-  assert(dfspName)
-
-  const resultGetDfsp = await ledger.getDfsp({ dfspId: dfspName })
-  if (resultGetDfsp.type === 'FAILURE') {
-    throw resultGetDfsp.fspiopError
-  }
-
-  // Map from Ledger format Dfsp to Existing API
-  const ledgerDfsp = resultGetDfsp.result
-  const apiMappedAccounts = ledgerDfsp.accounts.map(acc => ({
-    createdBy: 'unknown',
-    createdDate: null,
-    currency: acc.currency,
-    id: acc.id.toString(),
-    isActive: acc.isActive ? 1 : 0,
-    ledgerAccountType: acc.ledgerAccountType
-  }))
-
-  const url = `${Config.HOSTNAME}/participants/${ledgerDfsp.name}`
-  return {
-    name: ledgerDfsp.name,
-    id: url,
-    // created: ledgerDfsp.created,
-    created: null,
-    isActive: ledgerDfsp.isActive ? 1 : 0,
-    // TODO(LD): hardcoded for now
-    isProxy: 0,
-    links: {
-      self: url
-    },
-    accounts: apiMappedAccounts
-  }
 }
 
 const getByName = async function (request) {

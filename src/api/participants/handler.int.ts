@@ -455,8 +455,7 @@ describe('api/participants/handler', () => {
       // Act
       const {
         body
-        // TODO (LD): need to implement adjust limits on new Handler!
-      } = await TestUtils.unwrapHapiResponse(h => ParticipantHandlerV1.adjustLimits(request, h))
+      } = await TestUtils.unwrapHapiResponse(h => participantHandler.adjustLimits(request, h))
 
       // Assert
       unwrapSnapshot(checkSnapshotObject(body, {
@@ -608,22 +607,16 @@ describe('api/participants/handler', () => {
       ]))
     })
 
-    it.skip('04 deactivates and reactivates the position account', async () => {
+    it('04 deactivates and reactivates the position account', async () => {
       assert(positionAccountId, 'value expected from previous `it` block')
 
       const requestDeactivate = {
-        payload: {
-          isActive: false,
-        },
+        payload: { isActive: false },
         params: {
           name: 'dfsp_u',
           id: Number.parseInt(positionAccountId), // accountId from above
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
@@ -639,18 +632,12 @@ describe('api/participants/handler', () => {
 
       // now reset
       const requestReactivate = {
-        payload: {
-          isActive: true,
-        },
+        payload: { isActive: true, },
         params: {
           name: 'dfsp_u',
           id: positionAccountId, // accountId from above
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
       const reactivateResponse = await TestUtils.unwrapHapiResponse(h =>
         participantHandler.updateAccount(requestReactivate, h)
@@ -663,22 +650,15 @@ describe('api/participants/handler', () => {
       assert.equal(positionAccount.isActive, 1)
     })
 
-    it.skip('05 does not allow deactivating the settlement account', async () => {
+    it('05 does not allow deactivating the settlement account', async () => {
       assert(settlementAccountId, 'value expected from previous `it` block')
-
       const request = {
-        payload: {
-          isActive: false,
-        },
+        payload: { isActive: false, },
         params: {
           name: 'dfsp_u',
           id: Number.parseInt(settlementAccountId), // accountId from above
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
@@ -775,7 +755,6 @@ describe('api/participants/handler', () => {
       // Act
       const responseConfirm = await TestUtils.unwrapHapiResponse(h =>
         participantHandler.recordFunds(requestConfirm, h)
-        // ParticipantHandlerV1.recordFunds(requestConfirm, h)
       )
       assert.equal(responseConfirm.code, 202)
       assert.equal(responseConfirm.body, undefined)

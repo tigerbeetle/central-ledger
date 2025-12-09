@@ -30,10 +30,10 @@ import {
   HubAccountResponse,
   LedgerDfsp,
   LegacyLedgerAccount,
+  LegacyLimit,
   LookupTransferQuery,
   LookupTransferQueryResponse,
   LookupTransferResultType,
-  NetDebitCapResponse,
   ParticipantServiceAccount,
   ParticipantServiceCurrency,
   ParticipantServiceParticipant,
@@ -42,6 +42,7 @@ import {
   PrepareResult,
   PrepareResultType,
   QueryResult,
+  SetNetDebitCapCommand,
   SweepResult,
   TimedOutTransfer,
   TransferParticipantInfo,
@@ -142,6 +143,14 @@ export interface LegacyCompatibleLedgerDependencies {
         }
         payload: any
       }>
+      adjustLimits: (name: string, payload: {
+        currency: string
+        limit: {
+          type: string
+          value: number
+          thresholdAlarmPercentage: number
+        }
+      }) => Promise<number>
     },
     settlementModelDomain: {
       createSettlementModel: (model: { name: string, settlementGranularity: string, settlementInterchange: string, settlementDelay: string, currency: string, requireLiquidityCheck: boolean, ledgerAccountType: string, settlementAccountType: string, autoPositionReset: boolean }) => Promise<void>
@@ -252,8 +261,6 @@ export interface LegacyCompatibleLedgerDependencies {
 export default class LegacyCompatibleLedger implements Ledger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) { }
 
-
-
   /**
    * Onboarding/Lifecycle Management
    */
@@ -327,7 +334,9 @@ export default class LegacyCompatibleLedger implements Ledger {
   /**
    * @description Create the dfsp accounts. Returns a duplicate response if any of the dfsp + 
    *   currency combinations already exist.
+   * 
    */
+  // TODO(LD): Remove the starting deposit here - we implemented it in addInitialPositionAndLimits
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     assert(cmd.dfspId)
     assert(cmd.currencies)
@@ -371,10 +380,7 @@ export default class LegacyCompatibleLedger implements Ledger {
       // Set the initial limits
       for (let i = 0; i < cmd.currencies.length; i++) {
         const currency = cmd.currencies[i];
-        const startingDeposit = cmd.startingDeposits[i]
         assert(currency)
-        assert(startingDeposit)
-        assert(startingDeposit >= 0)
 
         // Get participant accounts to get the participantCurrencyIds needed by the facade
         const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
@@ -390,22 +396,22 @@ export default class LegacyCompatibleLedger implements Ledger {
         );
         assert(settlementAccount)
 
-        const limitPayload = {
-          limit: {
-            type: 'NET_DEBIT_CAP',
-            value: startingDeposit,
-            thresholdAlarmPercentage: 10
-          },
-          initialPosition: 0
-        };
+        // const limitPayload = {
+        //   limit: {
+        //     type: 'NET_DEBIT_CAP',
+        //     value: startingDeposit,
+        //     thresholdAlarmPercentage: 10
+        //   },
+        //   initialPosition: 0
+        // };
 
-        // Call facade directly to bypass Kafka messaging
-        await this.deps.lifecycle.participantFacade.addLimitAndInitialPosition(
-          positionAccount.participantCurrencyId,
-          settlementAccount.participantCurrencyId,
-          limitPayload,
-          true
-        );
+        // // Call facade directly to bypass Kafka messaging
+        // await this.deps.lifecycle.participantFacade.addLimitAndInitialPosition(
+        //   positionAccount.participantCurrencyId,
+        //   settlementAccount.participantCurrencyId,
+        //   limitPayload,
+        //   true
+        // );
       }
 
       return {
@@ -736,6 +742,38 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
+  public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
+    assert(cmd.dfspId)
+    assert(cmd.currency)
+    assert(cmd.amount)
+
+    try {
+      const payload = {
+        currency: cmd.currency,
+        limit: {
+          type: 'NET_DEBIT_CAP',
+          value: cmd.amount,
+          // TODO(LD): is this ever used? going to hardcode to 10 for now
+          thresholdAlarmPercentage: 10
+        }
+      }
+      await this.deps.lifecycle.participantService.adjustLimits(cmd.dfspId, payload)
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      // Create the initial limit if it doesn't exist
+      if ((err as ErrorHandler.FSPIOPError).message === 'Participant Limit does not exist') {
+        try {
+          await this.createParticipantLimit(cmd.dfspId, cmd.currency, cmd.amount)
+          return Helper.emptyCommandResultSuccess()
+        } catch (createErr) {
+          return Helper.commandResultFailure(createErr)
+        }
+      }
+
+      return Helper.commandResultFailure(err)
+    }
+  }
+
   public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
     const legacyQuery = { currency: query.currency }
     try {
@@ -907,7 +945,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
-  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
+  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
     const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP' }
     try {
       const result = await this.deps.lifecycle.participantService.getLimits(query.dfspId, legacyQuery)
@@ -927,12 +965,14 @@ export default class LegacyCompatibleLedger implements Ledger {
       assert(legacyLimit.thresholdAlarmPercentage)
       return {
         type: 'SUCCESS',
-        limit: {
+        result: {
           type: 'NET_DEBIT_CAP',
           value: safeStringToNumber(legacyLimit.value),
           alarmPercentage: safeStringToNumber(legacyLimit.thresholdAlarmPercentage)
         }
+
       }
+
     } catch (err) {
       return {
         type: 'FAILURE',
@@ -1775,6 +1815,55 @@ export default class LegacyCompatibleLedger implements Ledger {
           this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencySettlement)
         ])
       }
+    }
+  }
+
+  /**
+   * Creates a participant limit when it doesn't exist
+   * This directly inserts a limit into the database when positions already exist
+   * but no limit has been set yet.
+   *
+   * @param dfspId - The participant name
+   * @param currency - The currency for the limit
+   * @param limitValue - The limit value to set
+   */
+  private async createParticipantLimit(dfspId: string, currency: string, limitValue: number): Promise<void> {
+    try {
+      // Get the position account to get the participantCurrencyId
+      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        dfspId,
+        currency,
+        Enum.Accounts.LedgerAccountType.POSITION
+      )
+      assert(positionAccount, `Position account not found for ${dfspId} ${currency}`)
+
+      // Get the limit type ID for NET_DEBIT_CAP
+      const limitType = await this.deps.knex('participantLimitType')
+        .where({ name: 'NET_DEBIT_CAP', isActive: 1 })
+        .select('participantLimitTypeId')
+        .first()
+
+      assert(limitType, 'NET_DEBIT_CAP limit type not found')
+
+      // Insert the new limit
+      const participantLimit = {
+        participantCurrencyId: positionAccount.participantCurrencyId,
+        participantLimitTypeId: limitType.participantLimitTypeId,
+        value: limitValue,
+        thresholdAlarmPercentage: 10,
+        isActive: 1,
+        createdBy: 'unknown'
+      }
+
+      await this.deps.knex('participantLimit').insert(participantLimit)
+
+      logger.info(`Successfully created participant limit for ${dfspId} ${currency}`, {
+        limitValue,
+        participantCurrencyId: positionAccount.participantCurrencyId
+      })
+    } catch (err) {
+      logger.error(`Failed to create participant limit for ${dfspId} ${currency}`, err)
+      throw ErrorHandler.Factory.reformatFSPIOPError(err)
     }
   }
 }

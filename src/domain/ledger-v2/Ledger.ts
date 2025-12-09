@@ -17,11 +17,12 @@ import {
   GetNetDebitCapQuery,
   HubAccountResponse,
   LedgerDfsp,
+  LegacyLimit,
   LookupTransferQuery,
   LookupTransferQueryResponse,
-  NetDebitCapResponse,
   PrepareResult,
   QueryResult,
+  SetNetDebitCapCommand,
   SweepResult,
   WithdrawCommitCommand,
   WithdrawCommitResponse,
@@ -34,7 +35,7 @@ import {
   */
 export interface Ledger {
   /**
-   * Onboarding/Lifecycle Management
+   * Onboarding/Lifecycle Management Commands
    */
   createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse>;
   createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse>;
@@ -45,14 +46,17 @@ export interface Ledger {
   deposit(cmd: DepositCommand): Promise<DepositResponse>;
   withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse>;
   withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse>;
-  getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
+  setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>>;
 
+  /**
+   * Onboarding/Lifecycle Management Queries
+   */
+  getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
   getDfsp(query: {dfspId: string}): Promise<QueryResult<LedgerDfsp>>
   getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>>
   getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse>
-  getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse>
-  // setLimits(cmd: SetLimitsCommand): Promise<SetLimitsResponse>;
-  // getLimits(cmd: GetLimitsCommand): Promise<GetLimitsResponse>;
+  getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>>
+  
 
   /**
    * Clearing Methods

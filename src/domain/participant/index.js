@@ -343,14 +343,9 @@ const addLimitAndInitialPosition = async (participantName, limitAndInitialPositi
     if (!limitAndInitialPosition.initialPosition) {
       limitAndInitialPosition.initialPosition = Config.PARTICIPANT_INITIAL_POSITION
     }
-    const payload = Object.assign({}, limitAndInitialPositionObj, { name: participantName })
-    
-
-    // TODO(LD): Disable this!
-    await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
     return ParticipantFacade.addLimitAndInitialPosition(participant.participantCurrencyId, settlementAccount.participantCurrencyId, limitAndInitialPosition, true)
   } catch (err) {
-    log.error('error adding limit and initial position', err)
+    log.error('error adding limit and initial position', { message: err.message, stack: err.stack })
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }
 }
@@ -555,7 +550,7 @@ const adjustLimits = async (name, payload) => {
     
     return result
   } catch (err) {
-    log.error('error adjusting limits', err)
+    log.error('error adjusting limits', { message: err.message, stack: err.stack })
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }
 }
@@ -701,7 +696,7 @@ const getAccounts = async (name, query) => {
 }
 
 const updateAccount = async (payload, params, enums) => {
-  const log = logger.child({ payload, params, enums })
+  const log = logger.child({ payload, params })
   try {
     log.debug('updating account')
     const { name, id } = params
@@ -719,7 +714,7 @@ const updateAccount = async (payload, params, enums) => {
     }
     return await ParticipantCurrencyModel.update(id, payload.isActive)
   } catch (err) {
-    log.error('error updating account', err)
+    log.error('error updating account', { message: err.message, stack: err.stack })
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }
 }
@@ -827,7 +822,7 @@ const recordFundsInOut = async (payload, params, enums) => {
     // Validation passed - return the validated data for direct processing
     return { accountMatched, payload }
   } catch (err) {
-    log.error('error recording funds in/out', err)
+    log.error('error recording funds in/out', { message: err.message, stack: err.stack })
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }
 }

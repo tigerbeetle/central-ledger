@@ -334,7 +334,10 @@ export interface CreateDfspCommand {
   dfspId: string,
   // TODO: limit this to just one currency for now!
   currencies: Array<string>
-  // TODO: limit this to just one limit for now!
+
+  /**
+   * @deprecated
+   */
   startingDeposits: Array<number>
 }
 
@@ -435,8 +438,10 @@ export interface DisableDfspAccountCommand {
   accountId: number
 }
 
-export interface SetLimitsCommand {
-
+export interface SetNetDebitCapCommand {
+  dfspId: string,
+  currency: string,
+  amount: number
 }
 
 /**
@@ -505,7 +510,7 @@ export type DfspAccountResponse = DfspAccountResponseSuccess
 
 export interface GetHubAccountsQuery {
   // TODO(LD): should we specify currency here?
-  currency: string
+  // currency: string
 }
 
 export interface HubAccountResponseSuccess {
@@ -525,19 +530,6 @@ export interface GetNetDebitCapQuery {
   dfspId: string,
   currency: string
 }
-
-export interface NetDebitCapResponseSuccess {
-  type: 'SUCCESS',
-  limit: LegacyLimit
-}
-
-export interface NetDebitCapResponseFailure {
-  type: 'FAILURE',
-  error: FSPIOPError
-}
-
-export type NetDebitCapResponse = NetDebitCapResponseSuccess
-  | NetDebitCapResponseFailure
 
 export interface LookupTransferQuery {
   /**

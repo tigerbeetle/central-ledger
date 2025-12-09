@@ -116,9 +116,9 @@ export async function initialize({
   let producers: Producers
 
   try {
-    if (!config.INSTRUMENTATION_METRICS_DISABLED) {
-      Metrics.setup(config.INSTRUMENTATION_METRICS_CONFIG)
-    }
+    // Always setup metrics to avoid "counter not initialized" errors
+    // Even if disabled, the counters will exist as no-ops
+    Metrics.setup(config.INSTRUMENTATION_METRICS_CONFIG)
 
     if (config.RUN_MIGRATIONS) {
       // TODO(LD): inject dependency

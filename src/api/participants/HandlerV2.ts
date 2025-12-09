@@ -28,7 +28,9 @@
 
 'use strict'
 
+import { FSPIOPError } from "@mojaloop/central-services-error-handling"
 import { Ledger } from "src/domain/ledger-v2/Ledger"
+import { CommandResult } from "src/domain/ledger-v2/types"
 
 const Config = require('../../lib/config')
 const Logger = require('../../shared/logger').logger
@@ -39,7 +41,7 @@ const assert = require('assert')
 const { randomUUID } = require('crypto')
 const { assertString, safeStringToNumber } = require('../../shared/config/util')
 
-const getLedger = (request) => {
+const getLedger = (request): Ledger => {
   assert(request, 'request is undefined')
   assert(request.server.app, 'request.server.app is undefined')
   assert(request.server.app.ledger, 'Ledger not available in server app state')
@@ -60,31 +62,19 @@ export default class ParticipantAPIHandlerV2 {
       assert(request.payload.currency)
       assert(request.payload.name)
 
-      // startingDeposit allows us to create an opening balance for the Dfsp while onboarding.
-      // We added this feature to the Admin API to help limit the breaking changes when moving to
-      // TigerBeetle, as the TigerBeetleLedger doesn't allow `initialPositionAndLimits` to be 
-      // called _before_ funds have been deposited for the Dfsp.
-      let startingDeposit = 0
-      if (request.payload.startingDeposit) {
-        assertString(request.payload.startingDeposit)
-        const startingDepositStr = request.payload.startingDeposit
-        startingDeposit = safeStringToNumber(startingDepositStr)
-        assert(startingDeposit >= 0)
-      }
-
       const { currency, name } = request.payload
       const ledger = getLedger(request)
       const createDfspResult = await ledger.createDfsp({
         dfspId: name,
         currencies: [currency],
-        startingDeposits: [startingDeposit]
+        startingDeposits: [0]
       })
 
       if (createDfspResult.type === 'ALREADY_EXISTS') {
         throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
       }
 
-      if (createDfspResult.type === 'FAILED') {
+      if (createDfspResult.type === 'FAILURE') {
         Logger.error(`participants.create() - failed to create: ${name} with error: ${createDfspResult.error.message}`)
         throw createDfspResult.error
       }
@@ -103,12 +93,12 @@ export default class ParticipantAPIHandlerV2 {
 
     const resultDfsps = await ledger.getAllDfsps({})
     if (resultDfsps.type === 'FAILURE') {
-      throw resultDfsps.fspiopError
+      throw resultDfsps.error
     }
 
-    const resultHub = await ledger.getHubAccounts()
+    const resultHub = await ledger.getHubAccounts({})
     if (resultHub.type === 'FAILURE') {
-      throw resultHub.fspiopError
+      throw resultHub.error
     }
     const hubLedgerAccounts = resultHub.accounts
 
@@ -217,7 +207,7 @@ export default class ParticipantAPIHandlerV2 {
       assert.equal(typeof isActive, 'boolean')
       const ledger = getLedger(request)
 
-      let response
+      let response: CommandResult<void>
       if (isActive === false) {
         response = await ledger.disableDfsp({ dfspId: request.params.name })
       } else {
@@ -225,7 +215,7 @@ export default class ParticipantAPIHandlerV2 {
       }
 
       if (response.type === 'FAILURE') {
-        throw response.fspiopError
+        throw response.error
       }
 
       // now look up the participant
@@ -251,6 +241,7 @@ export default class ParticipantAPIHandlerV2 {
       assert(request.payload.limit)
       assert(request.payload.limit.type)
       assert(request.payload.limit.value !== undefined)
+      assert(request.payload.limit.value >= 0)
 
       const ledger = getLedger(request)
 
@@ -262,17 +253,62 @@ export default class ParticipantAPIHandlerV2 {
         // position
         amount: request.payload.limit.value
       }
-      const result = await ledger.deposit(depositCmd)
-      if (result.type === 'FAILURE') {
-        throw result.error
+      const depositResult = await ledger.deposit(depositCmd)
+      if (depositResult.type === 'FAILURE') {
+        throw depositResult.error
       }
-      if (result.type === 'ALREADY_EXISTS') {
-        return
+
+      const setNetDebitCapResult = await ledger.setNetDebitCap({
+        dfspId: request.params.name,
+        currency: request.payload.currency,
+        amount: request.payload.limit.value
+      })
+      if (setNetDebitCapResult.type === 'FAILURE') {
+        throw setNetDebitCapResult.error
       }
 
       return h.response().code(201)
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddLimitAndInitialPosition' })
+    }
+  }
+
+  public async adjustLimits(request, h): Promise<unknown> {
+    try {
+      assert(request)
+      assert(request.params)
+      assert(request.params.name)
+      assert(request.payload)
+      assert(request.payload.currency)
+      assert(request.payload.limit)
+      assert(request.payload.limit.type)
+      assert(request.payload.limit.value !== undefined)
+      assert(request.payload.limit.value >= 0)
+      // Only limits of type NET_DEBIT_CAP are supported
+      assert.equal(request.payload.limit.type, 'NET_DEBIT_CAP')
+      const ledger = getLedger(request)
+
+      const result = await ledger.setNetDebitCap({
+        dfspId: request.params.name,
+        currency: request.payload.currency,
+        amount: request.payload.limit.value
+      })
+
+      if (result.type === 'FAILURE') {
+        throw result.error
+      }
+
+      // The Ledger doesn't return anything, but the API Expects a response body
+      const updatedLimit = {
+        currency: request.payload.currency,
+        limit: {
+          type: request.payload.limit.type,
+          value: request.payload.limit.value
+        }
+      }
+      return h.response(updatedLimit).code(200)
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'adjustLimits' })
     }
   }
 
@@ -293,21 +329,23 @@ export default class ParticipantAPIHandlerV2 {
       })
 
       if (limitResponse.type !== 'SUCCESS') {
+        // check for fspiop error
+        let maybeFspiopError = limitResponse.error as FSPIOPError
         // special case 
-        if (limitResponse.fspiopError.apiErrorCode &&
-          limitResponse.fspiopError.apiErrorCode.code &&
-          limitResponse.fspiopError.apiErrorCode.code === '3200'
+        if (maybeFspiopError && maybeFspiopError.apiErrorCode &&
+          maybeFspiopError.apiErrorCode.code &&
+          maybeFspiopError.apiErrorCode.code === '3200'
         ) {
           return []
         }
 
-        throw limitResponse.fspiopError
+        throw limitResponse.error
       }
 
       return [
         {
           currency: request.query.currency,
-          limit: limitResponse.limit
+          limit: limitResponse.result
         }
       ]
     } catch (err) {
@@ -328,8 +366,8 @@ export default class ParticipantAPIHandlerV2 {
     const ledgerAccountsResponse = await ledger.getDfspAccounts({ dfspId: name, currency })
 
     if (ledgerAccountsResponse.type === 'FAILURE') {
-      Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.fspiopError.message}`)
-      throw ledgerAccountsResponse.fspiopError
+      Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
+      throw ledgerAccountsResponse.error
     }
 
     // Map to legacy compatible API response
@@ -363,7 +401,7 @@ export default class ParticipantAPIHandlerV2 {
       }
 
       if (result.type === 'FAILURE') {
-        throw result.fspiopError
+        throw result.error
       }
 
       return h.response().code(200)

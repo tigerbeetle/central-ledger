@@ -33,10 +33,10 @@ import {
   LookupTransferQuery,
   LookupTransferQueryResponse,
   LookupTransferResultType,
-  NetDebitCapResponse,
   PrepareResult,
   PrepareResultType,
   QueryResult,
+  SetNetDebitCapCommand,
   SweepResult,
   TimedOutTransfer,
   WithdrawCommitCommand,
@@ -376,6 +376,10 @@ export default class TigerBeetleLedger implements Ledger {
     throw new Error('not implemented')
   }
 
+  public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
+    throw new Error('Method not implemented.');
+  }
+
   /**
    * @method getAccounts
    * @description Lookup the accounts for a Dfsp + Currency
@@ -475,7 +479,7 @@ export default class TigerBeetleLedger implements Ledger {
     throw new Error('Method not implemented.');
   }
 
-  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
+  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
     const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
@@ -512,7 +516,7 @@ export default class TigerBeetleLedger implements Ledger {
 
     return {
       type: 'SUCCESS',
-      limit
+      result: limit
     }
   }
 
