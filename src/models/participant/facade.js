@@ -362,6 +362,57 @@ const addEndpoint = async (participantId, endpoint) => {
   }
 }
 
+/**
+ * Add multiple endpoints for a participant in a single transaction
+ * @param {number} participantId - The participant ID
+ * @param {Array<{type: string, value: string}>} endpoints - Array of endpoints to add
+ * @returns {Promise<Array>} - Array of created endpoints
+ */
+const addEndpoints = async (participantId, endpoints) => {
+  try {
+    const knex = Db.getKnex()
+    return knex.transaction(async trx => {
+      const results = []
+
+      for (const endpoint of endpoints) {
+        // Get endpoint type
+        const endpointType = await knex('endpointType').where({
+          name: endpoint.type,
+          isActive: 1
+        }).select('endpointTypeId').first()
+
+        // Check for existing endpoint and deactivate it
+        const existingEndpoint = await knex('participantEndpoint').transacting(trx).forUpdate().select('*')
+          .where({
+            participantId,
+            endpointTypeId: endpointType.endpointTypeId,
+            isActive: 1
+          })
+
+        if (Array.isArray(existingEndpoint) && existingEndpoint.length > 0) {
+          await knex('participantEndpoint').transacting(trx).update({ isActive: 0 }).where('participantEndpointId', existingEndpoint[0].participantEndpointId)
+        }
+
+        // Insert new endpoint
+        const newEndpoint = {
+          participantId,
+          endpointTypeId: endpointType.endpointTypeId,
+          value: endpoint.value,
+          isActive: 1,
+          createdBy: 'unknown'
+        }
+        const result = await knex('participantEndpoint').transacting(trx).insert(newEndpoint)
+        newEndpoint.participantEndpointId = result[0]
+        results.push(newEndpoint)
+      }
+
+      return results
+    })
+  } catch (err) {
+    rethrow.rethrowDatabaseError(err)
+  }
+}
+
 const getParticipantLimitByParticipantCurrencyLimit = async (participantId, currencyId, ledgerAccountTypeId, participantLimitTypeId) => {
   const histGetParticipantLimitEnd = Metrics.getHistogram(
     'model_participant',
@@ -813,6 +864,7 @@ module.exports = {
   getEndpoint,
   getAllEndpoints,
   addEndpoint,
+  addEndpoints,
   getParticipantPositionByParticipantIdAndCurrencyId,
   getParticipantLimitByParticipantCurrencyLimit,
   addLimitAndInitialPosition,

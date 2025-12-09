@@ -36,13 +36,14 @@ const tags = ['api', 'participants']
 const nameValidator = Joi.string().min(2).max(30).required().description('Name of the participant')
 const currencyValidator = Joi.string().valid(...currencyList).description('Currency code')
 
-const Handler = require('./HandlerV1.js')
+const ParticipantAPIHandlerV2 = require('./HandlerV2').default
+const handler = new ParticipantAPIHandlerV2()
 
 module.exports = [
   {
     method: 'GET',
     path: '/participants',
-    handler: Handler.getAll,
+    handler: (request, h) => handler.getAll(request, h),
     options: {
       tags
     }
@@ -50,7 +51,7 @@ module.exports = [
   {
     method: 'GET',
     path: '/participants/{name}',
-    handler: Handler.getByName,
+    handler: (request, h) => handler.getByName(request, h),
     options: {
       tags,
       validate: {
@@ -63,7 +64,7 @@ module.exports = [
   {
     method: 'POST',
     path: '/participants',
-    handler: Handler.create,
+    handler: (request, h) => handler.create(request, h),
     options: {
       tags,
       payload: {
@@ -84,7 +85,7 @@ module.exports = [
   {
     method: 'PUT',
     path: '/participants/{name}',
-    handler: Handler.update,
+    handler: (request, h) => handler.update(request, h),
     options: {
       tags,
       payload: {
@@ -104,20 +105,30 @@ module.exports = [
   {
     method: 'POST',
     path: '/participants/{name}/endpoints',
-    handler: Handler.addEndpoint,
+    handler: (request, h) => handler.addEndpoint(request, h),
     options: {
       id: 'participants_endpoints_add',
       tags,
-      description: 'Add/Update participant endpoints',
+      description: 'Add/Update participant endpoints (single or array)',
       payload: {
         allow: ['application/json'],
         failAction: 'error'
       },
       validate: {
-        payload: Joi.object({
-          type: Joi.string().required().description('Endpoint Type'),
-          value: Joi.string().required().description('Endpoint Value')
-        }),
+        payload: Joi.alternatives().try(
+          // Single endpoint
+          Joi.object({
+            type: Joi.string().required().description('Endpoint Type'),
+            value: Joi.string().required().description('Endpoint Value')
+          }),
+          // Array of endpoints
+          Joi.array().items(
+            Joi.object({
+              type: Joi.string().required().description('Endpoint Type'),
+              value: Joi.string().required().description('Endpoint Value')
+            })
+          ).min(1)
+        ),
         params: Joi.object({
           name: nameValidator
         })
@@ -127,7 +138,7 @@ module.exports = [
   {
     method: 'GET',
     path: '/participants/{name}/endpoints',
-    handler: Handler.getEndpoint,
+    handler: (request, h) => handler.getEndpoint(request, h),
     options: {
       id: 'participants_endpoints_get',
       tags,
@@ -142,7 +153,7 @@ module.exports = [
   {
     method: 'POST',
     path: '/participants/{name}/initialPositionAndLimits',
-    handler: Handler.addLimitAndInitialPosition,
+    handler: (request, h) => handler.addLimitAndInitialPosition(request, h),
     options: {
       id: 'participants_limits_pos_add',
       tags,
@@ -169,7 +180,7 @@ module.exports = [
   {
     method: 'GET',
     path: '/participants/{name}/limits',
-    handler: Handler.getLimits,
+    handler: (request, h) => handler.getLimits(request, h),
     options: {
       id: 'participants_limits_get',
       tags,
@@ -188,7 +199,7 @@ module.exports = [
   {
     method: 'GET',
     path: '/participants/limits',
-    handler: Handler.getLimitsForAllParticipants,
+    handler: (request, h) => handler.getLimitsForAllParticipants(request, h),
     options: {
       id: 'participants_limits_get_all',
       tags,
@@ -204,7 +215,7 @@ module.exports = [
   {
     method: 'PUT',
     path: '/participants/{name}/limits',
-    handler: Handler.adjustLimits,
+    handler: (request, h) => handler.adjustLimits(request, h),
     options: {
       id: 'participants_limits_adjust',
       tags,
@@ -231,7 +242,7 @@ module.exports = [
   {
     method: 'POST',
     path: '/participants/{name}/accounts',
-    handler: Handler.createHubAccount,
+    handler: (request, h) => handler.createHubAccount(request, h),
     options: {
       id: 'hub_accounts_create',
       tags,
@@ -254,7 +265,7 @@ module.exports = [
   {
     method: 'GET',
     path: '/participants/{name}/positions',
-    handler: Handler.getPositions,
+    handler: (request, h) => handler.getPositions(request, h),
     options: {
       id: 'participants_positions_get',
       tags,
@@ -272,7 +283,7 @@ module.exports = [
   {
     method: 'GET',
     path: '/participants/{name}/accounts',
-    handler: Handler.getAccounts,
+    handler: (request, h) => handler.getAccounts(request, h),
     options: {
       id: 'participants_accounts_get',
       tags,
@@ -287,7 +298,7 @@ module.exports = [
   {
     method: 'PUT',
     path: '/participants/{name}/accounts/{id}',
-    handler: Handler.updateAccount,
+    handler: (request, h) => handler.updateAccount(request, h),
     options: {
       id: 'participants_accounts_update',
       tags,
@@ -306,7 +317,7 @@ module.exports = [
   {
     method: 'POST',
     path: '/participants/{name}/accounts/{id}',
-    handler: Handler.recordFunds,
+    handler: (request, h) => handler.recordFunds(request, h),
     options: {
       id: 'post_participants_accounts_funds',
       tags,
@@ -339,7 +350,7 @@ module.exports = [
   {
     method: 'PUT',
     path: '/participants/{name}/accounts/{id}/transfers/{transferId}',
-    handler: Handler.recordFunds,
+    handler: (request, h) => handler.recordFunds(request, h),
     options: {
       id: 'put_participants_accounts_funds',
       tags,

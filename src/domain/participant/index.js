@@ -219,6 +219,41 @@ const addEndpoint = async (name, payload) => {
 }
 
 /**
+ * @function AddEndpoints
+ *
+ * @async
+ * @description Adds multiple endpoints for a participant in a single transaction.
+ * ParticipantFacade.addEndpoints called to add the participant endpoint details
+ *
+ * @param {string} name - the name of the participant. Example 'dfsp1'
+ * @param {Array<object>} endpoints - array of endpoint objects containing 'type' and 'value'.
+ * Example: [
+ *      {
+ *        "type": "FSPIOP_CALLBACK_URL_TRANSFER_POST",
+ *        "value": "http://localhost:3001/participants/dfsp1/notification12"
+ *      },
+ *      {
+ *        "type": "FSPIOP_CALLBACK_URL_TRANSFER_PUT",
+ *        "value": "http://localhost:3001/participants/dfsp1/notification13"
+ *      }
+ * ]
+ * @returns {Array} - Returns array of created endpoints if successful, or throws an error if failed
+ */
+const addEndpoints = async (name, endpoints) => {
+  const log = logger.child({ name, endpointCount: endpoints.length })
+  try {
+    log.debug('adding multiple endpoints')
+    const participant = await ParticipantModel.getByName(name)
+    participantExists(participant)
+    log.debug('adding endpoints for participant', { participant })
+    return ParticipantFacade.addEndpoints(participant.participantId, endpoints)
+  } catch (err) {
+    log.error('error adding endpoints', err)
+    throw ErrorHandler.Factory.reformatFSPIOPError(err)
+  }
+}
+
+/**
  * @function GetEndpoint
  *
  * @async
@@ -890,6 +925,7 @@ module.exports = {
   getParticipantCurrencyById,
   destroyByName,
   addEndpoint,
+  addEndpoints,
   getEndpoint,
   getAllEndpoints,
   destroyParticipantEndpointByName,

@@ -1179,6 +1179,63 @@ id: ':integer',          isActive: 1,
         }
       ]))
     })
+
+    it('07 Adds multiple endpoints at once using array', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'dfsp_endpoint2'
+        },
+        payload: [
+          {
+            type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST',
+            value: 'http://dfsp_endpoint2.example.com/transfers'
+          },
+          {
+            type: 'FSPIOP_CALLBACK_URL_TRANSFER_PUT',
+            value: 'http://dfsp_endpoint2.example.com/transfers/{{transferId}}'
+          },
+          {
+            type: 'FSPIOP_CALLBACK_URL_TRANSFER_ERROR',
+            value: 'http://dfsp_endpoint2.example.com/transfers/{{transferId}}/error'
+          }
+        ],
+        server: { app: { ledger } }
+      }
+
+      // Act
+      const { code } = await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.addEndpoint(request, h)
+      )
+
+      // Assert
+      assert.equal(code, 201)
+
+      // Verify all endpoints were added by fetching them
+      const getRequest = {
+        params: {
+          name: 'dfsp_endpoint2'
+        },
+        query: {},
+        server: { app: { ledger } }
+      }
+
+      const body = await participantHandler.getEndpoint(getRequest)
+      unwrapSnapshot(checkSnapshotObject(body, [
+        {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_POST',
+          value: 'http://dfsp_endpoint2.example.com/transfers'
+        },
+        {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_PUT',
+          value: 'http://dfsp_endpoint2.example.com/transfers/{{transferId}}'
+        },
+        {
+          type: 'FSPIOP_CALLBACK_URL_TRANSFER_ERROR',
+          value: 'http://dfsp_endpoint2.example.com/transfers/{{transferId}}/error'
+        }
+      ]))
+    })
   })
 })
 

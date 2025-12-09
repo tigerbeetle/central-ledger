@@ -51,6 +51,7 @@ const getLedger = (request): Ledger => {
 
 interface IParticipantService {
   addEndpoint(name: string, payload: { type: string, value: string }): Promise<void>
+  addEndpoints(name: string, endpoints: Array<{ type: string, value: string }>): Promise<Array<any>>
   getEndpoint(name: string, type: string): Promise<Array<{ name: string, value: string }>>
   getAllEndpoints(name: string): Promise<Array<{ name: string, value: string }>>
 }
@@ -113,11 +114,20 @@ export default class ParticipantAPIHandlerV2 {
       }
 
       // now look up the participant
-      const getByNameReply = await this.getByName(ledger, request.payload.name)
+      const getByNameReply = await this._getByName(ledger, request.payload.name)
       return h.response(getByNameReply).code(201)
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
     }
+  }
+
+  public async getByName(request): Promise<ParticipantResponse> {
+    assert(request)
+    assert(request.params)
+    assert(request.params.name)
+
+    const ledger = getLedger(request)
+    return this._getByName(ledger, request.params.name)
   }
 
   public async getAll(request): Promise<ParticipantResponse[]> {
@@ -192,7 +202,9 @@ export default class ParticipantAPIHandlerV2 {
     return reply
   }
 
-  private async getByName(ledger: Ledger, dfspName: string): Promise<unknown> {
+
+
+  private async _getByName(ledger: Ledger, dfspName: string): Promise<ParticipantResponse> {
     assert(ledger)
     assert(dfspName)
 
@@ -252,7 +264,7 @@ export default class ParticipantAPIHandlerV2 {
       }
 
       // now look up the participant
-      const getByNameReply = await this.getByName(ledger, request.params.name)
+      const getByNameReply = await this._getByName(ledger, request.params.name)
       return getByNameReply
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
@@ -692,7 +704,13 @@ export default class ParticipantAPIHandlerV2 {
 
   public async addEndpoint(request, h): Promise<unknown> {
     try {
-      await this.participantService.addEndpoint(request.params.name, request.payload)
+      const participantName = request.params.name
+      const payload = request.payload
+
+      // Normalize to array (handle both single and array inputs) and use bulk method
+      const endpoints = Array.isArray(payload) ? payload : [payload]
+      await this.participantService.addEndpoints(participantName, endpoints)
+
       return h.response().code(201)
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddEndpoint' })
