@@ -243,7 +243,7 @@ export class FusedPrepareHandler {
       case PrepareResultType.FAIL_LIQUIDITY:
       case PrepareResultType.FAIL_OTHER: {
         const typedResult = result as PrepareResultFailLiquidity
-        assert(typedResult.fspiopError)
+        assert(typedResult.error)
         assert(input.message)
         assert(input.message.value)
         assert(input.message.value.from)
@@ -251,7 +251,7 @@ export class FusedPrepareHandler {
 
         await this.deps.notificationProducer.sendError({
           transferId: input.transferId,
-          fspiopError: typedResult.fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING),
+          fspiopError: typedResult.error.toApiErrorObject(this.deps.config.ERROR_HANDLING),
           action: input.action,
           to: input.message.value.from,
           from: this.deps.config.HUB_NAME,

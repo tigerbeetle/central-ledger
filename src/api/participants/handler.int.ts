@@ -295,6 +295,7 @@ describe('api/participants/handler', () => {
       }
     })
 
+    // TODO: This is currently possible, but should probably not be
     it('07 can deactivate the Hub participant', async () => {
       // Arrange
       const request = {
@@ -579,14 +580,9 @@ describe('api/participants/handler', () => {
         body
       } = await TestUtils.unwrapHapiResponse(h =>
         participantHandler.recordFunds(request, h)
-        // ParticipantHandlerV1.recordFunds(request, h)
       )
       assert.equal(code, 202)
       assert.equal(body, undefined)
-
-      // sleep, wait for eventually consistent stuff
-      // remove this eventually!
-      // await new Promise(resolve => setTimeout(resolve, 5000));
       const updatedAccounts = await getDFSPAccounts('dfsp_u')
 
       // Assert
@@ -734,9 +730,6 @@ describe('api/participants/handler', () => {
       assert.equal(responseWithdraw.code, 202)
       assert.equal(responseWithdraw.body, undefined)
 
-      // sleep, wait for eventually consistent stuff
-      // remove this eventually!
-      // await new Promise(resolve => setTimeout(resolve, 5000));
       let updatedAccounts = await getDFSPAccounts('dfsp_u')
 
       // Assert

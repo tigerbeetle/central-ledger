@@ -385,7 +385,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
         type: 'FAILURE',
-        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+        error: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
           `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
               dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
@@ -404,7 +404,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (tbAccounts.length !== tbAccountIds.length) {
       return {
         type: 'FAILURE',
-        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+        error: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
           `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
               dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
@@ -480,7 +480,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (ids.type === 'DfspAccountMetadataNone') {
       return {
         type: 'FAILURE',
-        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+        error: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
             `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
               dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
@@ -495,7 +495,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (tbAccounts.length !== tbAccountIds.length) {
       return {
         type: 'FAILURE',
-        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+        error: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
           `getNetDebitCap() failed - expected ${tbAccountIds.length} accounts from \
           client.lookupAccounts(), but instead found: ${tbAccounts.length}.`.replace(/\s+/g, ' ')
@@ -545,7 +545,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (payerMetadata.type === 'DfspAccountMetadataNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
             `payer fsp: ${payer} not found`
           ),
@@ -555,7 +555,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (payeeMetadata.type === 'DfspAccountMetadataNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
             `payee fsp: ${payee} not found`
           ),
@@ -570,7 +570,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (isNaN(expirationMs)) {
         return {
           type: PrepareResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
             `invalid transfer expiration`
           ),
@@ -580,7 +580,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (nowMs > expirationMs) {
         return {
           type: PrepareResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
             `expiration date already in the past`
           ),
@@ -595,7 +595,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (timeoutSeconds === 0) {
         return {
           type: PrepareResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
             `transfer expiry must be one or more seconds in the future.`
           ),
@@ -653,7 +653,7 @@ export default class TigerBeetleLedger implements Ledger {
         if (error === CreateTransferError.exceeds_credits) {
           return {
             type: PrepareResultType.FAIL_LIQUIDITY,
-            fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            error: ErrorHandler.Factory.createFSPIOPError(
               ErrorHandler.Enums.FSPIOPErrorCodes.PAYER_FSP_INSUFFICIENT_LIQUIDITY
             )
           }
@@ -696,7 +696,7 @@ export default class TigerBeetleLedger implements Ledger {
             case LookupTransferResultType.NOT_FOUND: {
               return {
                 type: PrepareResultType.FAIL_OTHER,
-                fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+                error: ErrorHandler.Factory.createInternalServerFSPIOPError(
                   `TigerBeetleLedger.prepare() - TigerBeetleLedger.lookupTransfer() got result \
                   ${lookupTransferResult.type} after encountering ${error}. This should not be \
                   possible`.replace(/\s+/g, ' ')
@@ -706,7 +706,7 @@ export default class TigerBeetleLedger implements Ledger {
             case LookupTransferResultType.FAILED: {
               return {
                 type: PrepareResultType.FAIL_OTHER,
-                fspiopError: lookupTransferResult.fspiopError
+                error: lookupTransferResult.error
               }
             }
           }
@@ -717,7 +717,7 @@ export default class TigerBeetleLedger implements Ledger {
 
         return {
           type: PrepareResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
             `prepare failed with error: ${readableError}`
           )
@@ -731,7 +731,7 @@ export default class TigerBeetleLedger implements Ledger {
     } catch (err) {
       return {
         type: PrepareResultType.FAIL_OTHER,
-        fspiopError: err
+        error: err
 
       }
     }
@@ -762,7 +762,7 @@ export default class TigerBeetleLedger implements Ledger {
       const readableError = CreateTransferError[error]
       return {
         type: FulfilResultType.FAIL_OTHER,
-        fspiopError: ErrorHandler.Factory.createFSPIOPError(
+        error: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
           `failed to abort transfer with error: ${readableError}`
         )
@@ -831,7 +831,7 @@ export default class TigerBeetleLedger implements Ledger {
           const readableError = CreateTransferError[error]
           return {
             type: FulfilResultType.FAIL_OTHER,
-            fspiopError: ErrorHandler.Factory.createFSPIOPError(
+            error: ErrorHandler.Factory.createFSPIOPError(
               ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
               `encountered unexpected error when voiding transfer after invalid fulfilment`
             )
@@ -840,7 +840,7 @@ export default class TigerBeetleLedger implements Ledger {
 
         return {
           type: FulfilResultType.FAIL_VALIDATION,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
             `fulfilment failed validation with error: ${fulfilmentAndConditionResult.reason}`
           )
@@ -873,7 +873,7 @@ export default class TigerBeetleLedger implements Ledger {
         const readableError = CreateTransferError[error]
         return {
           type: FulfilResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
+          error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
             `fulfil failed with error: ${readableError}`
           )
@@ -887,7 +887,7 @@ export default class TigerBeetleLedger implements Ledger {
     } catch (err) {
       return {
         type: FulfilResultType.FAIL_OTHER,
-        fspiopError: err
+        error: err
       }
     }
   }
@@ -951,7 +951,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (relatedTransfers.length > 2) {
       return {
         type: LookupTransferResultType.FAILED,
-        fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+        error: ErrorHandler.Factory.createInternalServerFSPIOPError(
           `Found: ${relatedTransfers.length} related transfers. Expected at most 2.`
         )
       }
@@ -966,7 +966,7 @@ export default class TigerBeetleLedger implements Ledger {
     } else {
       return {
         type: LookupTransferResultType.FAILED,
-        fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+        error: ErrorHandler.Factory.createInternalServerFSPIOPError(
           `Found: ${relatedTransfers.length} related transfers. Expected at most 2.`
         )
       }
@@ -981,7 +981,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (foundMetadata.type === 'TransferMetadataNone') {
         return {
           type: LookupTransferResultType.FAILED,
-          fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+          error: ErrorHandler.Factory.createInternalServerFSPIOPError(
             `missing transfer metadata for finalized transferId: ${query.transferId}`
           )
         }
@@ -990,7 +990,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (!foundMetadata.fulfilment) {
         return {
           type: LookupTransferResultType.FAILED,
-          fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+          error: ErrorHandler.Factory.createInternalServerFSPIOPError(
             `missing metadata.fulfilment for finalized transferId: ${query.transferId}`
           )
         }
@@ -1018,7 +1018,7 @@ export default class TigerBeetleLedger implements Ledger {
     logger.warn(`fulfilTransfer with id: ${finalTransfer.id} had neither 'post_pending_transfer' nor 'void_pending_transfer' flags set.`)
     return {
       type: LookupTransferResultType.FAILED,
-      fspiopError: ErrorHandler.Factory.createInternalServerFSPIOPError(
+      error: ErrorHandler.Factory.createInternalServerFSPIOPError(
         `fulfilTransfer with id: ${finalTransfer.id} had neither 'post_pending_transfer' nor 'void_pending_transfer' flags set.`
       )
     }

@@ -455,6 +455,9 @@ export default class ParticipantAPIHandlerV2 {
           }
           return h.response().code(202)
         }
+        case 'recordFundsOutAbort': {
+          throw new Error('not implemented!!!')
+        }
         default: {
           throw new Error(`recordFunds() - unhandled action: ${action}`)
         }
