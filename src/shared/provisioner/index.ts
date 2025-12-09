@@ -63,7 +63,6 @@ export default class Provisioner {
     for await (const command of commands) {
       results.push(await this.deps.ledger.createHubAccount(command))
     }
-    // const results = await Promise.all(commands.map(async command => await this.deps.ledger.createHubAccount(command)))
 
     const errorMessages = []
     results.forEach((result, idx) => {

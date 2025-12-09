@@ -103,14 +103,10 @@ export interface LegacyCompatibleLedgerDependencies {
    * models.
    */
   lifecycle: {
-    // TODO(LD): remove me! some dodgy stuff going on here!
-    participantsHandler: {
-      create: (request: { payload: { name: string, currency: string } }, callback: any) => Promise<void>
-      createHubAccount: (request: { params: { name: string }, payload: { type: string, currency: string } }, callback: any) => Promise<void>
-    }
     participantService: {
       create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
       createParticipantCurrency: (participantId: number, currency: string, ledgerAccountTypeId: number, isActive?: boolean) => Promise<number>
+      createHubAccount: (participantId: number, currency: string, ledgerAccountTypeId: number) => Promise<{ participantCurrency: any }>
       getAccounts: (name: string, query: { currency?: string }) => Promise<Array<ParticipantServiceAccount>>
       getAll: () => Promise<Array<ParticipantServiceParticipant>>,
       getByName: (name: string) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string }>
@@ -262,6 +258,63 @@ export interface LegacyCompatibleLedgerDependencies {
 export default class LegacyCompatibleLedger implements Ledger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) { }
 
+  private async _createHubAccount(accountType: string, currency: string): Promise<void> {
+    const participant = await this.deps.lifecycle.participantService.getByName('Hub')
+    if (!participant) {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
+        'Participant was not found.'
+      )
+    }
+
+    const ledgerAccountTypes = this.deps.lifecycle.enums.ledgerAccountType
+    const ledgerAccountTypeId = ledgerAccountTypes[accountType]
+    if (!ledgerAccountTypeId) {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
+        'Ledger account type was not found.'
+      )
+    }
+
+    // Check if account already exists by looking through participant's currency list
+    const accountExists = participant.currencyList.some(
+      curr => curr.currencyId === currency && curr.ledgerAccountTypeId === ledgerAccountTypeId
+    )
+    if (accountExists) {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
+        'Hub account has already been registered.'
+      )
+    }
+
+    if (participant.participantId !== this.deps.config.HUB_ID) {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
+        'Endpoint is reserved for creation of Hub account types only.'
+      )
+    }
+
+    const isPermittedHubAccountType = this.deps.config.HUB_ACCOUNTS.indexOf(accountType) >= 0
+    if (!isPermittedHubAccountType) {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
+        'The requested hub operator account type is not allowed.'
+      )
+    }
+
+    const newCurrencyAccount = await this.deps.lifecycle.participantService.createHubAccount(
+      participant.participantId,
+      currency,
+      ledgerAccountTypeId
+    )
+    if (!newCurrencyAccount) {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
+        'Participant account and Position create have failed.'
+      )
+    }
+  }
+
   /**
    * Onboarding/Lifecycle Management
    */
@@ -279,37 +332,10 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.settlementModel.settlementAccountType)
     assert(cmd.settlementModel.autoPositionReset === true || cmd.settlementModel.autoPositionReset === false)
 
-    // dummy to suit the `h` object the handlers expect
-    const mockCallback = {
-      response: (body: any) => {
-        return {
-          code: (code: number) => { }
-        }
-      }
-    }
-
     try {
-      const requestMultilateralSettlement = {
-        params: {
-          name: 'Hub'
-        },
-        payload: {
-          type: 'HUB_MULTILATERAL_SETTLEMENT',
-          currency: cmd.currency
-        }
-      }
-      const requestHubReconcilation = {
-        params: {
-          name: 'Hub'
-        },
-        payload: {
-          type: 'HUB_RECONCILIATION',
-          currency: cmd.currency,
-        }
-      }
       try {
-        await this.deps.lifecycle.participantsHandler.createHubAccount(requestMultilateralSettlement, mockCallback)
-        await this.deps.lifecycle.participantsHandler.createHubAccount(requestHubReconcilation, mockCallback)
+        await this._createHubAccount('HUB_MULTILATERAL_SETTLEMENT', cmd.currency)
+        await this._createHubAccount('HUB_RECONCILIATION', cmd.currency)
       } catch (err) {
         // catch this early, since we can't know if the settlementModel has also already been created
         if ((err as ErrorHandler.FSPIOPError).message === 'Hub account has already been registered.') {

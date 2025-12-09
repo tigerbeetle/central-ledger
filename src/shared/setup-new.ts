@@ -313,7 +313,6 @@ async function initializeLegacyCompatibleLedger(config: ApplicationConfig): Prom
     config,
     knex: Db.getKnex(),
     lifecycle: {
-      participantsHandler: require('../api/participants/handler'),
       participantService: require('../domain/participant'),
       participantFacade: require('../models/participant/facade'),
       transferService: require('../domain/transfer'),

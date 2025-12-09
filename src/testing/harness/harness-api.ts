@@ -290,7 +290,6 @@ export class HarnessApi implements Harness {
       config: this.config.applicationConfig,
       knex: Db.getKnex(),
       lifecycle: {
-        participantsHandler: require('../../api/participants/HandlerV1'),
         participantService: require('../../domain/participant'),
         participantFacade: require('../../models/participant/facade'),
         transferService: require('../../domain/transfer'),

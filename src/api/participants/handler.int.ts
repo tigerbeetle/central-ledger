@@ -12,6 +12,7 @@ import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../
 import { TestUtils } from '../../testing/testutils';
 import * as snapshots from './__snapshots__/handler.int.snapshots';
 import ParticipantAPIHandlerV2 from './HandlerV2';
+import ParticipantAPIHandlerV1 from './HandlerV1';
 
 type GetAccountResponseDTO = {
   changedDate: unknown,
@@ -69,6 +70,143 @@ describe('api/participants/handler', () => {
 
   after(async () => {
     await harnessApi.teardown()
+  })
+
+  describe('Hub', () => {
+    it('01 creates a new hub account for currency MWK', async () => {
+      // Arrange
+      const requestMultilateralSettlement = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          type: 'HUB_MULTILATERAL_SETTLEMENT',
+          currency: 'MWK'
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      const requestReconciliation = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          type: 'HUB_RECONCILIATION',
+          currency: 'MWK'
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act
+      const {
+        code: code1,
+        body: body1
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantAPIHandlerV1.createHubAccount(requestMultilateralSettlement, h))
+
+      const {
+        code: code2,
+        body: body2
+      } = await TestUtils.unwrapHapiResponse(h => ParticipantAPIHandlerV1.createHubAccount(requestReconciliation, h))
+
+      // Assert
+      assert.equal(code1, 201)
+      assert.equal(code2, 201)
+
+      unwrapSnapshot(checkSnapshotObject(body2, {
+        name: 'Hub',
+        id: 'http://central-ledger/participants/Hub',
+        "created:ignore": true,
+        isActive: 1,
+        links: {
+          self: 'http://central-ledger/participants/Hub'
+        },
+        accounts: [
+          {
+            createdBy: "unknown",
+            createdDate: null,
+            currency: "USD",
+            id: ':integer',
+            isActive: 1,
+            ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+          },
+          {
+            createdBy: "unknown",
+            createdDate: null,
+            currency: "USD",
+            id: ':integer',
+            isActive: 1,
+            ledgerAccountType: "HUB_RECONCILIATION"
+          },
+          {
+            createdBy: "unknown",
+            createdDate: null,
+            currency: "KES",
+            id: ':integer',
+            isActive: 1,
+            ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+          },
+          {
+            createdBy: "unknown",
+            createdDate: null,
+            currency: "KES",
+            id: ':integer',
+            isActive: 1,
+            ledgerAccountType: "HUB_RECONCILIATION"
+          },
+          {
+            createdBy: "unknown",
+            createdDate: null,
+            currency: "MWK",
+            id: ':integer',
+            isActive: 1,
+            ledgerAccountType: "HUB_MULTILATERAL_SETTLEMENT"
+          },
+          {
+            createdBy: "unknown",
+            createdDate: ':string',
+            currency: "MWK",
+            id: ':integer',
+            isActive: 1,
+            ledgerAccountType: "HUB_RECONCILIATION"
+          }
+        ],
+        isProxy: 0
+      }))
+    })
+
+    it('02 fails to create a new hub account for a currency that already exists', async () => {
+      // Arrange
+      const request = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          type: 'HUB_MULTILATERAL_SETTLEMENT',
+          currency: 'USD' // USD hub account already exists from provisioning
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act & Assert
+      try {
+        await TestUtils.unwrapHapiResponse(h => ParticipantAPIHandlerV1.createHubAccount(request, h))
+        throw new Error('Test failed - expected error to be thrown')
+      } catch (err) {
+        assert.equal(err.message, 'Hub account has already been registered.')
+      }
+    })
   })
 
   describe('Participants', () => {
