@@ -54,16 +54,17 @@ export class HarnessApi implements Harness {
   ) {
     this.harnessDatabase = new HarnessDatabase(config.databaseConfig)
     this.harnessTigerBeetle = new HarnessTigerBeetle(config.tigerBeetleConfig)
-    this.harnessMessageBus = new HarnessMessageBus(config.messageBusConfig)
+    // this.harnessMessageBus = new HarnessMessageBus(config.messageBusConfig)
   }
 
   public async start(): Promise<{ ledger: Ledger }> {
     logger.info('HarnessApi - start()')
     // Start the respective harnesses
-    const [dbConfig, tbConfig, messageBusConfig] = await Promise.all([
+    // const [dbConfig, tbConfig, messageBusConfig] = await Promise.all([
+    const [dbConfig, tbConfig] = await Promise.all([
       this.harnessDatabase.start(),
       this.harnessTigerBeetle.start(),
-      this.harnessMessageBus.start()
+      // this.harnessMessageBus.start()
     ])
 
     // Override database config to use the test container
@@ -80,7 +81,7 @@ export class HarnessApi implements Harness {
     };
 
     // Override Kafka config to use the test message bus
-    this.overrideKafkaBrokerConfig(messageBusConfig.brokerAddress);
+    // this.overrideKafkaBrokerConfig(messageBusConfig.brokerAddress);
 
     // Initialize database connection to test container
     await this.dbLib.connect(testDbConfig);
@@ -104,16 +105,16 @@ export class HarnessApi implements Harness {
     const provisioner = new Provisioner(provisionConfig, { ledger })
     await provisioner.run();
 
-    // Register the admin handler to consume ADMIN TRANSFER messages
-    logger.info('HarnessApi - registering admin handlers...');
-    const AdminHandlers = require('../../handlers/admin/handler');
-    await AdminHandlers.registerAllHandlers();
-    logger.info('HarnessApi - admin handlers registered successfully');
+    // // Register the admin handler to consume ADMIN TRANSFER messages
+    // logger.info('HarnessApi - registering admin handlers...');
+    // const AdminHandlers = require('../../handlers/admin/handler');
+    // await AdminHandlers.registerAllHandlers();
+    // logger.info('HarnessApi - admin handlers registered successfully');
 
-    // Give the consumer time to connect
-    logger.debug('HarnessApi - waiting for admin handler consumer to connect...');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    logger.debug('HarnessApi - admin handler consumer should be connected');
+    // // Give the consumer time to connect
+    // logger.debug('HarnessApi - waiting for admin handler consumer to connect...');
+    // await new Promise(resolve => setTimeout(resolve, 2000));
+    // logger.debug('HarnessApi - admin handler consumer should be connected');
 
     return {
       ledger
@@ -144,9 +145,9 @@ export class HarnessApi implements Harness {
       await this.harnessTigerBeetle.teardown()
     }
 
-    if (this.harnessMessageBus) {
-      await this.harnessMessageBus.teardown()
-    }
+    // if (this.harnessMessageBus) {
+    //   await this.harnessMessageBus.teardown()
+    // }
   }
 
   /**

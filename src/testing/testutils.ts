@@ -200,6 +200,30 @@ export class TestUtils {
     throw new Error(`No available ports found in range ${startPort}-${startPort + 99}`);
   }
 
+  public static async randomAvailablePort(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const server = createServer();
+      server.listen(0)
+      server.on('listening', () => {
+        try {
+          const address = server.address() as unknown as { port: number }
+          assert.equal(typeof address, 'object')
+          assert(address.port)
+
+          server.close(() => {
+            resolve(address.port);
+          });
+        } catch (err) {
+          reject(err)
+        }
+      })
+
+      server.on('error', (err) => {
+        reject(err)
+      });
+    });
+  }
+
   /**
    * Check if a port is available
    */
@@ -222,7 +246,7 @@ export class TestUtils {
   /**
    * @function unwrapHapiResponse
    */
-  public static async unwrapHapiResponse(asyncFunction: (reply: any) => Promise<unknown>): Promise<{body: any, code: number}> {
+  public static async unwrapHapiResponse(asyncFunction: (reply: any) => Promise<unknown>): Promise<{ body: any, code: number }> {
     let body
     let code
     const nestedReply = {
@@ -236,7 +260,7 @@ export class TestUtils {
       }
     }
     await asyncFunction(nestedReply)
-  
+
     return {
       body,
       code

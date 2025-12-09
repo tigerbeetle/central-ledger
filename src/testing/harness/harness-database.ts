@@ -65,7 +65,7 @@ export class HarnessDatabase implements Harness {
     const containerName = `cl-test-mysql-${Date.now()}`;
 
     // Find an available port starting from the configured port
-    const availablePort = await TestUtils.findAvailablePort(this.config.port);
+    const availablePort = await TestUtils.randomAvailablePort()
     logger.debug(`start() - using port: ${availablePort} for ${containerName}`)
     this.port = availablePort;
 
