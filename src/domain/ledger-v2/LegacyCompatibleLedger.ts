@@ -55,9 +55,10 @@ import {
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
+import Helper from './LegacyLedgerHelper';
 
 
-export enum PrepareDuplicateResult {
+enum PrepareDuplicateResult {
   /**
    * Transfer id is unique
    */
@@ -74,7 +75,7 @@ export enum PrepareDuplicateResult {
   DUPLICATED = 'DUPLICATED'
 }
 
-export enum FulfilDuplicateResult {
+enum FulfilDuplicateResult {
   /**
    * Message is unique
    */
@@ -111,10 +112,10 @@ export interface LegacyCompatibleLedgerDependencies {
       getAccounts: (name: string, query: { currency: string }) => Promise<Array<ParticipantServiceAccount>>
       getAll: () => Promise<Array<ParticipantServiceParticipant>>,
       getByName: (name: string) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string }>
-      getById: (id: number) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string  }>
+      getById: (id: number) => Promise<{ currencyList: ParticipantServiceCurrency[], participantId: number, name: string, isActive: number, createdDate: string }>
       getLimits: (name: string, query: { currency: string, type: string }) => Promise<Array<unknown>>
       getParticipantCurrencyById: (participantCurrencyId: number) => Promise<any>
-      update: (name: string, payload: {isActive: boolean}) => Promise<unknown>
+      update: (name: string, payload: { isActive: boolean }) => Promise<unknown>
       updateAccount: (payload: { isActive: boolean }, params: { name: string, id: number }, enums: any) => Promise<void>
       validateHubAccounts: (currency: string) => Promise<void>
       recordFundsInOut: (
@@ -251,6 +252,1037 @@ export interface LegacyCompatibleLedgerDependencies {
 export default class LegacyCompatibleLedger implements Ledger {
   constructor(private deps: LegacyCompatibleLedgerDependencies) { }
 
+
+
+  /**
+   * Onboarding/Lifecycle Management
+   */
+
+  public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
+    assert(cmd.currency)
+    assert(cmd.settlementModel)
+    assert(cmd.settlementModel.name)
+    assert(cmd.settlementModel.settlementGranularity)
+    assert(cmd.settlementModel.settlementInterchange)
+    assert(cmd.settlementModel.settlementDelay)
+    assert.equal(cmd.settlementModel.currency, cmd.currency)
+    assert(cmd.settlementModel.requireLiquidityCheck === true, 'createHubAccount - currently only allows settlements with liquidity checks enabled')
+    assert(cmd.settlementModel.ledgerAccountType)
+    assert(cmd.settlementModel.settlementAccountType)
+    assert(cmd.settlementModel.autoPositionReset === true || cmd.settlementModel.autoPositionReset === false)
+
+    // dummy to suit the `h` object the handlers expect
+    const mockCallback = {
+      response: (body: any) => {
+        return {
+          code: (code: number) => { }
+        }
+      }
+    }
+
+    try {
+      const requestMultilateralSettlement = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          type: 'HUB_MULTILATERAL_SETTLEMENT',
+          currency: cmd.currency
+        }
+      }
+      const requestHubReconcilation = {
+        params: {
+          name: 'Hub'
+        },
+        payload: {
+          type: 'HUB_RECONCILIATION',
+          currency: cmd.currency,
+        }
+      }
+      try {
+        await this.deps.lifecycle.participantsHandler.createHubAccount(requestMultilateralSettlement, mockCallback)
+        await this.deps.lifecycle.participantsHandler.createHubAccount(requestHubReconcilation, mockCallback)
+      } catch (err) {
+        // catch this early, since we can't know if the settlementModel has also already been created
+        if ((err as ErrorHandler.FSPIOPError).message === 'Hub account has already been registered.') {
+          logger.warn('createHubAccount', { error: err })
+        } else {
+          throw err
+        }
+      }
+
+      await this.deps.lifecycle.settlementModelDomain.createSettlementModel(cmd.settlementModel)
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      if (err.message === 'Settlement Model already exists') {
+        return {
+          type: 'ALREADY_EXISTS'
+        }
+      }
+
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  /**
+   * @description Create the dfsp accounts. Returns a duplicate response if any of the dfsp + 
+   *   currency combinations already exist.
+   */
+  public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
+    assert(cmd.dfspId)
+    assert(cmd.currencies)
+    assert(cmd.currencies.length > 0)
+    assert(cmd.currencies.length < 16, 'Cannot register more than 16 currencies for a DFSP')
+    assert(cmd.startingDeposits)
+    assert.equal(cmd.currencies.length, cmd.startingDeposits.length, 'Expected currencies and startingDeposits to have the same length')
+
+    try {
+      const participant = await this.deps.lifecycle.participantService.getByName(cmd.dfspId);
+
+      if (participant) {
+        // If any of the new currencies to be registered are already created, then return 'ALREADY_EXISTS'
+        const existingCurrencies = participant.currencyList.map(c => c.currencyId)
+        if (existingCurrencies.length === 0) {
+          throw new Error('no currencies found in participantService.getByName()')
+        }
+
+        const currencyAlreadyRegistered = existingCurrencies.reduce((acc, curr) => {
+          if (acc) {
+            return acc
+          }
+          if (cmd.currencies.indexOf(curr) > -1) {
+            return true
+          }
+        }, false)
+
+        if (currencyAlreadyRegistered) {
+          return {
+            type: 'ALREADY_EXISTS'
+          }
+        }
+        // All currencies are new, continue.
+      }
+
+      // Create participant and currency accounts directly.
+      for (const currency of cmd.currencies) {
+        await this.createParticipantWithCurrency(cmd.dfspId, currency);
+      }
+
+      // Set the initial limits
+      for (let i = 0; i < cmd.currencies.length; i++) {
+        const currency = cmd.currencies[i];
+        const startingDeposit = cmd.startingDeposits[i]
+        assert(currency)
+        assert(startingDeposit)
+        assert(startingDeposit >= 0)
+
+        // Get participant accounts to get the participantCurrencyIds needed by the facade
+        const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+          cmd.dfspId,
+          currency,
+          Enum.Accounts.LedgerAccountType.POSITION
+        );
+        assert(positionAccount)
+        const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+          cmd.dfspId,
+          currency,
+          Enum.Accounts.LedgerAccountType.SETTLEMENT
+        );
+        assert(settlementAccount)
+
+        const limitPayload = {
+          limit: {
+            type: 'NET_DEBIT_CAP',
+            value: startingDeposit,
+            thresholdAlarmPercentage: 10
+          },
+          initialPosition: 0
+        };
+
+        // Call facade directly to bypass Kafka messaging
+        await this.deps.lifecycle.participantFacade.addLimitAndInitialPosition(
+          positionAccount.participantCurrencyId,
+          settlementAccount.participantCurrencyId,
+          limitPayload,
+          true
+        );
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+
+    try {
+      const dfspId = cmd.dfspId
+      await this.deps.lifecycle.participantService.update(
+        dfspId, { isActive: false }
+      )
+
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  public async enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+
+    try {
+      const dfspId = cmd.dfspId
+      await this.deps.lifecycle.participantService.update(
+        dfspId, { isActive: true }
+      )
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(cmd.accountId)
+
+    try {
+      await this.deps.lifecycle.participantService.updateAccount(
+        { isActive: true },
+        { name: cmd.dfspId, id: cmd.accountId },
+        this.deps.lifecycle.enums
+      )
+
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  public async disableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(cmd.accountId)
+
+    try {
+      await this.deps.lifecycle.participantService.updateAccount(
+        { isActive: false },
+        { name: cmd.dfspId, id: cmd.accountId },
+        this.deps.lifecycle.enums
+      )
+
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  public async deposit(cmd: DepositCommand): Promise<DepositResponse> {
+    assert(cmd.amount)
+    assert(cmd.amount > 0, 'depositCollateral amount must be greater than 0')
+    assert(cmd.dfspId)
+    assert(cmd.currency)
+    assert(cmd.transferId)
+
+    try {
+      const enums = this.deps.lifecycle.enums
+
+      // Get both settlement and position accounts
+      const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.SETTLEMENT
+      );
+      assert(settlementAccount, 'Settlement account not found');
+
+      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+      assert(positionAccount, 'Position account not found');
+
+      // Create participantPosition and activate SETTLEMENT account if needed (BEFORE validation)
+      const existingSettlementPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', settlementAccount.participantCurrencyId)
+        .first();
+
+      if (!existingSettlementPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: settlementAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the settlement account so validation passes
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', settlementAccount.participantCurrencyId);
+      }
+
+      // Create participantPosition and activate POSITION account if needed
+      const existingPositionPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', positionAccount.participantCurrencyId)
+        .first();
+
+      if (!existingPositionPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: positionAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the position account
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', positionAccount.participantCurrencyId);
+      }
+
+      // Prepare payload for validation
+      const payload = {
+        action: Enum.Events.Event.Action.RECORD_FUNDS_IN,
+        reason: 'Deposit',
+        externalReference: `deposit-${cmd.dfspId}`,
+        amount: {
+          amount: cmd.amount.toString(),
+          currency: cmd.currency
+        }
+      };
+
+      // Call recordFundsInOut for validation (Kafka disabled)
+      const validationResult = await this.deps.lifecycle.participantService.recordFundsInOut(
+        payload,
+        { name: cmd.dfspId, id: settlementAccount.participantCurrencyId, transferId: cmd.transferId },
+        enums
+      );
+
+      // Use the validated account and payload
+      const { accountMatched, payload: validatedPayload } = validationResult;
+      validatedPayload.participantCurrencyId = accountMatched.participantCurrencyId;
+
+      const now = new Date()
+      const transactionTimestamp = Time.getUTCString(now)
+
+      // Save duplicate check record first (required by foreign key constraint)
+      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, validatedPayload);
+
+      // Call admin handler directly (bypassing Kafka)
+      await this.deps.lifecycle.adminHandler.createRecordFundsInOut(
+        validatedPayload,
+        transactionTimestamp,
+        enums
+      );
+
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  public async withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse> {
+    assert(cmd.amount)
+    assert(cmd.amount > 0, 'withdraw amount must be greater than 0')
+    assert(cmd.dfspId)
+    assert(cmd.currency)
+    assert(cmd.transferId)
+
+    try {
+      const enums = this.deps.lifecycle.enums
+
+      // Get both settlement and position accounts
+      const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.SETTLEMENT
+      );
+      assert(settlementAccount, 'Settlement account not found');
+
+      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        cmd.dfspId,
+        cmd.currency,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+      assert(positionAccount, 'Position account not found');
+
+      // Create participantPosition and activate SETTLEMENT account if needed (BEFORE validation)
+      const existingSettlementPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', settlementAccount.participantCurrencyId)
+        .first();
+
+      if (!existingSettlementPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: settlementAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the settlement account so validation passes
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', settlementAccount.participantCurrencyId);
+      }
+
+      // Create participantPosition and activate POSITION account if needed
+      const existingPositionPosition = await this.deps.knex('participantPosition')
+        .where('participantCurrencyId', positionAccount.participantCurrencyId)
+        .first();
+
+      if (!existingPositionPosition) {
+        await this.deps.knex('participantPosition').insert({
+          participantCurrencyId: positionAccount.participantCurrencyId,
+          value: 0,
+          reservedValue: 0
+        });
+
+        // Activate the position account
+        await this.deps.knex('participantCurrency')
+          .update({ isActive: 1 })
+          .where('participantCurrencyId', positionAccount.participantCurrencyId);
+      }
+
+      // Prepare payload for validation
+      const payload = {
+        action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_PREPARE_RESERVE,
+        reason: 'Withdrawal',
+        externalReference: `withdrawal-${cmd.dfspId}`,
+        amount: {
+          amount: cmd.amount.toString(),
+          currency: cmd.currency
+        }
+      };
+
+      // Call recordFundsInOut for validation (Kafka disabled)
+      const validationResult = await this.deps.lifecycle.participantService.recordFundsInOut(
+        payload,
+        { name: cmd.dfspId, id: settlementAccount.participantCurrencyId, transferId: cmd.transferId },
+        enums
+      );
+
+      // Use the validated account and payload
+      const { accountMatched, payload: validatedPayload } = validationResult;
+      validatedPayload.participantCurrencyId = accountMatched.participantCurrencyId;
+
+      const now = new Date()
+      const transactionTimestamp = Time.getUTCString(now)
+
+      // Save duplicate check record first (required by foreign key constraint)
+      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, validatedPayload);
+
+      // Call admin handler directly (bypassing Kafka)
+      await this.deps.lifecycle.adminHandler.createRecordFundsInOut(
+        validatedPayload,
+        transactionTimestamp,
+        enums
+      );
+
+      // Check if the withdrawal was aborted due to insufficient funds
+      const transferState = await this.deps.lifecycle.transferFacade.getTransferStateByTransferId(cmd.transferId)
+      if (transferState === 'ABORTED_REJECTED') {
+        // Get current balance for error message
+        const currentPosition = await this.deps.knex('participantPosition')
+          .join('participantCurrency', 'participantPosition.participantCurrencyId', 'participantCurrency.participantCurrencyId')
+          .where('participantCurrency.participantCurrencyId', accountMatched.participantCurrencyId)
+          .select('participantPosition.value')
+          .first();
+
+        return {
+          type: 'INSUFFICIENT_FUNDS',
+          availableBalance: Math.abs(currentPosition?.value || 0),
+          requestedAmount: cmd.amount
+        }
+      }
+
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  public async withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse> {
+    assert(cmd.transferId)
+
+    try {
+      const enums = this.deps.lifecycle.enums
+
+      const payload = {
+        transferId: cmd.transferId,
+        action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_COMMIT
+      } as any;
+
+      const now = new Date()
+      const transactionTimestamp = Time.getUTCString(now)
+
+      // Call admin handler directly (bypassing Kafka)
+      await this.deps.lifecycle.adminHandler.changeStatusOfRecordFundsOut(
+        payload,
+        cmd.transferId,
+        transactionTimestamp,
+        enums
+      );
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
+    const legacyQuery = { currency: query.currency }
+    try {
+      let accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
+      // ensure they are always ordered by id
+      accounts = accounts.toSorted((a, b) => a.id - b.id)
+
+      const formattedAccounts: Array<LegacyLedgerAccount> = []
+      accounts.forEach(account => {
+        // Map from the internal legacy participantService representation to 
+        // a compatible Ledger Interface
+        const formattedAccount: LegacyLedgerAccount = {
+          id: BigInt(account.id),
+          ledgerAccountType: account.ledgerAccountType,
+          currency: account.currency,
+          isActive: Boolean(account.isActive),
+          // TODO(LD): map the numbers!
+          value: safeStringToNumber(account.value),
+          reservedValue: safeStringToNumber(account.reservedValue),
+          changedDate: new Date(account.changedDate)
+        }
+        formattedAccounts.push(formattedAccount)
+      })
+
+      assert(formattedAccounts.length === accounts.length)
+
+      return {
+        type: 'SUCCESS',
+        accounts: formattedAccounts,
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  public async getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
+    try {
+      const participants = await this.deps.lifecycle.participantService.getByName('Hub')
+      const ledgerAccountTypes: Record<string, number> = this.deps.lifecycle.enums.ledgerAccountType
+      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
+        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
+        acc[ledgerAccountId] = ledgerAccountType
+        return acc
+      }, {})
+
+      const formattedAccounts: Array<LegacyLedgerAccount> = []
+      participants.currencyList.forEach(currency => {
+        const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
+        assert(ledgerAccountType)
+        const formattedAccount: LegacyLedgerAccount = {
+          id: BigInt(currency.participantCurrencyId),
+          ledgerAccountType,
+          currency: currency.currencyId,
+          isActive: Boolean(currency.isActive),
+          changedDate: new Date(currency.createdDate),
+          // These feel wrong to me - we should just return the value anyway
+          // but the getByName query doesn't look up account values.
+          value: 0,
+          reservedValue: 0,
+        }
+        formattedAccounts.push(formattedAccount)
+      })
+
+      return {
+        type: 'SUCCESS',
+        accounts: formattedAccounts,
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
+    try {
+      const participants = await this.deps.lifecycle.participantService.getAll()
+      const ledgerAccountTypes: Record<string, number> = this.deps.lifecycle.enums.ledgerAccountType
+      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
+        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
+        acc[ledgerAccountId] = ledgerAccountType
+        return acc
+      }, {})
+
+      const dfsps: Array<LedgerDfsp> = []
+      participants.forEach(participant => {
+        // Filter out the Hub accounts
+        if (participant.name === 'Hub') {
+          return
+        }
+
+        const formattedAccounts: Array<LegacyLedgerAccount> = []
+        participant.currencyList.forEach(currency => {
+          const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
+          assert(ledgerAccountType)
+          const formattedAccount: LegacyLedgerAccount = {
+            id: BigInt(currency.participantCurrencyId),
+            ledgerAccountType,
+            currency: currency.currencyId,
+            isActive: Boolean(currency.isActive),
+            changedDate: new Date(currency.createdDate),
+            // These feel wrong to me - we should just return the value anyway
+            // but the getByName query doesn't look up account values.
+            value: 0,
+            reservedValue: 0,
+          }
+          formattedAccounts.push(formattedAccount)
+        })
+
+        dfsps.push({
+          name: participant.name,
+          isActive: participant.isActive === 1,
+          created: undefined,
+          accounts: formattedAccounts
+        })
+      })
+
+      return Helper.queryResultSuccess({ dfsps })
+    } catch (err) {
+      return Helper.queryResultFailure(err)
+    }
+  }
+
+  // TODO: can we refactor all the mapping stuff to combine it with above?
+  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
+    try {
+      const participant = await this.deps.lifecycle.participantService.getByName(query.dfspId)
+      const ledgerAccountTypes: Record<string, number> = this.deps.lifecycle.enums.ledgerAccountType
+      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
+        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
+        acc[ledgerAccountId] = ledgerAccountType
+        return acc
+      }, {})
+
+      const formattedAccounts: Array<LegacyLedgerAccount> = []
+      participant.currencyList.forEach(currency => {
+        const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
+        assert(ledgerAccountType)
+        const formattedAccount: LegacyLedgerAccount = {
+          id: BigInt(currency.participantCurrencyId),
+          ledgerAccountType,
+          currency: currency.currencyId,
+          isActive: Boolean(currency.isActive),
+          changedDate: new Date(currency.createdDate),
+          // These feel wrong to me - we should just return the value anyway
+          // but the getByName query doesn't look up account values.
+          value: 0,
+          reservedValue: 0,
+        }
+        formattedAccounts.push(formattedAccount)
+      })
+
+      const dfsp: LedgerDfsp = {
+        name: participant.name,
+        isActive: participant.isActive === 1,
+        created: new Date(participant.createdDate),
+        accounts: formattedAccounts
+      }
+
+      return Helper.queryResultSuccess(dfsp)
+    } catch (err) {
+      return Helper.queryResultFailure(err)
+    }
+  }
+
+  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
+    const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP' }
+    try {
+      const result = await this.deps.lifecycle.participantService.getLimits(query.dfspId, legacyQuery)
+      if (result.length === 0) {
+        return {
+          type: 'FAILURE',
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
+          )
+        }
+      }
+
+      assert(result.length === 1)
+      const legacyLimit = result[0] as { value: string, thresholdAlarmPercentage: string }
+      assert(legacyLimit.value)
+      assert(legacyLimit.thresholdAlarmPercentage)
+      return {
+        type: 'SUCCESS',
+        limit: {
+          type: 'NET_DEBIT_CAP',
+          value: safeStringToNumber(legacyLimit.value),
+          alarmPercentage: safeStringToNumber(legacyLimit.thresholdAlarmPercentage)
+        }
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  /**
+   * Clearing Methods
+   */
+
+  public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
+    const { payload, transferId, headers } = input;
+    logger.debug(`prepare() - transferId: ${transferId}`)
+
+    const duplicateResult = await this.checkPrepareDuplicate(payload, transferId)
+    switch (duplicateResult) {
+      case PrepareDuplicateResult.DUPLICATED: {
+        const transfer = await this.deps.clearing.getTransferById(transferId)
+        assert(transfer.transferStateEnumeration)
+        const finalizedStates = [
+          Enum.Transfers.TransferState.COMMITTED,
+          Enum.Transfers.TransferState.ABORTED,
+          Enum.Transfers.TransferState.RESERVED
+        ].map(e => e.toString())
+
+        if (finalizedStates.includes(transfer.transferStateEnumeration)) {
+          const payload = this.deps.clearing.transformTransferToFulfil(transfer, false)
+          return {
+            type: PrepareResultType.DUPLICATE_FINAL,
+            finalizedTransfer: payload,
+          }
+        }
+
+        return {
+          type: PrepareResultType.DUPLICATE_NON_FINAL
+        }
+      }
+      case PrepareDuplicateResult.MODIFIED: {
+        return {
+          type: PrepareResultType.MODIFIED
+        }
+      }
+      case PrepareDuplicateResult.UNIQUE:
+      default: { }
+    }
+
+    // Validate participants and their currency accounts
+    const participantValidation = await this.validateParticipants(payload)
+    if (!participantValidation.validationPassed) {
+      return {
+        type: PrepareResultType.FAIL_VALIDATION,
+        failureReasons: participantValidation.reasons
+      };
+    }
+
+    // Save the transfer, even if it's invalid
+    const transferValidationResult = await this.validateTransfer(payload, headers)
+    await this.saveTransfer(payload, transferValidationResult)
+
+    if (!transferValidationResult.validationPassed) {
+      return {
+        type: PrepareResultType.FAIL_VALIDATION,
+        failureReasons: transferValidationResult.reasons,
+      }
+    }
+
+    // TODO(LD): this is really ugly, but the original method needs a lot of kafka context,
+    // so for compatibility we are going to keep it this way for now.
+    //
+    // Ideally we would refactor the positions to not require all of this Kafka context
+    const messageContext = LegacyCompatibleLedger.extractMessageContext(input);
+    const { preparedMessagesList } = await this.calculatePreparePositions(payload, messageContext)
+    assert(Array.isArray(preparedMessagesList))
+    assert(preparedMessagesList.length === 1)
+
+    // Process the prepared messages results
+    const prepareMessage: PreparedMessage = preparedMessagesList[0];
+    const { transferState, fspiopError } = prepareMessage;
+
+    if (transferState.transferStateId !== Enum.Transfers.TransferState.RESERVED) {
+      logger.info(`prepare() - Position prepare failed - insufficient liquidity for transfer: ${transferId}`);
+
+      return {
+        type: PrepareResultType.FAIL_LIQUIDITY,
+        error: fspiopError
+      }
+    }
+
+    logger.debug(`prepare() - Position prepare successful - funds reserved for transfer: ${transferId}`);
+    return {
+      type: PrepareResultType.PASS
+    }
+  }
+
+  public async fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
+    const { payload, transferId, headers } = input;
+    logger.debug(`fulfil() - transferId: ${transferId}`)
+
+    // Handle ABORT action separately
+    if (input.action === Enum.Events.Event.Action.ABORT) {
+      return await this.handleAbort(input);
+    }
+
+    try {
+      // TODO(LD): we changed the order of processing here to include the condition
+      // which might change some of the error messages
+      await this.validateFulfilMessage(input)
+    } catch (err) {
+      return {
+        type: FulfilResultType.FAIL_VALIDATION,
+        error: err
+      }
+    }
+
+    const duplicateResult = await this.checkFulfilDuplicate(payload, transferId)
+    switch (duplicateResult) {
+      case FulfilDuplicateResult.DUPLICATED: {
+        return {
+          type: FulfilResultType.DUPLICATE_FINAL
+        }
+      }
+      case FulfilDuplicateResult.MODIFIED: {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST,
+            'Transfer fulfil has been modified'
+          ),
+        }
+      }
+      case FulfilDuplicateResult.UNIQUE:
+      default: { }
+    }
+
+    // save the fulfil response
+    await this.deps.clearing.handlePayeeResponse(transferId, payload, input.action);
+
+    // Update the positions
+    logger.info(`Processing position commit for transfer: ${transferId}`);
+    try {
+      // Get transfer info to change position for PAYEE
+      const transferInfo = await this.deps.clearing.getTransferInfoToChangePosition(
+        transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      // Get participant currency info
+      const participantCurrency = await this.deps.clearing.getByIDAndCurrency(
+        transferInfo.participantId,
+        transferInfo.currencyId,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // Validate transfer state - must be RECEIVED_FULFIL
+      if (transferInfo.transferStateId !== Enum.Transfers.TransferInternalState.RECEIVED_FULFIL) {
+        const expectedState = Enum.Transfers.TransferInternalState.RECEIVED_FULFIL;
+        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Invalid State: ${transferInfo.transferStateId} - expected: ${expectedState}`
+        );
+
+        logger.error(`Position commit validation failed - invalid state for transfer: ${transferId}`, {
+          currentState: transferInfo.transferStateId,
+          expectedState
+        });
+
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: fspiopError
+        }
+      }
+
+      logger.info(`Position commit validation passed for transfer: ${transferId}`);
+
+      // Change participant position (not a reversal for commit)
+      const isReversal = false;
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferState.COMMITTED
+      };
+
+      await this.deps.clearing.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      logger.info(`Position commit processed successfully for transfer: ${transferId}`, {
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount
+      });
+
+      return {
+        type: FulfilResultType.PASS
+      }
+
+    } catch (error) {
+      logger.error(`Position commit failed for transfer: ${transferId}`, { error: error.message });
+      return {
+        type: FulfilResultType.FAIL_OTHER,
+        error: error
+      }
+    }
+  }
+
+  /**
+   * Handle abort/error message for a transfer
+   * This reverses the position changes made during prepare
+   */
+  private async handleAbort(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
+    const { payload, transferId } = input;
+    logger.debug(`handleAbort() - transferId: ${transferId}`)
+
+    // Basic validation - ensure sender exists
+    try {
+      assert(input)
+      assert(input.message)
+      assert(input.message.value)
+      assert(input.message.value.from)
+      assert(payload)
+
+      const { message: { value: { from } } } = input;
+      if (!await this.deps.clearing.validateParticipantByName(from)) {
+        return {
+          type: FulfilResultType.FAIL_VALIDATION,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            'Participant not found'
+          )
+        }
+      }
+
+      // Check for duplicate abort messages
+      const duplicateResult = await this.checkAbortDuplicate(payload, transferId);
+      switch (duplicateResult) {
+        case FulfilDuplicateResult.DUPLICATED: {
+          return {
+            type: FulfilResultType.DUPLICATE_FINAL
+          }
+        }
+        case FulfilDuplicateResult.MODIFIED: {
+          return {
+            type: FulfilResultType.FAIL_OTHER,
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST,
+              'Transfer abort has been modified'
+            ),
+          }
+        }
+        case FulfilDuplicateResult.UNIQUE:
+        default: { }
+      }
+
+      // Extract and validate error information from payload
+      let error: ErrorHandler.FSPIOPError;
+      const errorInfo = (payload as any).errorInformation;
+      if (!errorInfo) {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            'missing error information in callback'
+          ),
+        }
+      }
+      error = ErrorHandler.Factory.createFSPIOPErrorFromErrorInformation(errorInfo);
+
+      // Save the abort response
+      await this.deps.clearing.handlePayeeResponse(
+        transferId,
+        payload,
+        input.action,
+        error.toApiErrorObject(this.deps.config.ERROR_HANDLING)
+      );
+
+      // Process position abort (reversal)
+      logger.info(`Processing position reversal for transfer: ${transferId}`);
+      // Get transfer info to change position for PAYER (we're reversing the prepare)
+      const transferInfo = await this.deps.clearing.getTransferInfoToChangePosition(
+        transferId,
+        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
+        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
+      );
+
+      // Get participant currency info for payer
+      const participantCurrency = await this.deps.clearing.getByIDAndCurrency(
+        transferInfo.participantId,
+        transferInfo.currencyId,
+        Enum.Accounts.LedgerAccountType.POSITION
+      );
+
+      // Validate transfer state - must be in a reserved state to abort
+      const validAbortStates = [
+        Enum.Transfers.TransferInternalState.RESERVED,
+        Enum.Transfers.TransferInternalState.RESERVED_FORWARDED,
+        Enum.Transfers.TransferInternalState.RECEIVED_ERROR
+      ];
+
+      if (!validAbortStates.includes(transferInfo.transferStateId)) {
+        const error = ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Invalid State for abort: ${transferInfo.transferStateId}`
+        );
+
+        logger.error(`Position abort validation failed - invalid state for transfer: ${transferId}`, {
+          currentState: transferInfo.transferStateId,
+          validStates: validAbortStates
+        });
+
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error
+        }
+      }
+
+      logger.info(`Position abort validation passed for transfer: ${transferId}`);
+
+      // Change participant position (IS a reversal for abort - releases reserved funds)
+      const isReversal = true;
+      const transferStateChange = {
+        transferId: transferInfo.transferId,
+        transferStateId: Enum.Transfers.TransferInternalState.ABORTED_ERROR
+      };
+
+      await this.deps.clearing.changeParticipantPosition(
+        participantCurrency.participantCurrencyId,
+        isReversal,
+        transferInfo.amount,
+        transferStateChange
+      );
+
+      logger.info(`Position abort processed successfully for transfer: ${transferId}`, {
+        participantCurrencyId: participantCurrency.participantCurrencyId,
+        amount: transferInfo.amount
+      });
+
+      return {
+        type: FulfilResultType.PASS
+      }
+
+    } catch (err) {
+      return {
+        type: FulfilResultType.FAIL_OTHER,
+        error: err
+      }
+    }
+  }
+
   async sweepTimedOut(): Promise<SweepResult> {
     try {
       // Get timeout segments
@@ -361,1129 +1393,6 @@ export default class LegacyCompatibleLedger implements Ledger {
     }
   }
 
-  /**
-   * Onboarding/Lifecycle Management
-   */
-
-  public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
-    assert(cmd.currency)
-    assert(cmd.settlementModel)
-    assert(cmd.settlementModel.name)
-    assert(cmd.settlementModel.settlementGranularity)
-    assert(cmd.settlementModel.settlementInterchange)
-    assert(cmd.settlementModel.settlementDelay)
-    assert.equal(cmd.settlementModel.currency, cmd.currency)
-    assert(cmd.settlementModel.requireLiquidityCheck === true, 'createHubAccount - currently only allows settlements with liquidity checks enabled')
-    assert(cmd.settlementModel.ledgerAccountType)
-    assert(cmd.settlementModel.settlementAccountType)
-    assert(cmd.settlementModel.autoPositionReset === true || cmd.settlementModel.autoPositionReset === false)
-
-    // dummy to suit the `h` object the handlers expect
-    const mockCallback = {
-      response: (body: any) => {
-        return {
-          code: (code: number) => { }
-        }
-      }
-    }
-
-    try {
-      const requestMultilateralSettlement = {
-        params: {
-          name: 'Hub'
-        },
-        payload: {
-          type: 'HUB_MULTILATERAL_SETTLEMENT',
-          currency: cmd.currency
-        }
-      }
-      const requestHubReconcilation = {
-        params: {
-          name: 'Hub'
-        },
-        payload: {
-          type: 'HUB_RECONCILIATION',
-          currency: cmd.currency,
-        }
-      }
-      try {
-        await this.deps.lifecycle.participantsHandler.createHubAccount(requestMultilateralSettlement, mockCallback)
-        await this.deps.lifecycle.participantsHandler.createHubAccount(requestHubReconcilation, mockCallback)
-      } catch (err) {
-        // catch this early, since we can't know if the settlementModel has also already been created
-        if ((err as ErrorHandler.FSPIOPError).message === 'Hub account has already been registered.') {
-          logger.warn('createHubAccount', { error: err })
-        } else {
-          throw err
-        }
-      }
-
-      await this.deps.lifecycle.settlementModelDomain.createSettlementModel(cmd.settlementModel)
-      return {
-        type: 'SUCCESS'
-      }
-    } catch (err) {
-      if (err.message === 'Settlement Model already exists') {
-        return {
-          type: 'ALREADY_EXISTS'
-        }
-      }
-
-      return {
-        type: 'FAILURE',
-        error: err
-      }
-    }
-  }
-
-  /**
-   * @description Create the dfsp accounts. Returns a duplicate response if any of the dfsp + 
-   *   currency combinations already exist.
-   */
-  public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
-    assert(cmd.dfspId)
-    assert(cmd.currencies)
-    assert(cmd.currencies.length > 0)
-    assert(cmd.currencies.length < 16, 'Cannot register more than 16 currencies for a DFSP')
-    assert(cmd.startingDeposits)
-    assert.equal(cmd.currencies.length, cmd.startingDeposits.length, 'Expected currencies and startingDeposits to have the same length')
-
-    try {
-      const participant = await this.deps.lifecycle.participantService.getByName(cmd.dfspId);
-
-      if (participant) {
-        // If any of the new currencies to be registered are already created, then return 'ALREADY_EXISTS'
-        const existingCurrencies = participant.currencyList.map(c => c.currencyId)
-        if (existingCurrencies.length === 0) {
-          throw new Error('no currencies found in participantService.getByName()')
-        }
-
-        const currencyAlreadyRegistered = existingCurrencies.reduce((acc, curr) => {
-          if (acc) {
-            return acc
-          }
-          if (cmd.currencies.indexOf(curr) > -1) {
-            return true
-          }
-        }, false)
-
-        if (currencyAlreadyRegistered) {
-          return {
-            type: 'ALREADY_EXISTS'
-          }
-        }
-        // All currencies are new, continue.
-      }
-
-      // Create participant and currency accounts directly.
-      for (const currency of cmd.currencies) {
-        await this.createParticipantWithCurrency(cmd.dfspId, currency);
-      }
-
-      // Set the initial limits
-      for (let i = 0; i < cmd.currencies.length; i++) {
-        const currency = cmd.currencies[i];
-        const startingDeposit = cmd.startingDeposits[i]
-        assert(currency)
-        assert(startingDeposit)
-        assert(startingDeposit >= 0)
-
-        // Get participant accounts to get the participantCurrencyIds needed by the facade
-        const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
-          cmd.dfspId,
-          currency,
-          Enum.Accounts.LedgerAccountType.POSITION
-        );
-        assert(positionAccount)
-        const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
-          cmd.dfspId,
-          currency,
-          Enum.Accounts.LedgerAccountType.SETTLEMENT
-        );
-        assert(settlementAccount)
-
-        const limitPayload = {
-          limit: {
-            type: 'NET_DEBIT_CAP',
-            value: startingDeposit,
-            thresholdAlarmPercentage: 10
-          },
-          initialPosition: 0
-        };
-
-        // Call facade directly to bypass Kafka messaging
-        await this.deps.lifecycle.participantFacade.addLimitAndInitialPosition(
-          positionAccount.participantCurrencyId,
-          settlementAccount.participantCurrencyId,
-          limitPayload,
-          true
-        );
-      }
-
-      return {
-        type: 'SUCCESS'
-      }
-
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        error: err
-      }
-    }
-  }
-
-  public async disableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
-    assert(cmd)
-    assert(cmd.dfspId)
-
-    try {
-      const dfspId = cmd.dfspId
-      await this.deps.lifecycle.participantService.update(
-        dfspId, {isActive: false}
-      )
-
-      return {
-        type: 'SUCCESS',
-        result: undefined
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  public async enableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
-    assert(cmd)
-    assert(cmd.dfspId)
-
-    try {
-      const dfspId = cmd.dfspId
-      await this.deps.lifecycle.participantService.update(
-        dfspId, {isActive: true}
-      )
-
-      return {
-        type: 'SUCCESS',
-        result: undefined
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
-    assert(cmd)
-    assert(cmd.dfspId)
-    assert(cmd.accountId)
-
-    try {
-      await this.deps.lifecycle.participantService.updateAccount(
-        { isActive: true },
-        { name: cmd.dfspId, id: cmd.accountId },
-        this.deps.lifecycle.enums
-      )
-
-      return {
-        type: 'SUCCESS',
-        result: undefined
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  public async disableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
-    assert(cmd)
-    assert(cmd.dfspId)
-    assert(cmd.accountId)
-
-    try {
-      await this.deps.lifecycle.participantService.updateAccount(
-        { isActive: false },
-        { name: cmd.dfspId, id: cmd.accountId },
-        this.deps.lifecycle.enums
-      )
-
-      return {
-        type: 'SUCCESS',
-        result: undefined
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  public async deposit(cmd: DepositCommand): Promise<DepositResponse> {
-    assert(cmd.amount)
-    assert(cmd.amount > 0, 'depositCollateral amount must be greater than 0')
-    assert(cmd.dfspId)
-    assert(cmd.currency)
-    assert(cmd.transferId)
-
-    try {
-      const enums = await require('../../lib/enumCached').getEnums('all')
-
-      // Get both settlement and position accounts
-      const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
-        cmd.dfspId,
-        cmd.currency,
-        Enum.Accounts.LedgerAccountType.SETTLEMENT
-      );
-      assert(settlementAccount, 'Settlement account not found');
-
-      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
-        cmd.dfspId,
-        cmd.currency,
-        Enum.Accounts.LedgerAccountType.POSITION
-      );
-      assert(positionAccount, 'Position account not found');
-
-      // Create participantPosition and activate SETTLEMENT account if needed (BEFORE validation)
-      const existingSettlementPosition = await this.deps.knex('participantPosition')
-        .where('participantCurrencyId', settlementAccount.participantCurrencyId)
-        .first();
-
-      if (!existingSettlementPosition) {
-        await this.deps.knex('participantPosition').insert({
-          participantCurrencyId: settlementAccount.participantCurrencyId,
-          value: 0,
-          reservedValue: 0
-        });
-
-        // Activate the settlement account so validation passes
-        await this.deps.knex('participantCurrency')
-          .update({ isActive: 1 })
-          .where('participantCurrencyId', settlementAccount.participantCurrencyId);
-      }
-
-      // Create participantPosition and activate POSITION account if needed
-      const existingPositionPosition = await this.deps.knex('participantPosition')
-        .where('participantCurrencyId', positionAccount.participantCurrencyId)
-        .first();
-
-      if (!existingPositionPosition) {
-        await this.deps.knex('participantPosition').insert({
-          participantCurrencyId: positionAccount.participantCurrencyId,
-          value: 0,
-          reservedValue: 0
-        });
-
-        // Activate the position account
-        await this.deps.knex('participantCurrency')
-          .update({ isActive: 1 })
-          .where('participantCurrencyId', positionAccount.participantCurrencyId);
-      }
-
-      // Prepare payload for validation
-      const payload = {
-        action: Enum.Events.Event.Action.RECORD_FUNDS_IN,
-        reason: 'Deposit',
-        externalReference: `deposit-${cmd.dfspId}`,
-        amount: {
-          amount: cmd.amount.toString(),
-          currency: cmd.currency
-        }
-      };
-
-      // Call recordFundsInOut for validation (Kafka disabled)
-      const validationResult = await this.deps.lifecycle.participantService.recordFundsInOut(
-        payload,
-        { name: cmd.dfspId, id: settlementAccount.participantCurrencyId, transferId: cmd.transferId },
-        enums
-      );
-
-      // Use the validated account and payload
-      const { accountMatched, payload: validatedPayload } = validationResult;
-      validatedPayload.participantCurrencyId = accountMatched.participantCurrencyId;
-
-      const now = new Date()
-      const transactionTimestamp = Time.getUTCString(now)
-
-      // Save duplicate check record first (required by foreign key constraint)
-      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, validatedPayload);
-
-      // Call admin handler directly (bypassing Kafka)
-      await this.deps.lifecycle.adminHandler.createRecordFundsInOut(
-        validatedPayload,
-        transactionTimestamp,
-        enums
-      );
-
-      return {
-        type: 'SUCCESS'
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        error: err
-      }
-    }
-  }
-
-  public async withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse> {
-    assert(cmd.amount)
-    assert(cmd.amount > 0, 'withdraw amount must be greater than 0')
-    assert(cmd.dfspId)
-    assert(cmd.currency)
-    assert(cmd.transferId)
-
-    try {
-      const enums = await require('../../lib/enumCached').getEnums('all')
-
-      // Get both settlement and position accounts
-      const settlementAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
-        cmd.dfspId,
-        cmd.currency,
-        Enum.Accounts.LedgerAccountType.SETTLEMENT
-      );
-      assert(settlementAccount, 'Settlement account not found');
-
-      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
-        cmd.dfspId,
-        cmd.currency,
-        Enum.Accounts.LedgerAccountType.POSITION
-      );
-      assert(positionAccount, 'Position account not found');
-
-      // Create participantPosition and activate SETTLEMENT account if needed (BEFORE validation)
-      const existingSettlementPosition = await this.deps.knex('participantPosition')
-        .where('participantCurrencyId', settlementAccount.participantCurrencyId)
-        .first();
-
-      if (!existingSettlementPosition) {
-        await this.deps.knex('participantPosition').insert({
-          participantCurrencyId: settlementAccount.participantCurrencyId,
-          value: 0,
-          reservedValue: 0
-        });
-
-        // Activate the settlement account so validation passes
-        await this.deps.knex('participantCurrency')
-          .update({ isActive: 1 })
-          .where('participantCurrencyId', settlementAccount.participantCurrencyId);
-      }
-
-      // Create participantPosition and activate POSITION account if needed
-      const existingPositionPosition = await this.deps.knex('participantPosition')
-        .where('participantCurrencyId', positionAccount.participantCurrencyId)
-        .first();
-
-      if (!existingPositionPosition) {
-        await this.deps.knex('participantPosition').insert({
-          participantCurrencyId: positionAccount.participantCurrencyId,
-          value: 0,
-          reservedValue: 0
-        });
-
-        // Activate the position account
-        await this.deps.knex('participantCurrency')
-          .update({ isActive: 1 })
-          .where('participantCurrencyId', positionAccount.participantCurrencyId);
-      }
-
-      // Prepare payload for validation
-      const payload = {
-        action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_PREPARE_RESERVE,
-        reason: 'Withdrawal',
-        externalReference: `withdrawal-${cmd.dfspId}`,
-        amount: {
-          amount: cmd.amount.toString(),
-          currency: cmd.currency
-        }
-      };
-
-      // Call recordFundsInOut for validation (Kafka disabled)
-      const validationResult = await this.deps.lifecycle.participantService.recordFundsInOut(
-        payload,
-        { name: cmd.dfspId, id: settlementAccount.participantCurrencyId, transferId: cmd.transferId },
-        enums
-      );
-
-      // Use the validated account and payload
-      const { accountMatched, payload: validatedPayload } = validationResult;
-      validatedPayload.participantCurrencyId = accountMatched.participantCurrencyId;
-
-      const now = new Date()
-      const transactionTimestamp = Time.getUTCString(now)
-
-      // Save duplicate check record first (required by foreign key constraint)
-      await this.deps.lifecycle.transferService.saveTransferDuplicateCheck(cmd.transferId, validatedPayload);
-
-      // Call admin handler directly (bypassing Kafka)
-      await this.deps.lifecycle.adminHandler.createRecordFundsInOut(
-        validatedPayload,
-        transactionTimestamp,
-        enums
-      );
-
-      // Check if the withdrawal was aborted due to insufficient funds
-      const transferState = await this.deps.lifecycle.transferFacade.getTransferStateByTransferId(cmd.transferId)
-      if (transferState === 'ABORTED_REJECTED') {
-        // Get current balance for error message
-        const currentPosition = await this.deps.knex('participantPosition')
-          .join('participantCurrency', 'participantPosition.participantCurrencyId', 'participantCurrency.participantCurrencyId')
-          .where('participantCurrency.participantCurrencyId', accountMatched.participantCurrencyId)
-          .select('participantPosition.value')
-          .first();
-
-        return {
-          type: 'INSUFFICIENT_FUNDS',
-          availableBalance: Math.abs(currentPosition?.value || 0),
-          requestedAmount: cmd.amount
-        }
-      }
-
-      return {
-        type: 'SUCCESS'
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        error: err
-      }
-    }
-  }
-
-  public async withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse> {
-    assert(cmd.transferId)
-
-    try {
-      const enums = await require('../../lib/enumCached').getEnums('all')
-
-      const payload = {
-        transferId: cmd.transferId,
-        action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_COMMIT
-      } as any;
-
-      const now = new Date()
-      const transactionTimestamp = Time.getUTCString(now)
-
-      // Call admin handler directly (bypassing Kafka)
-      await this.deps.lifecycle.adminHandler.changeStatusOfRecordFundsOut(
-        payload,
-        cmd.transferId,
-        transactionTimestamp,
-        enums
-      );
-
-      return {
-        type: 'SUCCESS'
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        error: err
-      }
-    }
-  }
-
-  public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
-    const legacyQuery = { currency: query.currency }
-    try {
-      let accounts = await this.deps.lifecycle.participantService.getAccounts(query.dfspId, legacyQuery)
-      // ensure they are always ordered by id
-      accounts = accounts.toSorted((a, b) =>  a.id - b.id)
-
-      const formattedAccounts: Array<LegacyLedgerAccount> = []
-      accounts.forEach(account => {
-        // Map from the internal legacy participantService representation to 
-        // a compatible Ledger Interface
-        const formattedAccount: LegacyLedgerAccount = {
-          id: BigInt(account.id),
-          ledgerAccountType: account.ledgerAccountType,
-          currency: account.currency,
-          isActive: Boolean(account.isActive),
-          // TODO(LD): map the numbers!
-          value: safeStringToNumber(account.value),
-          reservedValue: safeStringToNumber(account.reservedValue),
-          changedDate: new Date(account.changedDate)
-        }
-        formattedAccounts.push(formattedAccount)
-      })
-      
-      assert(formattedAccounts.length === accounts.length)
-
-      return {
-        type: 'SUCCESS',
-        accounts: formattedAccounts,
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  public async getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
-    // TODO(LD): inject as dependency!
-    const Enums = require('../../lib/enumCached')
-
-    try {
-      const participants = await this.deps.lifecycle.participantService.getByName('Hub')
-      const ledgerAccountTypes: Record<string, number> = await Enums.getEnums('ledgerAccountType')
-      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
-        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
-        acc[ledgerAccountId] = ledgerAccountType
-        return acc
-      }, {})
-
-      const formattedAccounts: Array<LegacyLedgerAccount> = []
-      participants.currencyList.forEach(currency => {
-        const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
-        assert(ledgerAccountType)
-        const formattedAccount: LegacyLedgerAccount = {
-          id: BigInt(currency.participantCurrencyId),
-          ledgerAccountType,
-          currency: currency.currencyId,
-          isActive: Boolean(currency.isActive),
-          changedDate: new Date(currency.createdDate),
-          // These feel wrong to me - we should just return the value anyway
-          // but the getByName query doesn't look up account values.
-          value: 0,
-          reservedValue: 0,
-        }
-        formattedAccounts.push(formattedAccount)
-      })
-
-      return {
-        type: 'SUCCESS',
-        accounts: formattedAccounts,
-      }
-
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
-    // TODO(LD): inject as dependency!
-    const Enums = require('../../lib/enumCached')
-
-    try {
-      const participants = await this.deps.lifecycle.participantService.getAll()
-      const ledgerAccountTypes: Record<string, number> = await Enums.getEnums('ledgerAccountType')
-      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
-        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
-        acc[ledgerAccountId] = ledgerAccountType
-        return acc
-      }, {})
-
-      const dfsps: Array<LedgerDfsp> = []
-      participants.forEach(participant => {
-        // Filter out the Hub accounts
-        if (participant.name === 'Hub') {
-          return
-        }
-
-        const formattedAccounts: Array<LegacyLedgerAccount> = []
-        participant.currencyList.forEach(currency => {
-          const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
-          assert(ledgerAccountType)
-          const formattedAccount: LegacyLedgerAccount = {
-            id: BigInt(currency.participantCurrencyId),
-            ledgerAccountType,
-            currency: currency.currencyId,
-            isActive: Boolean(currency.isActive),
-            changedDate: new Date(currency.createdDate),
-            // These feel wrong to me - we should just return the value anyway
-            // but the getByName query doesn't look up account values.
-            value: 0,
-            reservedValue: 0,
-          }
-          formattedAccounts.push(formattedAccount)
-        })
-
-        dfsps.push({
-          name: participant.name,
-          isActive: participant.isActive === 1,
-          created: undefined,
-          accounts: formattedAccounts
-        })
-      })
-
-      return {
-        type: 'SUCCESS',
-        result: {
-          dfsps
-        }
-      }
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  // TODO: can we refactor all the mapping stuff to combine it with above?
-  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
-    // TODO(LD): inject as dependency!
-    const Enums = require('../../lib/enumCached')
-
-    try {
-      const participant = await this.deps.lifecycle.participantService.getByName(query.dfspId)
-      const ledgerAccountTypes: Record<string, number> = await Enums.getEnums('ledgerAccountType')
-      const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
-        const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
-        acc[ledgerAccountId] = ledgerAccountType
-        return acc
-      }, {})
-
-      const formattedAccounts: Array<LegacyLedgerAccount> = []
-      participant.currencyList.forEach(currency => {
-        const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
-        assert(ledgerAccountType)
-        const formattedAccount: LegacyLedgerAccount = {
-          id: BigInt(currency.participantCurrencyId),
-          ledgerAccountType,
-          currency: currency.currencyId,
-          isActive: Boolean(currency.isActive),
-          changedDate: new Date(currency.createdDate),
-          // These feel wrong to me - we should just return the value anyway
-          // but the getByName query doesn't look up account values.
-          value: 0,
-          reservedValue: 0,
-        }
-        formattedAccounts.push(formattedAccount)
-      })
-
-      const dfsp: LedgerDfsp = {
-        name: participant.name,
-        isActive: participant.isActive === 1,
-        created: new Date(participant.createdDate),
-        accounts: formattedAccounts
-      }
-
-      return {
-        type: 'SUCCESS',
-        result: dfsp
-      }
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-  }
-
-  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
-    const legacyQuery = { currency: query.currency, type: 'NET_DEBIT_CAP' }
-    try {
-      const result = await this.deps.lifecycle.participantService.getLimits(query.dfspId, legacyQuery)
-      if (result.length === 0) {
-        return {
-          type: 'FAILURE',
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-              `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
-          )
-
-        }
-      }
-
-      assert(result.length === 1)
-      const legacyLimit = result[0] as { value: string, thresholdAlarmPercentage: string }
-      assert(legacyLimit.value)
-      assert(legacyLimit.thresholdAlarmPercentage)
-      return {
-        type: 'SUCCESS',
-        limit: {
-          type: 'NET_DEBIT_CAP',
-          value: safeStringToNumber(legacyLimit.value),
-          alarmPercentage: safeStringToNumber(legacyLimit.thresholdAlarmPercentage)
-        }
-      }
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        fspiopError: err
-      }
-    }
-
-
-    // const result = await ParticipantService.getLimits(request.params.name, request.query)
-    // const limits = []
-    // if (Array.isArray(result) && result.length > 0) {
-    //   result.forEach(item => {
-    //     limits.push({
-    //       currency: (item.currencyId || request.query.currency),
-    //       limit: {
-    //         type: item.name,
-    //         value: new MLNumber(item.value).toNumber(),
-    //         alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
-    //       }
-    //     })
-    //   })
-    // }
-    // return limits
-  }
-
-  /**
-   * Clearing Methods
-   */
-
-  public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
-    const { payload, transferId, headers } = input;
-    logger.debug(`prepare() - transferId: ${transferId}`)
-
-    const duplicateResult = await this.checkPrepareDuplicate(payload, transferId)
-    switch (duplicateResult) {
-      case PrepareDuplicateResult.DUPLICATED: {
-        const transfer = await this.deps.clearing.getTransferById(transferId)
-        assert(transfer.transferStateEnumeration)
-        const finalizedStates = [
-          Enum.Transfers.TransferState.COMMITTED,
-          Enum.Transfers.TransferState.ABORTED,
-          Enum.Transfers.TransferState.RESERVED
-        ].map(e => e.toString())
-
-        if (finalizedStates.includes(transfer.transferStateEnumeration)) {
-          const payload = this.deps.clearing.transformTransferToFulfil(transfer, false)
-          return {
-            type: PrepareResultType.DUPLICATE_FINAL,
-            finalizedTransfer: payload,
-          }
-        }
-
-        return {
-          type: PrepareResultType.DUPLICATE_NON_FINAL
-        }
-      }
-      case PrepareDuplicateResult.MODIFIED: {
-        return {
-          type: PrepareResultType.MODIFIED
-        }
-      }
-      case PrepareDuplicateResult.UNIQUE:
-      default: { }
-    }
-
-    // Validate participants and their currency accounts
-    const participantValidation = await this.validateParticipants(payload)
-    if (!participantValidation.validationPassed) {
-      return {
-        type: PrepareResultType.FAIL_VALIDATION,
-        failureReasons: participantValidation.reasons
-      };
-    }
-
-    // Save the transfer, even if it's invalid
-    const transferValidationResult = await this.validateTransfer(payload, headers)
-    await this.saveTransfer(payload, transferValidationResult)
-
-    if (!transferValidationResult.validationPassed) {
-      return {
-        type: PrepareResultType.FAIL_VALIDATION,
-        failureReasons: transferValidationResult.reasons,
-      }
-    }
-
-    // TODO(LD): this is really ugly, but the original method needs a lot of kafka context,
-    // so for compatibility we are going to keep it this way for now.
-    //
-    // Ideally we would refactor the positions to not require all of this Kafka context
-    const messageContext = LegacyCompatibleLedger.extractMessageContext(input);
-    const { preparedMessagesList } = await this.calculatePreparePositions(payload, messageContext)
-    assert(Array.isArray(preparedMessagesList))
-    assert(preparedMessagesList.length === 1)
-
-    // Process the prepared messages results
-    const prepareMessage: PreparedMessage = preparedMessagesList[0];
-    const { transferState, fspiopError } = prepareMessage;
-
-    if (transferState.transferStateId !== Enum.Transfers.TransferState.RESERVED) {
-      logger.info(`prepare() - Position prepare failed - insufficient liquidity for transfer: ${transferId}`);
-
-      return {
-        type: PrepareResultType.FAIL_LIQUIDITY,
-        fspiopError
-      }
-    }
-
-    logger.debug(`prepare() - Position prepare successful - funds reserved for transfer: ${transferId}`);
-    return {
-      type: PrepareResultType.PASS
-    }
-  }
-
-  public async fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
-    const { payload, transferId, headers } = input;
-    logger.debug(`fulfil() - transferId: ${transferId}`)
-
-    // Handle ABORT action separately
-    if (input.action === Enum.Events.Event.Action.ABORT) {
-      return await this.handleAbort(input);
-    }
-
-    try {
-      // TODO(LD): we changed the order of processing here to include the condition
-      // which might change some of the error messages
-      await this.validateFulfilMessage(input)
-    } catch (err) {
-      return {
-        type: FulfilResultType.FAIL_VALIDATION,
-        fspiopError: err
-      }
-    }
-
-    const duplicateResult = await this.checkFulfilDuplicate(payload, transferId)
-    switch (duplicateResult) {
-      case FulfilDuplicateResult.DUPLICATED: {
-        return {
-          type: FulfilResultType.DUPLICATE_FINAL
-        }
-      }
-      case FulfilDuplicateResult.MODIFIED: {
-        return {
-          type: FulfilResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST,
-            'Transfer fulfil has been modified'
-          ),
-        }
-      }
-      case FulfilDuplicateResult.UNIQUE:
-      default: { }
-    }
-
-    // save the fulfil response
-    await this.deps.clearing.handlePayeeResponse(transferId, payload, input.action);
-
-    // Update the positions
-    logger.info(`Processing position commit for transfer: ${transferId}`);
-    try {
-      // Get transfer info to change position for PAYEE
-      const transferInfo = await this.deps.clearing.getTransferInfoToChangePosition(
-        transferId,
-        Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
-        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
-      );
-
-      // Get participant currency info
-      const participantCurrency = await this.deps.clearing.getByIDAndCurrency(
-        transferInfo.participantId,
-        transferInfo.currencyId,
-        Enum.Accounts.LedgerAccountType.POSITION
-      );
-
-      // Validate transfer state - must be RECEIVED_FULFIL
-      if (transferInfo.transferStateId !== Enum.Transfers.TransferInternalState.RECEIVED_FULFIL) {
-        const expectedState = Enum.Transfers.TransferInternalState.RECEIVED_FULFIL;
-        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
-          `Invalid State: ${transferInfo.transferStateId} - expected: ${expectedState}`
-        );
-
-        logger.error(`Position commit validation failed - invalid state for transfer: ${transferId}`, {
-          currentState: transferInfo.transferStateId,
-          expectedState
-        });
-
-        return {
-          type: FulfilResultType.FAIL_OTHER,
-          fspiopError
-        }
-      }
-
-      logger.info(`Position commit validation passed for transfer: ${transferId}`);
-
-      // Change participant position (not a reversal for commit)
-      const isReversal = false;
-      const transferStateChange = {
-        transferId: transferInfo.transferId,
-        transferStateId: Enum.Transfers.TransferState.COMMITTED
-      };
-
-      await this.deps.clearing.changeParticipantPosition(
-        participantCurrency.participantCurrencyId,
-        isReversal,
-        transferInfo.amount,
-        transferStateChange
-      );
-
-      logger.info(`Position commit processed successfully for transfer: ${transferId}`, {
-        participantCurrencyId: participantCurrency.participantCurrencyId,
-        amount: transferInfo.amount
-      });
-
-      return {
-        type: FulfilResultType.PASS
-      }
-
-    } catch (error) {
-      logger.error(`Position commit failed for transfer: ${transferId}`, { error: error.message });
-      return {
-        type: FulfilResultType.FAIL_OTHER,
-        fspiopError: error
-      }
-    }
-  }
-
-  /**
-   * Handle abort/error message for a transfer
-   * This reverses the position changes made during prepare
-   */
-  private async handleAbort(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
-    const { payload, transferId } = input;
-    logger.debug(`handleAbort() - transferId: ${transferId}`)
-
-    // Basic validation - ensure sender exists
-    try {
-      assert(input)
-      assert(input.message)
-      assert(input.message.value)
-      assert(input.message.value.from)
-      assert(payload)
-
-      const { message: { value: { from } } } = input;
-      if (!await this.deps.clearing.validateParticipantByName(from)) {
-        return {
-          type: FulfilResultType.FAIL_VALIDATION,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-            'Participant not found'
-          )
-        }
-      }
-
-      // Check for duplicate abort messages
-      const duplicateResult = await this.checkAbortDuplicate(payload, transferId);
-      switch (duplicateResult) {
-        case FulfilDuplicateResult.DUPLICATED: {
-          return {
-            type: FulfilResultType.DUPLICATE_FINAL
-          }
-        }
-        case FulfilDuplicateResult.MODIFIED: {
-          return {
-            type: FulfilResultType.FAIL_OTHER,
-            fspiopError: ErrorHandler.Factory.createFSPIOPError(
-              ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST,
-              'Transfer abort has been modified'
-            ),
-          }
-        }
-        case FulfilDuplicateResult.UNIQUE:
-        default: { }
-      }
-
-      // Extract and validate error information from payload
-      let fspiopError: ErrorHandler.FSPIOPError;
-      const errorInfo = (payload as any).errorInformation;
-      if (!errorInfo) {
-        return {
-          type: FulfilResultType.FAIL_OTHER,
-          fspiopError: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
-            'missing error information in callback'
-          ),
-        }
-      }
-      fspiopError = ErrorHandler.Factory.createFSPIOPErrorFromErrorInformation(errorInfo);
-
-      // Save the abort response
-      await this.deps.clearing.handlePayeeResponse(
-        transferId,
-        payload,
-        input.action,
-        fspiopError.toApiErrorObject(this.deps.config.ERROR_HANDLING)
-      );
-
-      // Process position abort (reversal)
-      logger.info(`Processing position reversal for transfer: ${transferId}`);
-      // Get transfer info to change position for PAYER (we're reversing the prepare)
-      const transferInfo = await this.deps.clearing.getTransferInfoToChangePosition(
-        transferId,
-        Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
-        Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE
-      );
-
-      // Get participant currency info for payer
-      const participantCurrency = await this.deps.clearing.getByIDAndCurrency(
-        transferInfo.participantId,
-        transferInfo.currencyId,
-        Enum.Accounts.LedgerAccountType.POSITION
-      );
-
-      // Validate transfer state - must be in a reserved state to abort
-      const validAbortStates = [
-        Enum.Transfers.TransferInternalState.RESERVED,
-        Enum.Transfers.TransferInternalState.RESERVED_FORWARDED,
-        Enum.Transfers.TransferInternalState.RECEIVED_ERROR
-      ];
-
-      if (!validAbortStates.includes(transferInfo.transferStateId)) {
-        const fspiopError = ErrorHandler.Factory.createInternalServerFSPIOPError(
-          `Invalid State for abort: ${transferInfo.transferStateId}`
-        );
-
-        logger.error(`Position abort validation failed - invalid state for transfer: ${transferId}`, {
-          currentState: transferInfo.transferStateId,
-          validStates: validAbortStates
-        });
-
-        return {
-          type: FulfilResultType.FAIL_OTHER,
-          fspiopError
-        }
-      }
-
-      logger.info(`Position abort validation passed for transfer: ${transferId}`);
-
-      // Change participant position (IS a reversal for abort - releases reserved funds)
-      const isReversal = true;
-      const transferStateChange = {
-        transferId: transferInfo.transferId,
-        transferStateId: Enum.Transfers.TransferInternalState.ABORTED_ERROR
-      };
-
-      await this.deps.clearing.changeParticipantPosition(
-        participantCurrency.participantCurrencyId,
-        isReversal,
-        transferInfo.amount,
-        transferStateChange
-      );
-
-      logger.info(`Position abort processed successfully for transfer: ${transferId}`, {
-        participantCurrencyId: participantCurrency.participantCurrencyId,
-        amount: transferInfo.amount
-      });
-
-      return {
-        type: FulfilResultType.PASS
-      }
-
-    } catch (err) {
-      return {
-        type: FulfilResultType.FAIL_OTHER,
-        fspiopError: err
-      }
-    }
-  }
-
   public async lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse> {
     assert(query.transferId)
     try {
@@ -1533,7 +1442,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     } catch (err) {
       return {
         type: LookupTransferResultType.FAILED,
-        fspiopError: err
+        error: err
       }
     }
   }

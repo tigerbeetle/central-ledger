@@ -243,11 +243,11 @@ export interface PrepareResultFailValidation {
 
 export interface PrepareResultFailLiquidity {
   type: PrepareResultType.FAIL_LIQUIDITY,
-  fspiopError: FSPIOPError,
+  error: FSPIOPError,
 }
 export interface PrepareResultFailOther {
   type: PrepareResultType.FAIL_OTHER,
-  fspiopError: FSPIOPError,
+  error: FSPIOPError,
 }
 
 export type FulfilResult = FulfilResultPass
@@ -265,12 +265,12 @@ export interface FulfilResultDuplicateFinal {
 
 export interface FulfilResultFailValidation {
   type: FulfilResultType.FAIL_VALIDATION,
-  fspiopError: FSPIOPError,
+  error: FSPIOPError,
 }
 
 export interface FulfilResultFailOther {
   type: FulfilResultType.FAIL_OTHER,
-  fspiopError: FSPIOPError,
+  error: FSPIOPError,
 }
 
 export type SweepResult = SweepResultSuccess
@@ -298,12 +298,12 @@ export interface FulfilResultDuplicateFinal {
 
 export interface FulfilResultFailValidation {
   type: FulfilResultType.FAIL_VALIDATION,
-  fspiopError: FSPIOPError,
+  error: FSPIOPError,
 }
 
 export interface FulfilResultFailOther {
   type: FulfilResultType.FAIL_OTHER,
-  fspiopError: FSPIOPError,
+  error: FSPIOPError,
 }
 
 
@@ -450,7 +450,7 @@ export type CommandResultSuccess<T> = {
 
 export type CommandResultFailure = {
   type: 'FAILURE',
-  fspiopError: Error
+  error: Error
 }
 
 export type CommandResult<T> = CommandResultSuccess<T> | CommandResultFailure
@@ -468,7 +468,7 @@ export type QueryResultSuccess<T> = {
 
 export type QueryResultFailure = {
   type: 'FAILURE',
-  fspiopError: Error
+  error: Error
 }
 
 export type QueryResult<T> = QueryResultSuccess<T> | QueryResultFailure
@@ -497,7 +497,7 @@ export interface DfspAccountResponseSuccess {
 
 export interface DfspAccountResponseFailure {
   type: 'FAILURE',
-  fspiopError: FSPIOPError
+  error: FSPIOPError
 }
 
 export type DfspAccountResponse = DfspAccountResponseSuccess
@@ -515,7 +515,7 @@ export interface HubAccountResponseSuccess {
 
 export interface HubAccountResponseFailure {
   type: 'FAILURE',
-  fspiopError: FSPIOPError
+  error: FSPIOPError
 }
 
 export type HubAccountResponse = HubAccountResponseSuccess
@@ -533,7 +533,7 @@ export interface NetDebitCapResponseSuccess {
 
 export interface NetDebitCapResponseFailure {
   type: 'FAILURE',
-  fspiopError: FSPIOPError
+  error: FSPIOPError
 }
 
 export type NetDebitCapResponse = NetDebitCapResponseSuccess
@@ -587,7 +587,7 @@ export interface LookupTransferQueryResponseNotFound {
 
 export interface LookupTransferQueryResponseFailed {
   type: LookupTransferResultType.FAILED
-  fspiopError: FSPIOPError
+  error: FSPIOPError
 }
 
 export type LookupTransferQueryResponse = LookupTransferQueryResponseFoundNonFinal

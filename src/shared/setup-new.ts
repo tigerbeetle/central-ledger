@@ -145,7 +145,7 @@ export async function initialize({
     // in a better fashion
     // ledger
     // TODO(LD): pass in Db instead  relying on global here.
-    const ledger = initializeLedger(config)
+    const ledger = await initializeLedger(config)
 
     let server
     switch (service) {
@@ -250,10 +250,10 @@ export async function initialize({
   }
 }
 
-function initializeLedger(config: ApplicationConfig): Ledger {
+async function initializeLedger(config: ApplicationConfig): Promise<Ledger> {
   // TODO: Configure the ledgers to run side-by-side
   switch (config.EXPERIMENTAL.LEDGER.PRIMARY) {
-    case 'SQL': return initializeLegacyCompatibleLedger(config)
+    case 'SQL': return await initializeLegacyCompatibleLedger(config)
     case 'TIGERBEETLE': return initializeTigerBeetleLedger(config)
     default:
       throw new Error(`initializeLedger uknnown ledger type: ${config.EXPERIMENTAL.LEDGER.PRIMARY}`)
@@ -282,7 +282,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
   return new TigerBeetleLedger(tigerBeetleDeps)
 }
 
-function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyCompatibleLedger {
+async function initializeLegacyCompatibleLedger(config: ApplicationConfig): Promise<LegacyCompatibleLedger> {
   // Existing business logic modules
   const Validator = require('../handlers/transfers/validator')
   const TransferService = require('../domain/transfer/index')
@@ -295,6 +295,10 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
   const PositionService = require('../domain/position')
   const prepareModule = require('../handlers/transfers/prepare')
   const TimeoutService = require('../domain/timeout')
+  const enumCached = require('../lib/enumCached')
+
+  // Get enums before creating the ledger (they don't change)
+  const enums = await enumCached.getEnums('all')
 
   // Initialize AdminHandler
   const adminHandler = new AdminHandler({
@@ -315,7 +319,7 @@ function initializeLegacyCompatibleLedger(config: ApplicationConfig): LegacyComp
       transferService: require('../domain/transfer'),
       transferFacade: require('../models/transfer/facade'),
       adminHandler: adminHandler,
-      enums: undefined, // Will be initialized separately
+      enums,
       settlementModelDomain: require('../domain/settlement'),
     },
     clearing: {

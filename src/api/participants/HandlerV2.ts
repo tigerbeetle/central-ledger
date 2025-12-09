@@ -175,7 +175,7 @@ export default class ParticipantAPIHandlerV2 {
 
     const resultGetDfsp = await ledger.getDfsp({ dfspId: dfspName })
     if (resultGetDfsp.type === 'FAILURE') {
-      throw resultGetDfsp.fspiopError
+      throw resultGetDfsp.error
     }
 
     // Map from Ledger format Dfsp to Existing API
@@ -248,7 +248,6 @@ export default class ParticipantAPIHandlerV2 {
       assert(request.params.name)
       assert(request.payload)
       assert(request.payload.currency)
-      // assert(request.payload.initialPosition !== undefined)
       assert(request.payload.limit)
       assert(request.payload.limit.type)
       assert(request.payload.limit.value !== undefined)
@@ -259,6 +258,8 @@ export default class ParticipantAPIHandlerV2 {
         transferId: randomUUID(), // TODO: should be defined by the user in the API
         dfspId: request.params.name,
         currency: request.payload.currency,
+        // Implicitly deposit funds here. In the new Ledger, you cannot have a limit without a
+        // position
         amount: request.payload.limit.value
       }
       const result = await ledger.deposit(depositCmd)
@@ -378,90 +379,85 @@ export default class ParticipantAPIHandlerV2 {
       assert(request.params.name)
       assert(request.payload)
       assert(request.payload.action)
-      
+
       const ledger = getLedger(request)
       const { name } = request.params
       const { action, amount } = request.payload
 
-      // Special validation rules based on different http request params and payloads
-      if (action === 'recordFundsIn') {
-        assert(request.payload.transferId)
-        assert(amount, 'amount is required')
-        assert(amount.amount, 'amount.amount is required')
-        assert(amount.currency, 'amount.currency is required')
-      }
-      if (action === 'recordFundsOutPrepareReserve') {
-        assert(request.payload.transferId)
-        assert(amount, 'amount is required')
-        assert(amount.amount, 'amount.amount is required')
-        assert(amount.currency, 'amount.currency is required')
-      }
+      switch (action) {
+        case 'recordFundsIn': {
+          assert(request.payload.transferId)
+          assert(amount, 'amount is required')
+          assert(amount.amount, 'amount.amount is required')
+          assert(amount.currency, 'amount.currency is required')
+          const transferId = request.payload.transferId
 
-      if (action === 'recordFundsIn') {
-        const transferId = request.payload.transferId
+          const depositCmd = {
+            transferId,
+            dfspId: name,
+            currency: amount.currency,
+            amount: new MLNumber(amount.amount).toNumber(),
+          }
 
-        const depositCmd = {
-          transferId,
-          dfspId: name,
-          currency: amount.currency,
-          amount: new MLNumber(amount.amount).toNumber(),
+          const result = await ledger.deposit(depositCmd)
+
+          if (result.type === 'FAILURE') {
+            throw result.error
+          }
+
+          if (result.type === 'ALREADY_EXISTS') {
+            throw ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
+              'Transfer with this ID already exists'
+            )
+          }
+          return h.response().code(202)
         }
+        case 'recordFundsOutPrepareReserve': {
+          assert(request.payload.transferId)
+          assert(amount, 'amount is required')
+          assert(amount.amount, 'amount.amount is required')
+          assert(amount.currency, 'amount.currency is required')
 
-        const result = await ledger.deposit(depositCmd)
+          const transferId = request.payload.transferId
 
-        if (result.type === 'FAILURE') {
-          throw result.error
+          const withdrawPrepareCmd = {
+            transferId,
+            dfspId: name,
+            currency: amount.currency,
+            amount: new MLNumber(amount.amount).toNumber(),
+          }
+
+          const result = await ledger.withdrawPrepare(withdrawPrepareCmd)
+
+          if (result.type === 'FAILURE') {
+            throw result.error
+          }
+
+          if (result.type === 'INSUFFICIENT_FUNDS') {
+            throw ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.PAYER_FSP_INSUFFICIENT_LIQUIDITY,
+              `Insufficient funds for withdrawal. Available: ${result.availableBalance}, Requested: ${result.requestedAmount}`
+            )
+          }
+
+          return h.response().code(202)
         }
+        case 'recordFundsOutCommit': {
+          const transferId = request.params.transferId
+          const withdrawCommitCmd = {
+            transferId
+          }
+          const result = await ledger.withdrawCommit(withdrawCommitCmd)
 
-        if (result.type === 'ALREADY_EXISTS') {
-          throw ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
-            'Transfer with this ID already exists'
-          )
+          if (result.type === 'FAILURE') {
+            throw result.error
+          }
+          return h.response().code(202)
         }
-
-        return h.response().code(202)
-      } else if (action === 'recordFundsOutPrepareReserve') {
-        const transferId = request.payload.transferId
-
-        const withdrawPrepareCmd = {
-          transferId,
-          dfspId: name,
-          currency: amount.currency,
-          amount: new MLNumber(amount.amount).toNumber(),
+        default: {
+          throw new Error(`recordFunds() - unhandled action: ${action}`)
         }
-
-        const result = await ledger.withdrawPrepare(withdrawPrepareCmd)
-
-        if (result.type === 'FAILURE') {
-          throw result.error
-        }
-
-        if (result.type === 'INSUFFICIENT_FUNDS') {
-          throw ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.PAYER_FSP_INSUFFICIENT_LIQUIDITY,
-            `Insufficient funds for withdrawal. Available: ${result.availableBalance}, Requested: ${result.requestedAmount}`
-          )
-        }
-
-        return h.response().code(202)
-      } else if (action === 'recordFundsOutCommit') {
-        const transferId = request.params.transferId
-        const withdrawCommitCmd = {
-          transferId
-        }
-        const result = await ledger.withdrawCommit(withdrawCommitCmd)
-
-        if (result.type === 'FAILURE') {
-          throw result.error
-        }
-
-        return h.response().code(202)
-      } else {
-        throw ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
-          `Invalid action: ${action}`
-        )
       }
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })
