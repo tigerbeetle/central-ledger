@@ -11,6 +11,7 @@ import {
   DepositResponse,
   DfspAccountResponse,
   FulfilResult,
+  GetAllDfspAccountsQuery,
   GetAllDfspsResponse,
   GetDfspAccountsQuery,
   GetHubAccountsQuery,

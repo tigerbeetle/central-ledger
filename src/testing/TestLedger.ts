@@ -1,5 +1,5 @@
 import { Ledger } from "src/domain/ledger-v2/Ledger";
-import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, NetDebitCapResponse, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, QueryResult, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse } from "src/domain/ledger-v2/types";
+import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, QueryResult, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery } from "src/domain/ledger-v2/types";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 
@@ -12,7 +12,13 @@ export default class TestLedger implements Ledger {
   createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     throw new Error("Method not implemented.");
   }
-  getNetDebitCap(query: GetNetDebitCapQuery): Promise<NetDebitCapResponse> {
+  getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
+    throw new Error("Method not implemented.");
+  }
+  setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse> {
     throw new Error("Method not implemented.");
   }
   prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {

@@ -107,15 +107,25 @@ describe('LegacyCompatibleLedger', () => {
       const PositionService = require('../../domain/position');
       const prepareModule = require('../../handlers/transfers/prepare');
 
+      // Initialize AdminHandler
+      const { AdminHandler } = require('../../handlers-v2/AdminHandler');
+      const adminHandler = new AdminHandler({
+        committer: null as any, // Not needed for direct calls
+        config,
+        transferService: TransferService,
+        comparators: Comparators,
+        db: Db
+      });
+
       const deps: LegacyCompatibleLedgerDependencies = {
         config,
         knex: Db.getKnex(),
         lifecycle: {
-          participantsHandler: require('../../api/participants/HandlerV1'),
           participantService: require('../../domain/participant'),
           participantFacade: require('../../models/participant/facade'),
           transferService: require('../../domain/transfer'),
           transferFacade: require('../../models/transfer/facade'),
+          adminHandler: adminHandler,
           enums: await require('../../lib/enumCached').getEnums('all'),
           settlementModelDomain: require('../../domain/settlement'),
         },
