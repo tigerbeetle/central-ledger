@@ -39,7 +39,7 @@ const rethrow = require('../../shared/rethrow')
 const MLNumber = require('@mojaloop/ml-number')
 const assert = require('assert')
 const { randomUUID } = require('crypto')
-const { assertString, safeStringToNumber, convertBigIntToNumber } = require('../../shared/config/util')
+const { convertBigIntToNumber } = require('../../shared/config/util')
 const ParticipantService = require('../../domain/participant')
 
 const getLedger = (request): Ledger => {
@@ -89,52 +89,7 @@ export default class ParticipantAPIHandlerV2 {
     this.participantService = ParticipantService
   }
 
-  public async create(request, h): Promise<unknown> {
-    try {
-      assert(request)
-      assert(request.payload)
-      assert(request.payload.currency)
-      assert(request.payload.name)
-
-      // TODO: create the participant here with the participantService, then
-      // do everything else in the ledger
-
-      const { currency, name } = request.payload
-      const ledger = getLedger(request)
-      const createDfspResult = await ledger.createDfsp({
-        dfspId: name,
-        currencies: [currency],
-        startingDeposits: [0]
-      })
-
-      if (createDfspResult.type === 'ALREADY_EXISTS') {
-        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
-      }
-
-      if (createDfspResult.type === 'FAILURE') {
-        Logger.error(`participants.create() - failed to create: ${name} with error: ${createDfspResult.error.message}`)
-        throw createDfspResult.error
-      }
-
-      // now look up the participant
-      const getByNameReply = await this._getByName(ledger, request.payload.name)
-      return h.response(getByNameReply).code(201)
-    } catch (err) {
-      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
-    }
-  }
-
-  public async getByName(request): Promise<ParticipantResponse> {
-    assert(request)
-    assert(request.params)
-    assert(request.params.name)
-
-    const ledger = getLedger(request)
-    return this._getByName(ledger, request.params.name)
-  }
-
   public async getAll(request): Promise<ParticipantResponse[]> {
-
     const ledger = getLedger(request)
 
     const resultDfsps = await ledger.getAllDfsps({})
@@ -205,7 +160,14 @@ export default class ParticipantAPIHandlerV2 {
     return reply
   }
 
+  public async getByName(request): Promise<ParticipantResponse> {
+    assert(request)
+    assert(request.params)
+    assert(request.params.name)
 
+    const ledger = getLedger(request)
+    return this._getByName(ledger, request.params.name)
+  }
 
   private async _getByName(ledger: Ledger, dfspName: string): Promise<ParticipantResponse> {
     assert(ledger)
@@ -243,6 +205,40 @@ export default class ParticipantAPIHandlerV2 {
     }
   }
 
+  public async create(request, h): Promise<unknown> {
+    try {
+      assert(request)
+      assert(request.payload)
+      assert(request.payload.currency)
+      assert(request.payload.name)
+
+      // TODO: create the participant here with the participantService, then
+      // do everything else in the ledger
+
+      const { currency, name } = request.payload
+      const ledger = getLedger(request)
+      const createDfspResult = await ledger.createDfsp({
+        dfspId: name,
+        currencies: [currency],
+        startingDeposits: [0]
+      })
+
+      if (createDfspResult.type === 'ALREADY_EXISTS') {
+        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR, 'Participant currency has already been registered')
+      }
+
+      if (createDfspResult.type === 'FAILURE') {
+        Logger.error(`participants.create() - failed to create: ${name} with error: ${createDfspResult.error.message}`)
+        throw createDfspResult.error
+      }
+
+      const getByNameReply = await this._getByName(ledger, request.payload.name)
+      return h.response(getByNameReply).code(201)
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
+    }
+  }
+
   public async update(request): Promise<any> {
     try {
       assert(request)
@@ -271,6 +267,51 @@ export default class ParticipantAPIHandlerV2 {
       return getByNameReply
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreate' })
+    }
+  }
+
+  public async addEndpoint(request, h): Promise<unknown> {
+    try {
+      const participantName = request.params.name
+      const payload = request.payload
+
+      // Normalize to array (handle both single and array inputs) and use bulk method
+      const endpoints = Array.isArray(payload) ? payload : [payload]
+      await this.participantService.addEndpoints(participantName, endpoints)
+
+      return h.response().code(201)
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddEndpoint' })
+    }
+  }
+
+  public async getEndpoint(request): Promise<any> {
+    try {
+      if (request.query.type) {
+        const result = await this.participantService.getEndpoint(request.params.name, request.query.type)
+        let endpoint = {}
+        if (Array.isArray(result) && result.length > 0) {
+          endpoint = {
+            type: result[0].name,
+            value: result[0].value
+          }
+        }
+        return endpoint
+      } else {
+        const result = await this.participantService.getAllEndpoints(request.params.name)
+        const endpoints = []
+        if (Array.isArray(result) && result.length > 0) {
+          result.forEach(item => {
+            endpoints.push({
+              type: item.name,
+              value: item.value
+            })
+          })
+        }
+        return endpoints
+      }
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetEndpoint' })
     }
   }
 
@@ -318,45 +359,6 @@ export default class ParticipantAPIHandlerV2 {
       return h.response().code(201)
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddLimitAndInitialPosition' })
-    }
-  }
-
-  public async adjustLimits(request, h): Promise<unknown> {
-    try {
-      assert(request)
-      assert(request.params)
-      assert(request.params.name)
-      assert(request.payload)
-      assert(request.payload.currency)
-      assert(request.payload.limit)
-      assert(request.payload.limit.type)
-      assert(request.payload.limit.value !== undefined)
-      assert(request.payload.limit.value >= 0)
-      // Only limits of type NET_DEBIT_CAP are supported
-      assert.equal(request.payload.limit.type, 'NET_DEBIT_CAP')
-      const ledger = getLedger(request)
-
-      const result = await ledger.setNetDebitCap({
-        dfspId: request.params.name,
-        currency: request.payload.currency,
-        amount: request.payload.limit.value
-      })
-
-      if (result.type === 'FAILURE') {
-        throw result.error
-      }
-
-      // The Ledger doesn't return anything, but the API Expects a response body
-      const updatedLimit = {
-        currency: request.payload.currency,
-        limit: {
-          type: request.payload.limit.type,
-          value: request.payload.limit.value
-        }
-      }
-      return h.response(updatedLimit).code(200)
-    } catch (err) {
-      rethrow.rethrowAndCountFspiopError(err, { operation: 'adjustLimits' })
     }
   }
 
@@ -466,31 +468,83 @@ export default class ParticipantAPIHandlerV2 {
     }
   }
 
-  public async getAccounts(request): Promise<any> {
-    assert(request)
-    assert(request.params)
-    assert(request.params.name)
-    assert(request.query)
-    assert(request.query.currency)
+  public async adjustLimits(request, h): Promise<unknown> {
+    try {
+      assert(request)
+      assert(request.params)
+      assert(request.params.name)
+      assert(request.payload)
+      assert(request.payload.currency)
+      assert(request.payload.limit)
+      assert(request.payload.limit.type)
+      assert(request.payload.limit.value !== undefined)
+      assert(request.payload.limit.value >= 0)
+      // Only limits of type NET_DEBIT_CAP are supported
+      assert.equal(request.payload.limit.type, 'NET_DEBIT_CAP')
+      const ledger = getLedger(request)
 
-    const name = request.params.name
-    const currency = request.query.currency
-    const ledger = getLedger(request)
-    const ledgerAccountsResponse = await ledger.getDfspAccounts({ dfspId: name, currency })
+      const result = await ledger.setNetDebitCap({
+        dfspId: request.params.name,
+        currency: request.payload.currency,
+        amount: request.payload.limit.value
+      })
 
-    if (ledgerAccountsResponse.type === 'FAILURE') {
-      Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
-      throw ledgerAccountsResponse.error
-    }
-
-    // Map to legacy compatible API response
-    return ledgerAccountsResponse.accounts.map(acc => {
-      return {
-        ...acc,
-        id: convertBigIntToNumber(acc.id),
-        isActive: acc.isActive ? 1 : 0,
+      if (result.type === 'FAILURE') {
+        throw result.error
       }
-    })
+
+      // The Ledger doesn't return anything, but the API Expects a response body
+      const updatedLimit = {
+        currency: request.payload.currency,
+        limit: {
+          type: request.payload.limit.type,
+          value: request.payload.limit.value
+        }
+      }
+      return h.response(updatedLimit).code(200)
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'adjustLimits' })
+    }
+  }
+
+  public async createHubAccount(request, h): Promise<unknown> {
+    try {
+      const ledger = getLedger(request)
+      const currency = request.payload.currency
+      const type = request.payload.type
+
+      Logger.warn(`createHubAccount: ignoring type parameter '${type}' - ledger.createHubAccount() creates all hub accounts for the currency, not individual account types`)
+
+      // Create a default settlement model for the currency
+      const settlementModel = {
+        name: `DEFERRED_MULTILATERAL_NET_${currency}`,
+        settlementGranularity: "NET",
+        settlementInterchange: "MULTILATERAL",
+        settlementDelay: "DEFERRED",
+        currency,
+        requireLiquidityCheck: true,
+        ledgerAccountType: "POSITION",
+        settlementAccountType: "SETTLEMENT",
+        autoPositionReset: true
+      }
+
+      const result = await ledger.createHubAccount({
+        currency,
+        settlementModel
+      })
+
+      if (result.type === 'FAILURE') {
+        throw result.error
+      }
+
+      // Return the Hub participant with all its accounts
+      const hubParticipant = await this.getAll({ query: {}, payload: {}, server: request.server })
+      const hub = hubParticipant.find(p => p.name === 'Hub')
+
+      return h.response(hub).code(201)
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreateHubAccount' })
+    }
   }
 
   public async getPositions(request): Promise<any> {
@@ -538,6 +592,33 @@ export default class ParticipantAPIHandlerV2 {
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetPositions' })
     }
+  }
+
+  public async getAccounts(request): Promise<any> {
+    assert(request)
+    assert(request.params)
+    assert(request.params.name)
+    assert(request.query)
+    assert(request.query.currency)
+
+    const name = request.params.name
+    const currency = request.query.currency
+    const ledger = getLedger(request)
+    const ledgerAccountsResponse = await ledger.getDfspAccounts({ dfspId: name, currency })
+
+    if (ledgerAccountsResponse.type === 'FAILURE') {
+      Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
+      throw ledgerAccountsResponse.error
+    }
+
+    // Map to legacy compatible API response
+    return ledgerAccountsResponse.accounts.map(acc => {
+      return {
+        ...acc,
+        id: convertBigIntToNumber(acc.id),
+        isActive: acc.isActive ? 1 : 0,
+      }
+    })
   }
 
   public async updateAccount(request, h): Promise<unknown> {
@@ -662,91 +743,6 @@ export default class ParticipantAPIHandlerV2 {
       }
     } catch (err) {
       rethrow.rethrowAndCountFspiopError(err, { operation: 'participantRecordFunds' })
-    }
-  }
-
-  public async createHubAccount(request, h): Promise<unknown> {
-    try {
-      const ledger = getLedger(request)
-      const currency = request.payload.currency
-      const type = request.payload.type
-
-      Logger.warn(`createHubAccount: ignoring type parameter '${type}' - ledger.createHubAccount() creates all hub accounts for the currency, not individual account types`)
-
-      // Create a default settlement model for the currency
-      const settlementModel = {
-        name: `DEFERRED_MULTILATERAL_NET_${currency}`,
-        settlementGranularity: "NET",
-        settlementInterchange: "MULTILATERAL",
-        settlementDelay: "DEFERRED",
-        currency,
-        requireLiquidityCheck: true,
-        ledgerAccountType: "POSITION",
-        settlementAccountType: "SETTLEMENT",
-        autoPositionReset: true
-      }
-
-      const result = await ledger.createHubAccount({
-        currency,
-        settlementModel
-      })
-
-      if (result.type === 'FAILURE') {
-        throw result.error
-      }
-
-      // Return the Hub participant with all its accounts
-      const hubParticipant = await this.getAll({ query: {}, payload: {}, server: request.server })
-      const hub = hubParticipant.find(p => p.name === 'Hub')
-
-      return h.response(hub).code(201)
-    } catch (err) {
-      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantCreateHubAccount' })
-    }
-  }
-
-  public async addEndpoint(request, h): Promise<unknown> {
-    try {
-      const participantName = request.params.name
-      const payload = request.payload
-
-      // Normalize to array (handle both single and array inputs) and use bulk method
-      const endpoints = Array.isArray(payload) ? payload : [payload]
-      await this.participantService.addEndpoints(participantName, endpoints)
-
-      return h.response().code(201)
-    } catch (err) {
-      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantAddEndpoint' })
-    }
-  }
-
-  public async getEndpoint(request): Promise<any> {
-    try {
-      if (request.query.type) {
-        const result = await this.participantService.getEndpoint(request.params.name, request.query.type)
-        let endpoint = {}
-        if (Array.isArray(result) && result.length > 0) {
-          endpoint = {
-            type: result[0].name,
-            value: result[0].value
-          }
-        }
-        return endpoint
-      } else {
-        const result = await this.participantService.getAllEndpoints(request.params.name)
-        const endpoints = []
-        if (Array.isArray(result) && result.length > 0) {
-          result.forEach(item => {
-            endpoints.push({
-              type: item.name,
-              value: item.value
-            })
-          })
-        }
-        return endpoints
-      }
-    } catch (err) {
-      rethrow.rethrowAndCountFspiopError(err, { operation: 'participantGetEndpoint' })
     }
   }
 }
