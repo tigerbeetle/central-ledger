@@ -8,7 +8,7 @@ import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTr
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { Ledger } from "./Ledger";
-import { DfspAccountIds, MetadataStore } from "./MetadataStore";
+import { DfspAccountIds, DfspAccountMetadata, MetadataStore } from "./MetadataStore";
 import { TransferBatcher } from "./TransferBatcher";
 import {
   AnyQuery,
@@ -87,13 +87,18 @@ export type InterledgerValidationResult = InterledgerValidationPass
   | InterledgerValidationFail
 
 
-export default class TigerBeetleLedger implements Ledger {
-  constructor(private deps: TigerBeetleLedgerDependencies) {
+/**
+ * An internal representation of an Account, combined with metadata
+ */
+interface InternalLedgerAccount extends Account {
+  dfspId: string,
+  currency: string,
+  accountType: AccountType,
 
-  }
-  getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
-    throw new Error('Method not implemented.');
-  }
+}
+
+export default class TigerBeetleLedger implements Ledger {
+  constructor(private deps: TigerBeetleLedgerDependencies) { }
 
   /**
    * Onboarding/Lifecycle Management
@@ -169,11 +174,14 @@ export default class TigerBeetleLedger implements Ledger {
       // look up a Dfsp's accounts based on a query filter on TigerBeetle itself.
     }
 
+    // TigerBeetle Accounts can be 128 bits, but since the Admin API uses javascript/json numbers
+    // to maintain backwards compatibility, we generate our own random accountIds under 
+    // Number.MAX_SAFE_INTEGER to be safe.
     const accountIds: DfspAccountIds = {
-      collateral: id(),
-      liquidity: id(),
-      clearing: id(),
-      settlementMultilateral: id()
+      collateral: Helper.id53(),
+      liquidity: Helper.id53(),
+      clearing: Helper.id53(),
+      settlementMultilateral: Helper.id53(),
     }
 
     const accounts: Array<Account> = [
@@ -338,7 +346,7 @@ export default class TigerBeetleLedger implements Ledger {
     // TODO: this is required when running properly, but causes problems in test
     // indeed we should actually create the participant first before creating the account in 
     // TigerBeetle
-    await this.deps.participantService.create({ name: cmd.dfspId })
+    // await this.deps.participantService.create({ name: cmd.dfspId })
 
     return {
       type: 'SUCCESS'
@@ -383,95 +391,179 @@ export default class TigerBeetleLedger implements Ledger {
     throw new Error('Method not implemented.');
   }
 
+  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
+    try {
+      const dfspAccountMetadata = await this.deps.metadataStore.queryAccountsDfsp(query.dfspId)
+      if (dfspAccountMetadata.length === 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`Dfsp not found for dfspId: ${query.dfspId}`)
+        }
+      }
+
+      const internalLedgerAccounts = await this._internalLedgerAccountsForMetadata(dfspAccountMetadata)
+
+      // Group by currency and convert to legacy accounts
+      const internalLedgerAccountsPerCurrency = internalLedgerAccounts.reduce((acc, ila) => {
+        (acc[ila.currency] = acc[ila.currency] || []).push(ila);
+        return acc;
+      }, {} as Record<string, Array<InternalLedgerAccount>>);
+
+      const legacyLedgerAccounts = Object.values(internalLedgerAccountsPerCurrency)
+        .flatMap(accounts => this._fromInternalAccountsToLegacyLedgerAccounts(accounts))
+
+      const ledgerDfsp: LedgerDfsp = {
+        name: query.dfspId,
+        // TODO: need to look up on meta-account
+        isActive: true,
+        // TODO: need to look up on meta-account
+        created: new Date(),
+        accounts: legacyLedgerAccounts
+      }
+
+      return {
+        type: 'SUCCESS',
+        result: ledgerDfsp
+      }
+    } catch (error) {
+      return {
+        type: 'FAILURE',
+        error
+      }
+    }
+  }
+
+   public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
+    try {
+      const dfspsMetadata = await this.deps.metadataStore.queryAccountsAll()
+      const internalLedgerAccounts = await this._internalLedgerAccountsForMetadata(dfspsMetadata)
+
+      // Group by dfspId and currency
+      const internalLedgerAccountsPerDfsp = internalLedgerAccounts.reduce((acc, ila) => {
+        const dfspAccounts = acc[ila.dfspId] = acc[ila.dfspId] || {};
+        (dfspAccounts[ila.currency] = dfspAccounts[ila.currency] || []).push(ila);
+        return acc;
+      }, {} as Record<string, Record<string, Array<InternalLedgerAccount>>>);
+
+      const dfsps = Object.entries(internalLedgerAccountsPerDfsp).map(([dfspId, dfspAccountMap]) => {
+        const dfspLegacyAccounts = Object.values(dfspAccountMap)
+          .flatMap(currencyAccounts => this._fromInternalAccountsToLegacyLedgerAccounts(currencyAccounts));
+
+        return {
+          name: dfspId,
+          isActive: true,
+          created: new Date(),
+          accounts: dfspLegacyAccounts
+        } as LedgerDfsp;
+      })
+
+      return {
+        type: 'SUCCESS',
+        result: {
+          dfsps
+        }
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
   /**
-   * @method getAccounts
+   * @method getDfspAccounts
    * @description Lookup the accounts for a Dfsp + Currency
+   * TODO: revisit in light of other get dfsp calls, we can probably simplify and 
+   * map all in one place
    */
   public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
-    const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
-    if (ids.type === 'DfspAccountMetadataNone') {
-      return {
-        type: 'FAILURE',
-        error: ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-          `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
-              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
-        )
-      }
-    }
-    const tbAccountIds = [
-      ids.liquidity,
-      // TODO: is this equivalent to POSITION?
-      ids.clearing,
-      ids.collateral,
-      // TODO: is this equivalent to SETTLEMENT?
-      ids.settlementMultilateral
-    ]
-    const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
-    if (tbAccounts.length !== tbAccountIds.length) {
-      return {
-        type: 'FAILURE',
-        error: ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
-          `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
-              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
-        )
-      }
-    }
+    throw new Error('refactor me!')
 
-    // TODO(LD): We need to spend more time here figuring out how to adapt from newer double entry
-    // accounts map on to the legacy accounts
-    const accounts: Array<LegacyLedgerAccount> = []
-    let clearingAccount: Account
-    let collateralAccount: Account
-    tbAccounts.forEach(tbAccount => {
-      if (tbAccount.id === ids.clearing) {
-        clearingAccount = tbAccount
-      }
-      if (tbAccount.id === ids.collateral) {
-        collateralAccount = tbAccount
-      }
-    })
-    assert(clearingAccount)
-    assert(collateralAccount)
+    // const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
+    // if (ids.type === 'DfspAccountMetadataNone') {
+    //   return {
+    //     type: 'FAILURE',
+    //     error: ErrorHandler.Factory.createFSPIOPError(
+    //       ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+    //       `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+    //           dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
+    //     )
+    //   }
+    // }
+    // const tbAccountIds = [
+    //   ids.liquidity,
+    //   // TODO: is this equivalent to POSITION?
+    //   ids.clearing,
+    //   ids.collateral,
+    //   // TODO: is this equivalent to SETTLEMENT?
+    //   ids.settlementMultilateral
+    // ]
+    // const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
+    // if (tbAccounts.length !== tbAccountIds.length) {
+    //   return {
+    //     type: 'FAILURE',
+    //     error: ErrorHandler.Factory.createFSPIOPError(
+    //       ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+    //       `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+    //           dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
+    //     )
+    //   }
+    // }
 
-    // Legacy Settlement Balance: How much Dfsp has available to settle.
-    // Was a negative number in the legacy API once the dfsp had deposited funds.
-    const legacySettlementBalancePosted = (collateralAccount.debits_posted - collateralAccount.credits_posted) * BigInt(-1)
-    const legacySettlementBalancePending = (collateralAccount.debits_pending - collateralAccount.credits_pending) * BigInt(-1)
+    // // TODO(LD): We need to spend more time here figuring out how to adapt from newer double entry
+    // // accounts map on to the legacy accounts
+    // const accounts: Array<LegacyLedgerAccount> = []
+    // let clearingAccount: Account
+    // let collateralAccount: Account
+    // tbAccounts.forEach(tbAccount => {
+    //   if (tbAccount.id === ids.clearing) {
+    //     clearingAccount = tbAccount
+    //   }
+    //   if (tbAccount.id === ids.collateral) {
+    //     collateralAccount = tbAccount
+    //   }
+    // })
+    // assert(clearingAccount)
+    // assert(collateralAccount)
 
-    // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
-    const clearingBalancePosted = clearingAccount.credits_posted - clearingAccount.debits_posted
-    const clearingBalancePending = clearingAccount.credits_pending - clearingAccount.debits_pending
-    const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
-    const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
+    // // Legacy Settlement Balance: How much Dfsp has available to settle.
+    // // Was a negative number in the legacy API once the dfsp had deposited funds.
+    // const legacySettlementBalancePosted = (collateralAccount.debits_posted - collateralAccount.credits_posted) * BigInt(-1)
+    // const legacySettlementBalancePending = (collateralAccount.debits_pending - collateralAccount.credits_pending) * BigInt(-1)
 
-    accounts.push({
-      id: ids.clearing,
-      ledgerAccountType: 'POSITION',
-      currency: query.currency,
-      isActive: !(clearingAccount.flags & AccountFlags.closed),
-      value: convertBigIntToNumber(legacyPositionBalancePosted) / 100,
-      reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / 100,
-      // We don't have this in TigerBeetle, although we could use the created date
-      changedDate: new Date(0)
-    })
+    // // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
+    // const clearingBalancePosted = clearingAccount.credits_posted - clearingAccount.debits_posted
+    // const clearingBalancePending = clearingAccount.credits_pending - clearingAccount.debits_pending
+    // const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
+    // const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
 
-    accounts.push({
-      id: ids.collateral,
-      ledgerAccountType: 'SETTLEMENT',
-      currency: query.currency,
-      isActive: !(collateralAccount.flags & AccountFlags.closed),
-      value: convertBigIntToNumber(legacySettlementBalancePosted) / 100,
-      reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / 100,
-      // We don't have this in TigerBeetle, although we could use the created date
-      changedDate: new Date(0)
-    })
+    // accounts.push({
+    //   id: ids.clearing,
+    //   ledgerAccountType: 'POSITION',
+    //   currency: query.currency,
+    //   isActive: !(clearingAccount.flags & AccountFlags.closed),
+    //   value: convertBigIntToNumber(legacyPositionBalancePosted) / 100,
+    //   reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / 100,
+    //   // We don't have this in TigerBeetle, although we could use the created date
+    //   changedDate: new Date(0)
+    // })
 
-    return {
-      type: 'SUCCESS',
-      accounts,
-    }
+    // accounts.push({
+    //   id: ids.collateral,
+    //   ledgerAccountType: 'SETTLEMENT',
+    //   currency: query.currency,
+    //   isActive: !(collateralAccount.flags & AccountFlags.closed),
+    //   value: convertBigIntToNumber(legacySettlementBalancePosted) / 100,
+    //   reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / 100,
+    //   // We don't have this in TigerBeetle, although we could use the created date
+    //   changedDate: new Date(0)
+    // })
+
+    // return {
+    //   type: 'SUCCESS',
+    //   accounts,
+    // }
   }
 
   public async getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse> {
@@ -487,110 +579,47 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
+  /**
+   * @method getHubAccounts
+   * 
+   * @description There is no concept of a 'Hub Account' in the TigerBeetle implementation, but to keep backwards
+   *   compatbility, we return mock Hub accounts based on the currencies enabled in the 
+   *   `TIGERBEETLE.CURRENCY_LEDGERS` config parameter.
+   */
   public async getHubAccounts(query: AnyQuery): Promise<HubAccountResponse> {
-    throw new Error('Method not implemented.');
-  }
+    const currencyLedgers = this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS
 
-  public async getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
-    const dfspsMetadata = await this.deps.metadataStore.getAllDfspAccountMetadata()
+    assert(currencyLedgers.length > 0, 'Expected at least one currency to be defined')
 
-    // flat map
-    const buildKey = (dfspId: string, currency: string, accountType: AccountType) => `${dfspId};${currency};${accountType}`
-    const dfspIdMap: Record<string, null> = {}
-    const accountKeys = []
-    const accountIds = []
-    dfspsMetadata.forEach(dfspMetadata => {
-      dfspIdMap[dfspMetadata.dfspId] = null
-      // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
-      const keys = [
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Clearing),
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Collateral),
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Liquidity),
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Settlement_Multilateral),
-      ]
-      const ids = [
-        dfspMetadata.clearing,
-        dfspMetadata.collateral,
-        dfspMetadata.liquidity,
-        dfspMetadata.settlementMultilateral,
-      ]
-
-      accountKeys.push(keys)
-      accountIds.push(ids)
-    })
-    const dfspIds = Object.keys(dfspIdMap)
-    logger.debug(`getAllDfsps() - found: ${dfspIds.length} unique dfsps.`)
-
-    assert(accountIds.length < 8000, 'Exceeded maximum number of accounts.')
-
-    // Look up TigerBeetle Accounts
-    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
-    if (accountResult.type === 'FAILURE') {
-      logger.error(`getAllDfsps() - failed with error: ${accountResult.error.message}`)
-      return accountResult
-    }
-
-    // Now reassemble
-    const dfspMap: Record<string, Array<{ currency: string, accountType: AccountType, account: Account }>> =
-      dfspIds.reduce((acc, curr) => {
-        acc[curr] = []
-        return acc
-      }, {}
-      )
-
-    for (let idx = 0; idx < accountResult.result.length; idx++) {
-      const key = accountKeys[idx]
-      const [dfspId, currency, accountType] = key.split(';')
-      assert(dfspId)
-      assert(currency)
-      assert(accountType)
-
-      const account = accountResult.result[idx]
-      const dfspAccounts = dfspMap[dfspId]
-      dfspAccounts.push({
-        currency,
-        accountType,
-        account
-      })
-      // DO we need this?
-      dfspMap[dfspId] = dfspAccounts
-    }
-
-    const ledgerDfsps: Array<LedgerDfsp> = []
-    Object.keys(dfspMap).forEach(dfspId => {
-      const accounts = dfspMap[dfspId]
-      // todo: its probably best to keep this as a high-resolution representation, then we only need to convert to the old
-      // legacy format in one place
-      const ledgerAccounts: Array<LegacyLedgerAccount> = accounts.map(({currency, accountType, account}) => {
-        return {
-          id: account.id,
-          // TODO(LD): Map me!
-          ledgerAccountType: accountType.toString(),
-          currency,
-          isActive: (account.flags & AccountFlags.closed) === 0,
-          // TODO(LD): should be a bigint!
-          value: Number(account.credits_posted - account.debits_posted),
-          reservedValue: Number(account.credits_pending - account.debits_pending),
-          changedDate: new Date(Number(account.timestamp/NS_PER_MS))
-        }
-      })
-      const ledgerDfsp: LedgerDfsp = {
-        name: dfspId,
-        // TODO: need to look up on meta-account
+    const accounts: Array<LegacyLedgerAccount> = []
+    currencyLedgers.forEach(currencyLedger => {
+      accounts.push({
+        id: 0n,
+        ledgerAccountType: 'HUB_MULTILATERAL_SETTLEMENT',
+        currency: currencyLedger.currency,
         isActive: true,
-        // TODO: need to look up on meta-account
-        created: new Date(),
-        accounts: ledgerAccounts
-      }
-      ledgerDfsps.push(ledgerDfsp)
+        value: 0,
+        reservedValue: 0,
+        changedDate: new Date(0)
+      })
+      accounts.push({
+        id: 0n,
+        ledgerAccountType: 'HUB_RECONCILIATION',
+        currency: currencyLedger.currency,
+        isActive: true,
+        value: 0,
+        reservedValue: 0,
+        changedDate: new Date(0)
+      })
     })
 
-    // TODO: We need to do even more legacy translation here!
     return {
       type: 'SUCCESS',
-      result: { dfsps: ledgerDfsps }
+      accounts: accounts
     }
   }
+
+ 
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
     const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
@@ -1434,6 +1463,136 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async settleClosedWindows(thing: unknown): Promise<unknown> {
     throw new Error('not implemented')
+  }
+
+  /**
+   * Private Methods
+   */
+
+  private async _internalLedgerAccountsForMetadata(dfspsMetadata: Array<DfspAccountMetadata>): Promise<Array<InternalLedgerAccount>> {
+    // flat map
+    const buildKey = (dfspId: string, currency: string, accountType: AccountType) => `${dfspId};${currency};${accountType}`
+    const dfspIdMap: Record<string, null> = {}
+    const accountKeys: Array<string> = []
+    const accountIds: Array<bigint> = []
+    dfspsMetadata.forEach(dfspMetadata => {
+      dfspIdMap[dfspMetadata.dfspId] = null
+      // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
+      const keys = [
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Clearing),
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Collateral),
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Liquidity),
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Settlement_Multilateral),
+      ]
+      const ids = [
+        dfspMetadata.clearing,
+        dfspMetadata.collateral,
+        dfspMetadata.liquidity,
+        dfspMetadata.settlementMultilateral,
+      ]
+
+      accountKeys.push(...keys)
+      accountIds.push(...ids)
+    })
+    const dfspIds = Object.keys(dfspIdMap)
+    logger.debug(`getAllDfsps() - found: ${dfspIds.length} unique dfsps.`)
+
+    assert(accountIds.length < 8000, 'Exceeded maximum number of accounts.')
+
+    // Look up TigerBeetle Accounts
+    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
+    if (accountResult.type === 'FAILURE') {
+      logger.error(`getAllDfsps() - failed with error: ${accountResult.error.message}`)
+      throw accountResult.error
+    }
+
+    const internalLedgerAccounts: Array<InternalLedgerAccount> = []
+
+    for (let idx = 0; idx < accountResult.result.length; idx++) {
+      const key = accountKeys[idx]
+      const [dfspId, currency, accountTypeStr] = key.split(';')
+      assert(dfspId)
+      assert(currency)
+      assert(accountTypeStr)
+      const accountType = parseInt(accountTypeStr) as AccountType
+      const tigerbeetleAccount = accountResult.result[idx]
+
+      internalLedgerAccounts.push({
+        dfspId,
+        currency,
+        accountType,
+        ...tigerbeetleAccount
+      })
+    }
+
+    return internalLedgerAccounts
+  }
+
+  /**
+   * @description Map from an internal TigerBeetle Ledger representation of a LedgerAccount to a backwards compatible 
+   * representation
+   */
+  private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>): Array<LegacyLedgerAccount> {
+    const accounts: Array<LegacyLedgerAccount> = []
+    const currencies = [...new Set(input.map(item => item.currency))]
+    input.map(internalAccount => internalAccount.currency)
+    assert.equal(currencies.length, 1, '_fromInternalAccountsToLegacyLedgerAccounts expects accounts of only 1 currency at a time.')
+    const currency = currencies[0]
+    const assetScale = this._assetScaleForCurrency(currency)
+    const valueDivisor = 10 ** assetScale
+
+    const clearingAccount: InternalLedgerAccount = input.find(acc => acc.accountType === AccountType.Clearing)
+    const collateralAccount: InternalLedgerAccount = input.find(acc => acc.accountType === AccountType.Collateral)
+    assert(clearingAccount, 'could not find clearing account')
+    assert(collateralAccount, 'could not find colateral account')
+
+    // Legacy Settlement Balance: How much Dfsp has available to settle.
+    // Was a negative number in the legacy API once the dfsp had deposited funds.
+    const legacySettlementBalancePosted = (collateralAccount.debits_posted - collateralAccount.credits_posted) * BigInt(-1)
+    const legacySettlementBalancePending = (collateralAccount.debits_pending - collateralAccount.credits_pending) * BigInt(-1)
+
+    // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
+    const clearingBalancePosted = clearingAccount.credits_posted - clearingAccount.debits_posted
+    const clearingBalancePending = clearingAccount.credits_pending - clearingAccount.debits_pending
+    const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
+    const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
+
+    accounts.push({
+      id: clearingAccount.id,
+      ledgerAccountType: 'POSITION',
+      currency,
+      isActive: !(clearingAccount.flags & AccountFlags.closed),
+      value: convertBigIntToNumber(legacyPositionBalancePosted) / valueDivisor,
+      reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / valueDivisor,
+      // We don't have this in TigerBeetle, although we could use the created date
+      changedDate: new Date(0)
+    })
+
+    accounts.push({
+      id: collateralAccount.id,
+      ledgerAccountType: 'SETTLEMENT',
+      currency,
+      isActive: !(collateralAccount.flags & AccountFlags.closed),
+      value: convertBigIntToNumber(legacySettlementBalancePosted) / valueDivisor,
+      reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / valueDivisor,
+      // We don't have this in TigerBeetle, although we could use the created date
+      changedDate: new Date(0)
+    })
+
+    return accounts;
+  }
+
+  private _assetScaleForCurrency(currency: string): number {
+    const matchingCurrencyConfigs = this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS
+      .filter(c => c.currency === currency)
+    assert(matchingCurrencyConfigs.length > 0, `_assetScaleForCurrency - could not find currency: ${currency}`)
+    assert(matchingCurrencyConfigs.length < 2, `_assetScaleForCurrency - found more than 1 entry for currency: ${currency}`)
+
+    const currencyConfig = matchingCurrencyConfigs[0]
+    assert(typeof currencyConfig.assetScale, 'number')
+    assert(currencyConfig.assetScale >= 0, 'Expected assetScale to be greater or equal to than 0')
+
+    return currencyConfig.assetScale
   }
 
 

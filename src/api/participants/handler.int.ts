@@ -31,6 +31,23 @@ describe('api/participants/handler', () => {
   before(async () => {
     try {
       const projectRoot = path.join(__dirname, '../../..')
+
+      const applicationConfig = makeConfig()
+      // TODO: figure out a nicer way to override these sorts of config options
+      applicationConfig.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS = [
+        {
+          currency: 'USD',
+          assetScale: 4,
+          clearingLedgerId: 12n,
+          settlementLedgerId: 13n
+        },
+        {
+          currency: 'KES',
+          assetScale: 4,
+          clearingLedgerId: 22n,
+          settlementLedgerId: 23n
+        },
+      ]
       const config: HarnessApiConfig = {
         databaseConfig: {
           databaseName: 'central_ledger_test',
@@ -46,7 +63,7 @@ describe('api/participants/handler', () => {
           port: 9092,
           internalPort: 9192
         },
-        applicationConfig: makeConfig()
+        applicationConfig
       }
       // TODO(LD): Hopefully we can remove this at some point
       const participantService = require('../../domain/participant');
@@ -71,7 +88,10 @@ describe('api/participants/handler', () => {
     await harnessApi.teardown()
   })
 
-  describe('Hub', () => {
+  // Note: 
+  // TigerBeetleLedger has no notion of 'Hub Accounts', so it's not possible to add new hub accounts
+  // on the fly. We may revisit this decision at a later point, but I'm disabling this test for now.
+  describe.skip('Hub', () => {
     it('01 creates a new hub account for currency MWK', async () => {
       // Arrange
       const requestMultilateralSettlement = {
@@ -799,7 +819,7 @@ describe('api/participants/handler', () => {
         {
           changedDate: ":string",
           currency: "USD",
-id: ':integer',          isActive: 1,
+          id: ':integer', isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
           value: 0
@@ -807,7 +827,7 @@ id: ':integer',          isActive: 1,
         {
           changedDate: ":string",
           currency: "USD",
-id: ':integer',          isActive: 1,
+          id: ':integer', isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           // Funds out has no effect on `reservedValue`
           reservedValue: 0,
@@ -846,7 +866,7 @@ id: ':integer',          isActive: 1,
         {
           changedDate: ":string",
           currency: "USD",
-id: ':integer',          isActive: 1,
+          id: ':integer', isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
           value: 0
@@ -854,7 +874,7 @@ id: ':integer',          isActive: 1,
         {
           changedDate: ":string",
           currency: "USD",
-id: ':integer',          isActive: 1,
+          id: ':integer', isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
           value: -100000
@@ -904,7 +924,7 @@ id: ':integer',          isActive: 1,
         {
           changedDate: ":string",
           currency: "USD",
-id: ':integer',          isActive: 1,
+          id: ':integer', isActive: 1,
           ledgerAccountType: "POSITION",
           reservedValue: 0,
           value: 0
@@ -912,7 +932,7 @@ id: ':integer',          isActive: 1,
         {
           changedDate: ":string",
           currency: "USD",
-id: ':integer',          isActive: 1,
+          id: ':integer', isActive: 1,
           ledgerAccountType: "SETTLEMENT",
           reservedValue: 0,
           value: -100000 // Balance unchanged - withdrawal was rejected

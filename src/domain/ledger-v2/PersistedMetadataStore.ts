@@ -28,7 +28,7 @@ interface TransferMetadataRecord {
 }
 
 const TABLE_ACCOUNT = 'tigerBeetleAccountMetadata'
-const TABLE_TRANSFER = 'tigerBeetleAccountMetadata'
+const TABLE_TRANSFER = 'tigerBeetleTransferMetadata'
 
 
 function hydrateMetadataAccount(result: any): DfspAccountMetadata {
@@ -76,9 +76,24 @@ export class PersistedMetadataStore implements MetadataStore {
     this.cacheTransfer = new MetadataStoreCacheTransfer()
   }
 
-  async getAllDfspAccountMetadata(): Promise<Array<DfspAccountMetadata>> {
+  async queryAccountsAll(): Promise<Array<DfspAccountMetadata>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
+      .orderBy('dfspId', 'desc')
+      .orderBy('currency', 'desc')
+      .limit(1000)
+    if (records.length === 1000) {
+      throw new Error(`getAllDfspAccountMetadata - found ${records.length} records, something has probably gone terribly wrong.`)
+    }
+
+    const hydrated = records.map(record => hydrateMetadataAccount(record))
+    return hydrated
+  }
+
+  async queryAccountsDfsp(dfspId: string): Promise<Array<DfspAccountMetadata>> {
+    // Don't go to the cache
+    const records = await this.db.from(TABLE_ACCOUNT)
+      .where({dfspId})
       .orderBy('dfspId', 'desc')
       .orderBy('currency', 'desc')
       .limit(1000)

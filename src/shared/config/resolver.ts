@@ -193,9 +193,7 @@ const makeConfig = (): ApplicationConfig => {
   const resolved = resolveConfig(raw)
   const validated = validateConfig(resolved)
 
-
   printConfigWarnings(validated)
-
 
   return validated
 }
