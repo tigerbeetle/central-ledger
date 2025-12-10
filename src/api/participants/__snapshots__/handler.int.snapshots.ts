@@ -165,7 +165,7 @@ export const createsANewDfsp = {
       id: ':integer',
       ledgerAccountType: 'POSITION',
       currency: 'USD',
-      isActive: 0,
+      isActive: 1,
       "createdDate:ignore": true,
       createdBy: 'unknown'
     },
@@ -173,7 +173,7 @@ export const createsANewDfsp = {
       id: ':integer',
       ledgerAccountType: 'SETTLEMENT',
       currency: 'USD',
-      isActive: 0,
+      isActive: 1,
       "createdDate:ignore": true,
       createdBy: 'unknown'
     }

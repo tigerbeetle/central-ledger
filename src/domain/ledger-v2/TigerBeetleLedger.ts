@@ -136,220 +136,228 @@ export default class TigerBeetleLedger implements Ledger {
    * Based on the `startingDeposits` in CreateDfspCommand.
    */
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
-    assert(cmd.dfspId)
-    assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
-    assert.equal(cmd.currencies[0], 'USD', 'Currently only USD is supported.')
-    assert.equal(cmd.startingDeposits.length, cmd.currencies.length)
+    try {
+      assert(cmd.dfspId)
+      assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
+      this._assertCurrenciesEnabled(cmd.currencies)
+      assert.equal(cmd.startingDeposits.length, cmd.currencies.length)
 
-    const currency = cmd.currencies[0]
-    const collateralAmount = cmd.startingDeposits[0]
-    assert(Number.isInteger(collateralAmount))
-    assert(collateralAmount >= 0)
+      const currency = cmd.currencies[0]
+      const collateralAmount = cmd.startingDeposits[0]
+      assert(Number.isInteger(collateralAmount))
+      assert(collateralAmount >= 0)
 
-    // Lookup the dfsp first, ensure it's been correctly created
-    const accountMetadata = await this.deps.metadataStore.getDfspAccountMetadata(cmd.dfspId, currency)
-    if (accountMetadata.type === "DfspAccountMetadata") {
+      // Lookup the dfsp first, ensure it's been correctly created
+      const accountMetadata = await this.deps.metadataStore.getDfspAccountMetadata(cmd.dfspId, currency)
+      if (accountMetadata.type === "DfspAccountMetadata") {
 
-      const accounts = await this.deps.client.lookupAccounts([
-        accountMetadata.collateral,
-        accountMetadata.liquidity,
-        accountMetadata.clearing,
-        accountMetadata.settlementMultilateral,
-      ]);
-      if (accounts.length === 4) {
+        const accounts = await this.deps.client.lookupAccounts([
+          accountMetadata.collateral,
+          accountMetadata.liquidity,
+          accountMetadata.clearing,
+          accountMetadata.settlementMultilateral,
+        ]);
+        if (accounts.length === 4) {
+          return {
+            type: 'ALREADY_EXISTS'
+          }
+        }
+
+        // We have a partial save of accounts, that means metadata store and TigerBeetle are out of
+        // sync. We simply continue here and allow new accounts to be created in TigerBeetle, and
+        // the partial accounts to be ignored in the metadata store
+        logger.warn(`createDfsp() - found only ${accounts.length} of expected 4 for dfsp: 
+        ${cmd.dfspId} and currency: ${currency}. Overwriting old accounts.`)
+
+        // TODO:
+        // This is potentially dangerous because somebody could tamper with the metadata store by
+        // inserting an invalid id, and calling `createDfsp` again. It would be better to be able to 
+        // look up a Dfsp's accounts based on a query filter on TigerBeetle itself.
+      }
+
+      // TigerBeetle Accounts can be 128 bits, but since the Admin API uses javascript/json numbers
+      // to maintain backwards compatibility, we generate our own random accountIds under 
+      // Number.MAX_SAFE_INTEGER to be safe.
+      const accountIds: DfspAccountIds = {
+        collateral: Helper.id53(),
+        liquidity: Helper.id53(),
+        clearing: Helper.id53(),
+        settlementMultilateral: Helper.id53(),
+      }
+
+      const accounts: Array<Account> = [
+        // Collateral Account. Funds Switch holds in security to ensure Dfsp meets it's obligations
+        {
+          id: accountIds.collateral,
+          debits_pending: 0n,
+          debits_posted: 0n,
+          credits_pending: 0n,
+          credits_posted: 0n,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          reserved: 0,
+          ledger: LedgerIdUSD,
+          code: AccountType.Collateral,
+          flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
+          timestamp: 0n,
+        },
+        // Liquidity Account. Depositing Collateral unlocks liquidity that a Dfsp can use to make
+        // commitments to other Dfsps.
+        {
+          id: accountIds.liquidity,
+          debits_pending: 0n,
+          debits_posted: 0n,
+          credits_pending: 0n,
+          credits_posted: 0n,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          reserved: 0,
+          ledger: LedgerIdUSD,
+          code: AccountType.Liquidity,
+          flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
+          timestamp: 0n,
+        },
+        // Clearing Account. Payments from this Dfsp where Dfsp is Payer are debits, payments to this
+        // Dfsp where Dfsp is Payee, are credits.
+        {
+          id: accountIds.clearing,
+          debits_pending: 0n,
+          debits_posted: 0n,
+          credits_pending: 0n,
+          credits_posted: 0n,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          reserved: 0,
+          ledger: LedgerIdUSD,
+          code: AccountType.Clearing,
+          flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
+          timestamp: 0n,
+        },
+        // Settlement_Multilateral. Records the settlement obligations that this Dfsp holds
+        // to other Dfsps in the scheme.
+        {
+          id: accountIds.settlementMultilateral,
+          debits_pending: 0n,
+          debits_posted: 0n,
+          credits_pending: 0n,
+          credits_posted: 0n,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          reserved: 0,
+          ledger: LedgerIdUSD,
+          code: AccountType.Settlement_Multilateral,
+          flags: AccountFlags.debits_must_not_exceed_credits,
+          timestamp: 0n,
+        }
+      ]
+
+      await this.deps.metadataStore.associateDfspAccounts(cmd.dfspId, currency, accountIds)
+      const createAccountsErrors = await this.deps.client.createAccounts(accounts)
+
+      let failed = false
+      const readableErrors = []
+      for (const error of createAccountsErrors) {
+        readableErrors.push(CreateAccountError[error.result])
+        console.error(`Batch account at ${error.index} failed to create: ${CreateAccountError[error.result]}.`)
+        failed = true
+      }
+
+      if (failed) {
+        // if THIS fails, then we have dangling entries in the database
+        await this.deps.metadataStore.tombstoneDfspAccounts(cmd.dfspId, currency, accountIds)
+
         return {
-          type: 'ALREADY_EXISTS'
+          type: 'FAILURE',
+          error: new Error(`LedgerError: ${readableErrors.join(',')}`)
+        }
+      }
+      assert.strictEqual(createAccountsErrors.length, 0)
+
+
+      // TODO: we should adjust the command to make it an amount string
+      const collateralAmountStr = `${collateralAmount}`
+      const amount = TigerBeetleLedger.fromMojaloopAmount(collateralAmountStr, 2)
+
+      // Now deposit collateral and unlock liquidity, as well as make funds available for clearing.
+      //
+      // Dr Collateral 
+      //  Cr Liquidity 
+      // Dr Liquidity
+      //  Cr Clearing
+      //
+      const transfers = [
+        {
+          id: id(),
+          debit_account_id: accounts[0].id,
+          credit_account_id: accounts[1].id,
+          amount,
+          pending_id: 0n,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          timeout: 0,
+          ledger: LedgerIdUSD,
+          code: 1,
+          flags: TransferFlags.linked,
+          timestamp: 0n,
+        },
+        {
+          id: id(),
+          debit_account_id: accounts[1].id,
+          credit_account_id: accounts[2].id,
+          amount,
+          pending_id: 0n,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          timeout: 0,
+          ledger: LedgerIdUSD,
+          code: 1,
+          flags: 0,
+          timestamp: 0n,
+        }
+      ]
+      if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
+        return {
+          type: 'SUCCESS'
+        }
+      }
+      const createTransferErrors = await this.deps.client.createTransfers(transfers);
+
+      for (const error of createTransferErrors) {
+        readableErrors.push(CreateTransferError[error.result])
+        console.error(`Batch transfer at ${error.index} failed to create: ${CreateTransferError[error.result]}.`)
+        failed = true
+      }
+
+      if (failed) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`LedgerError: ${readableErrors.join(',')}`)
         }
       }
 
-      // We have a partial save of accounts, that means metadata store and TigerBeetle are out of
-      // sync. We simply continue here and allow new accounts to be created in TigerBeetle, and
-      // the partial accounts to be ignored in the metadata store
-      logger.warn(`createDfsp() - found only ${accounts.length} of expected 4 for dfsp: 
-        ${cmd.dfspId} and currency: ${currency}. Overwriting old accounts.`)
+      assert.strictEqual(createTransferErrors.length, 0)
 
-      // TODO:
-      // This is potentially dangerous because somebody could tamper with the metadata store by
-      // inserting an invalid id, and calling `createDfsp` again. It would be better to be able to 
-      // look up a Dfsp's accounts based on a query filter on TigerBeetle itself.
-    }
+      // Create the participant in the legacy system
+      // TODO: this is required when running properly, but causes problems in test
+      // indeed we should actually create the participant first before creating the account in 
+      // TigerBeetle
+      // await this.deps.participantService.create({ name: cmd.dfspId })
 
-    // TigerBeetle Accounts can be 128 bits, but since the Admin API uses javascript/json numbers
-    // to maintain backwards compatibility, we generate our own random accountIds under 
-    // Number.MAX_SAFE_INTEGER to be safe.
-    const accountIds: DfspAccountIds = {
-      collateral: Helper.id53(),
-      liquidity: Helper.id53(),
-      clearing: Helper.id53(),
-      settlementMultilateral: Helper.id53(),
-    }
-
-    const accounts: Array<Account> = [
-      // Collateral Account. Funds Switch holds in security to ensure Dfsp meets it's obligations
-      {
-        id: accountIds.collateral,
-        debits_pending: 0n,
-        debits_posted: 0n,
-        credits_pending: 0n,
-        credits_posted: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        reserved: 0,
-        ledger: LedgerIdUSD,
-        code: AccountType.Collateral,
-        flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
-        timestamp: 0n,
-      },
-      // Liquidity Account. Depositing Collateral unlocks liquidity that a Dfsp can use to make
-      // commitments to other Dfsps.
-      {
-        id: accountIds.liquidity,
-        debits_pending: 0n,
-        debits_posted: 0n,
-        credits_pending: 0n,
-        credits_posted: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        reserved: 0,
-        ledger: LedgerIdUSD,
-        code: AccountType.Liquidity,
-        flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
-        timestamp: 0n,
-      },
-      // Clearing Account. Payments from this Dfsp where Dfsp is Payer are debits, payments to this
-      // Dfsp where Dfsp is Payee, are credits.
-      {
-        id: accountIds.clearing,
-        debits_pending: 0n,
-        debits_posted: 0n,
-        credits_pending: 0n,
-        credits_posted: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        reserved: 0,
-        ledger: LedgerIdUSD,
-        code: AccountType.Clearing,
-        flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
-        timestamp: 0n,
-      },
-      // Settlement_Multilateral. Records the settlement obligations that this Dfsp holds
-      // to other Dfsps in the scheme.
-      {
-        id: accountIds.settlementMultilateral,
-        debits_pending: 0n,
-        debits_posted: 0n,
-        credits_pending: 0n,
-        credits_posted: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        reserved: 0,
-        ledger: LedgerIdUSD,
-        code: AccountType.Settlement_Multilateral,
-        flags: AccountFlags.debits_must_not_exceed_credits,
-        timestamp: 0n,
-      }
-    ]
-
-    await this.deps.metadataStore.associateDfspAccounts(cmd.dfspId, currency, accountIds)
-    const createAccountsErrors = await this.deps.client.createAccounts(accounts)
-
-    let failed = false
-    const readableErrors = []
-    for (const error of createAccountsErrors) {
-      readableErrors.push(CreateAccountError[error.result])
-      console.error(`Batch account at ${error.index} failed to create: ${CreateAccountError[error.result]}.`)
-      failed = true
-    }
-
-    if (failed) {
-      // if THIS fails, then we have dangling entries in the database
-      await this.deps.metadataStore.tombstoneDfspAccounts(cmd.dfspId, currency, accountIds)
-
-      return {
-        type: 'FAILURE',
-        error: new Error(`LedgerError: ${readableErrors.join(',')}`)
-      }
-    }
-    assert.strictEqual(createAccountsErrors.length, 0)
-
-
-    // TODO: we should adjust the command to make it an amount string
-    const collateralAmountStr = `${collateralAmount}`
-    const amount = TigerBeetleLedger.fromMojaloopAmount(collateralAmountStr, 2)
-
-    // Now deposit collateral and unlock liquidity, as well as make funds available for clearing.
-    //
-    // Dr Collateral 
-    //  Cr Liquidity 
-    // Dr Liquidity
-    //  Cr Clearing
-    //
-    const transfers = [
-      {
-        id: id(),
-        debit_account_id: accounts[0].id,
-        credit_account_id: accounts[1].id,
-        amount,
-        pending_id: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        timeout: 0,
-        ledger: LedgerIdUSD,
-        code: 1,
-        flags: TransferFlags.linked,
-        timestamp: 0n,
-      },
-      {
-        id: id(),
-        debit_account_id: accounts[1].id,
-        credit_account_id: accounts[2].id,
-        amount,
-        pending_id: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        timeout: 0,
-        ledger: LedgerIdUSD,
-        code: 1,
-        flags: 0,
-        timestamp: 0n,
-      }
-    ]
-    if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
       return {
         type: 'SUCCESS'
       }
-    }
-    const createTransferErrors = await this.deps.client.createTransfers(transfers);
-
-    for (const error of createTransferErrors) {
-      readableErrors.push(CreateTransferError[error.result])
-      console.error(`Batch transfer at ${error.index} failed to create: ${CreateTransferError[error.result]}.`)
-      failed = true
-    }
-
-    if (failed) {
+    } catch (err) {
+      logger.error(`createDfsp failed with error: ${err.message}`)
       return {
         type: 'FAILURE',
-        error: new Error(`LedgerError: ${readableErrors.join(',')}`)
+        error: err
       }
-    }
-
-    assert.strictEqual(createTransferErrors.length, 0)
-
-    // Create the participant in the legacy system
-    // TODO: this is required when running properly, but causes problems in test
-    // indeed we should actually create the participant first before creating the account in 
-    // TigerBeetle
-    // await this.deps.participantService.create({ name: cmd.dfspId })
-
-    return {
-      type: 'SUCCESS'
     }
   }
 
@@ -433,7 +441,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-   public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
+  public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
     try {
       const dfspsMetadata = await this.deps.metadataStore.queryAccountsAll()
       const internalLedgerAccounts = await this._internalLedgerAccountsForMetadata(dfspsMetadata)
@@ -619,7 +627,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
- 
+
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
     const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
@@ -1593,6 +1601,20 @@ export default class TigerBeetleLedger implements Ledger {
     assert(currencyConfig.assetScale >= 0, 'Expected assetScale to be greater or equal to than 0')
 
     return currencyConfig.assetScale
+  }
+
+  /**
+   * Check that the currencies are enabled on the switch, throw if they are not
+   */
+  private _assertCurrenciesEnabled(currencies: Array<string>) {
+    const configCurrencyLedgers = this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS
+    const enabledCurrencies = [...new Set(configCurrencyLedgers.map(cl => cl.currency))]
+    currencies.forEach(currency => {
+      if (enabledCurrencies.indexOf(currency) == -1) {
+        throw new Error(`_assertCurrenciesEnabled - currency ${currency} not enabled in config.`)
+      }
+    })
+    return
   }
 
 
