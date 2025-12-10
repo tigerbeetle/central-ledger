@@ -283,7 +283,7 @@ describe('api/participants/handler', () => {
       unwrapSnapshot(checkSnapshotObject(body, snapshot))
     })
 
-    it.skip('03 deactivates a participant', async () => {
+    it('03 deactivates a participant', async () => {
       // Arrange
       const request = {
         params: {

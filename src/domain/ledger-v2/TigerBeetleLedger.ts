@@ -1610,7 +1610,7 @@ export default class TigerBeetleLedger implements Ledger {
     const configCurrencyLedgers = this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS
     const enabledCurrencies = [...new Set(configCurrencyLedgers.map(cl => cl.currency))]
     currencies.forEach(currency => {
-      if (enabledCurrencies.indexOf(currency) == -1) {
+      if (enabledCurrencies.indexOf(currency) === -1) {
         throw new Error(`_assertCurrenciesEnabled - currency ${currency} not enabled in config.`)
       }
     })

@@ -193,7 +193,7 @@ export const addsASecondCurrencyToExistingDFSP =
       id: ':integer',
       ledgerAccountType: 'POSITION',
       currency: 'USD',
-      isActive: 0,
+      isActive: 1,
       "createdDate:ignore": true,
       createdBy: 'unknown'
     },
@@ -201,7 +201,7 @@ export const addsASecondCurrencyToExistingDFSP =
       id: ':integer',
       ledgerAccountType: 'SETTLEMENT',
       currency: 'USD',
-      isActive: 0,
+      isActive: 1,
       "createdDate:ignore": true,
       createdBy: 'unknown'
     },
@@ -209,7 +209,7 @@ export const addsASecondCurrencyToExistingDFSP =
       id: ':integer',
       ledgerAccountType: 'POSITION',
       currency: 'KES',
-      isActive: 0,
+      isActive: 1,
       "createdDate:ignore": true,
       createdBy: 'unknown'
     },
@@ -217,7 +217,7 @@ export const addsASecondCurrencyToExistingDFSP =
       id: ':integer',
       ledgerAccountType: 'SETTLEMENT',
       currency: 'KES',
-      isActive: 0,
+      isActive: 1,
       "createdDate:ignore": true,
       createdBy: 'unknown'
     }
