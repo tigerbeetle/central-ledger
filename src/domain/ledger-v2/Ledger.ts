@@ -22,7 +22,6 @@ import {
   LookupTransferQuery,
   LookupTransferQueryResponse,
   PrepareResult,
-  QueryResult,
   SetNetDebitCapCommand,
   SweepResult,
   WithdrawCommitCommand,
@@ -30,6 +29,7 @@ import {
   WithdrawPrepareCommand,
   WithdrawPrepareResponse,
 } from './types'
+import { QueryResult } from "src/shared/results";
 
 /**
   * Common interface for all ledger implementations
@@ -52,7 +52,7 @@ export interface Ledger {
   /**
    * Onboarding/Lifecycle Management Queries
    */
-  getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse>
+  getHubAccounts(query: AnyQuery): Promise<HubAccountResponse>
   getDfsp(query: {dfspId: string}): Promise<QueryResult<LedgerDfsp>>
   getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>>
   getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse>

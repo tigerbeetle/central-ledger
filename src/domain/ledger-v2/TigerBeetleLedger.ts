@@ -487,7 +487,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  public async getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
+  public async getHubAccounts(query: AnyQuery): Promise<HubAccountResponse> {
     throw new Error('Method not implemented.');
   }
 

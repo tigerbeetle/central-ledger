@@ -1,7 +1,8 @@
 import { Ledger } from "src/domain/ledger-v2/Ledger";
-import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, QueryResult, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery } from "src/domain/ledger-v2/types";
+import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery } from "src/domain/ledger-v2/types";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
+import { QueryResult } from "src/shared/results";
 
 
 /**
@@ -60,7 +61,7 @@ export default class TestLedger implements Ledger {
   withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse> {
     throw new Error("Method not implemented.");
   }
-  getHubAccounts(query: GetHubAccountsQuery): Promise<HubAccountResponse> {
+  getHubAccounts(query: AnyQuery): Promise<HubAccountResponse> {
     throw new Error("Method not implemented.");
   }
   getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {

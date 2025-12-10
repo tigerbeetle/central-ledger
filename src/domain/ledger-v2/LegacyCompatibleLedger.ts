@@ -42,7 +42,6 @@ import {
   PayeeResponsePayload,
   PrepareResult,
   PrepareResultType,
-  QueryResult,
   SetNetDebitCapCommand,
   SweepResult,
   TimedOutTransfer,
@@ -58,6 +57,7 @@ import {
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
 import Helper from './LegacyLedgerHelper';
+import { QueryResult } from 'src/shared/results';
 
 
 enum PrepareDuplicateResult {

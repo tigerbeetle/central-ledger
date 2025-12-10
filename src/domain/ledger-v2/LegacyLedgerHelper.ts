@@ -1,4 +1,5 @@
-import { CommandResultFailure, CommandResultSuccess, QueryResult, QueryResultFailure, QueryResultSuccess } from "./types";
+import { QueryResultFailure, QueryResultSuccess } from "src/shared/results";
+import { CommandResultFailure, CommandResultSuccess} from "./types";
 
 export default class Helper {
 
