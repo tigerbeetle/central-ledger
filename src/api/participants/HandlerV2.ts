@@ -96,6 +96,9 @@ export default class ParticipantAPIHandlerV2 {
       assert(request.payload.currency)
       assert(request.payload.name)
 
+      // TODO: create the participant here with the participantService, then
+      // do everything else in the ledger
+
       const { currency, name } = request.payload
       const ledger = getLedger(request)
       const createDfspResult = await ledger.createDfsp({
