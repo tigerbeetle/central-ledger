@@ -44,6 +44,8 @@ export type SaveTransferMetadataResult = SaveTransferMetadataResultSuccess | Sav
 
 export interface MetadataStore {
 
+  getAllDfspAccountMetadata(): Promise<Array<DfspAccountMetadata>>
+
   /**
    * Gets the account metadata for a DFSP + Currency
    */

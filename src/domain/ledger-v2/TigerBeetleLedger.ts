@@ -36,7 +36,6 @@ import {
   LookupTransferResultType,
   PrepareResult,
   PrepareResultType,
-  QueryResult,
   SetNetDebitCapCommand,
   SweepResult,
   TimedOutTransfer,
@@ -46,6 +45,8 @@ import {
   WithdrawPrepareResponse,
 } from "./types";
 import { Enum } from '@mojaloop/central-services-shared';
+import { QueryResult } from 'src/shared/results';
+import Helper from './TigerBeetleLedgerHelper';
 
 export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
@@ -62,9 +63,10 @@ export interface TigerBeetleLedgerDependencies {
 export const LedgerIdUSD = 100
 export const LedgerIdTimeoutHandler = 9000
 
-// 1 second = 1,000,000,000 nanoseconds (1 billion)
-const NS_PER_SECOND = 1_000_000_000n
+const NS_PER_MS = 1_000_000n
+const NS_PER_SECOND = NS_PER_MS * 1_000n
 
+// TODO(LD): rename DfspAccountType>
 export enum AccountType {
   Collateral = 1,
   Liquidity = 2,
@@ -343,11 +345,11 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  public async disableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
+  public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
     throw new Error('not implemented')
   }
 
-  public async enableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>> {
+  public async enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
     throw new Error('not implemented')
   }
 
@@ -490,7 +492,104 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
-    throw new Error('Method not implemented.');
+    const dfspsMetadata = await this.deps.metadataStore.getAllDfspAccountMetadata()
+
+    // flat map
+    const buildKey = (dfspId: string, currency: string, accountType: AccountType) => `${dfspId};${currency};${accountType}`
+    const dfspIdMap: Record<string, null> = {}
+    const accountKeys = []
+    const accountIds = []
+    dfspsMetadata.forEach(dfspMetadata => {
+      dfspIdMap[dfspMetadata.dfspId] = null
+      // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
+      const keys = [
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Clearing),
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Collateral),
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Liquidity),
+        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Settlement_Multilateral),
+      ]
+      const ids = [
+        dfspMetadata.clearing,
+        dfspMetadata.collateral,
+        dfspMetadata.liquidity,
+        dfspMetadata.settlementMultilateral,
+      ]
+
+      accountKeys.push(keys)
+      accountIds.push(ids)
+    })
+    const dfspIds = Object.keys(dfspIdMap)
+    logger.debug(`getAllDfsps() - found: ${dfspIds.length} unique dfsps.`)
+
+    assert(accountIds.length < 8000, 'Exceeded maximum number of accounts.')
+
+    // Look up TigerBeetle Accounts
+    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
+    if (accountResult.type === 'FAILURE') {
+      logger.error(`getAllDfsps() - failed with error: ${accountResult.error.message}`)
+      return accountResult
+    }
+
+    // Now reassemble
+    const dfspMap: Record<string, Array<{ currency: string, accountType: AccountType, account: Account }>> =
+      dfspIds.reduce((acc, curr) => {
+        acc[curr] = []
+        return acc
+      }, {}
+      )
+
+    for (let idx = 0; idx < accountResult.result.length; idx++) {
+      const key = accountKeys[idx]
+      const [dfspId, currency, accountType] = key.split(';')
+      assert(dfspId)
+      assert(currency)
+      assert(accountType)
+
+      const account = accountResult.result[idx]
+      const dfspAccounts = dfspMap[dfspId]
+      dfspAccounts.push({
+        currency,
+        accountType,
+        account
+      })
+      // DO we need this?
+      dfspMap[dfspId] = dfspAccounts
+    }
+
+    const ledgerDfsps: Array<LedgerDfsp> = []
+    Object.keys(dfspMap).forEach(dfspId => {
+      const accounts = dfspMap[dfspId]
+      // todo: its probably best to keep this as a high-resolution representation, then we only need to convert to the old
+      // legacy format in one place
+      const ledgerAccounts: Array<LegacyLedgerAccount> = accounts.map(({currency, accountType, account}) => {
+        return {
+          id: account.id,
+          // TODO(LD): Map me!
+          ledgerAccountType: accountType.toString(),
+          currency,
+          isActive: (account.flags & AccountFlags.closed) === 0,
+          // TODO(LD): should be a bigint!
+          value: Number(account.credits_posted - account.debits_posted),
+          reservedValue: Number(account.credits_pending - account.debits_pending),
+          changedDate: new Date(Number(account.timestamp/NS_PER_MS))
+        }
+      })
+      const ledgerDfsp: LedgerDfsp = {
+        name: dfspId,
+        // TODO: need to look up on meta-account
+        isActive: true,
+        // TODO: need to look up on meta-account
+        created: new Date(),
+        accounts: ledgerAccounts
+      }
+      ledgerDfsps.push(ledgerDfsp)
+    })
+
+    // TODO: We need to do even more legacy translation here!
+    return {
+      type: 'SUCCESS',
+      result: { dfsps: ledgerDfsps }
+    }
   }
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {

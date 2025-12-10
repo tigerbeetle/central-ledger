@@ -466,18 +466,6 @@ export interface AnyQuery {
 
 }
 
-export type QueryResultSuccess<T> = {
-  type: 'SUCCESS',
-  result: T
-}
-
-export type QueryResultFailure = {
-  type: 'FAILURE',
-  error: Error
-}
-
-export type QueryResult<T> = QueryResultSuccess<T> | QueryResultFailure
-
 export interface LedgerDfsp {
   name: string,
   // TODO(LD): rename to simply active

@@ -43,7 +43,6 @@ export interface HarnessApiConfig {
 export class HarnessApi implements Harness {
   private harnessDatabase: HarnessDatabase
   private harnessTigerBeetle: HarnessTigerBeetle
-  private harnessMessageBus: HarnessMessageBus
   private client: Client
   private transferBatcher: TransferBatcher
 
@@ -54,17 +53,13 @@ export class HarnessApi implements Harness {
   ) {
     this.harnessDatabase = new HarnessDatabase(config.databaseConfig)
     this.harnessTigerBeetle = new HarnessTigerBeetle(config.tigerBeetleConfig)
-    // this.harnessMessageBus = new HarnessMessageBus(config.messageBusConfig)
   }
 
   public async start(): Promise<{ ledger: Ledger }> {
     logger.info('HarnessApi - start()')
-    // Start the respective harnesses
-    // const [dbConfig, tbConfig, messageBusConfig] = await Promise.all([
     const [dbConfig, tbConfig] = await Promise.all([
       this.harnessDatabase.start(),
       this.harnessTigerBeetle.start(),
-      // this.harnessMessageBus.start()
     ])
 
     // Override database config to use the test container
@@ -80,9 +75,6 @@ export class HarnessApi implements Harness {
       }
     };
 
-    // Override Kafka config to use the test message bus
-    // this.overrideKafkaBrokerConfig(messageBusConfig.brokerAddress);
-
     // Initialize database connection to test container
     await this.dbLib.connect(testDbConfig);
     assert(this.dbLib._tables, 'expected Db._tables to be defined')
@@ -94,7 +86,8 @@ export class HarnessApi implements Harness {
       replica_addresses: tbConfig.address,
     })
     this.transferBatcher = new TransferBatcher(this.client, 100, 1)
-    const ledger = await this.initLegacyLedger()
+    // const ledger = await this.initLegacyLedger()
+    const ledger = await this.initTigerBeetleLedger()
 
     // Provision the switch
     const provisionConfig: ProvisioningConfig = {
@@ -105,17 +98,6 @@ export class HarnessApi implements Harness {
     const provisioner = new Provisioner(provisionConfig, { ledger })
     await provisioner.run();
 
-    // // Register the admin handler to consume ADMIN TRANSFER messages
-    // logger.info('HarnessApi - registering admin handlers...');
-    // const AdminHandlers = require('../../handlers/admin/handler');
-    // await AdminHandlers.registerAllHandlers();
-    // logger.info('HarnessApi - admin handlers registered successfully');
-
-    // // Give the consumer time to connect
-    // logger.debug('HarnessApi - waiting for admin handler consumer to connect...');
-    // await new Promise(resolve => setTimeout(resolve, 2000));
-    // logger.debug('HarnessApi - admin handler consumer should be connected');
-
     return {
       ledger
     }
@@ -125,6 +107,7 @@ export class HarnessApi implements Harness {
     logger.info('HarnessApi - teardown()')
 
     // Disconnect all Kafka producers and consumers BEFORE stopping the message bus
+    // TODO(LD): move this to elsewhere in the code to stop the runaway errors!
     await this.disconnectAllKafkaProducers();
     await this.disconnectAllKafkaConsumers();
 
@@ -145,9 +128,7 @@ export class HarnessApi implements Harness {
       await this.harnessTigerBeetle.teardown()
     }
 
-    // if (this.harnessMessageBus) {
-    //   await this.harnessMessageBus.teardown()
-    // }
+
   }
 
   /**
@@ -200,47 +181,6 @@ export class HarnessApi implements Harness {
     } catch (err) {
       // Log but don't throw - we want teardown to continue even if this fails
       logger.warn('HarnessApi - failed to disconnect Kafka consumers:', err.message);
-    }
-  }
-
-  /**
-   * Override all Kafka broker configurations to point to the test message bus
-   */
-  private overrideKafkaBrokerConfig(brokerAddress: string): void {
-    logger.info(`HarnessApi - overrideKafkaBrokerConfig() - setting broker to: ${brokerAddress}`);
-
-    // Override the application config KAFKA_CONFIG
-    const kafkaConfig = this.config.applicationConfig.KAFKA_CONFIG;
-    this.overrideKafkaConfigBrokers(kafkaConfig, brokerAddress);
-
-    // Also override the lib/config KAFKA_CONFIG that legacy code uses
-    const libConfig = require('../../lib/config');
-    if (libConfig.KAFKA_CONFIG) {
-      this.overrideKafkaConfigBrokers(libConfig.KAFKA_CONFIG, brokerAddress);
-    }
-
-    logger.debug('HarnessApi - overrideKafkaBrokerConfig() - complete');
-  }
-
-  private overrideKafkaConfigBrokers(kafkaConfig: any, brokerAddress: string): void {
-    // Override consumer configs
-    const consumers = kafkaConfig.CONSUMER;
-    for (const category of Object.values(consumers)) {
-      for (const consumerConfig of Object.values(category)) {
-        if (consumerConfig?.config?.rdkafkaConf) {
-          consumerConfig.config.rdkafkaConf['metadata.broker.list'] = brokerAddress;
-        }
-      }
-    }
-
-    // Override producer configs
-    const producers = kafkaConfig.PRODUCER;
-    for (const category of Object.values(producers)) {
-      for (const producerConfig of Object.values(category)) {
-        if (producerConfig?.config?.rdkafkaConf) {
-          producerConfig.config.rdkafkaConf['metadata.broker.list'] = brokerAddress;
-        }
-      }
     }
   }
 

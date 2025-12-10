@@ -27,6 +27,46 @@ interface TransferMetadataRecord {
   fulfilment?: string
 }
 
+const TABLE_ACCOUNT = 'tigerBeetleAccountMetadata'
+const TABLE_TRANSFER = 'tigerBeetleAccountMetadata'
+
+
+function hydrateMetadataAccount(result: any): DfspAccountMetadata {
+  const record = result as AccountMetadataRecord;
+
+  assert(record.dfspId)
+  assert(record.currency)
+  assert(record.collateralAccountId)
+  assert(record.liquidityAccountId)
+  assert(record.clearingAccountId)
+  assert(record.settlementMultilateralAccountId)
+
+  const metadata: DfspAccountMetadata = {
+    type: 'DfspAccountMetadata',
+    dfspId: record.dfspId,
+    currency: record.currency,
+    collateral: BigInt(record.collateralAccountId),
+    liquidity: BigInt(record.liquidityAccountId),
+    clearing: BigInt(record.clearingAccountId),
+    settlementMultilateral: BigInt(record.settlementMultilateralAccountId)
+  }
+
+  return metadata
+}
+
+function dehydrateMetadataAccount(metadata: DfspAccountMetadata): any {
+  const record = {
+    dfspId: metadata.dfspId,
+    currency: metadata.currency,
+    collateralAccountId: metadata.collateral.toString(),
+    liquidityAccountId: metadata.liquidity.toString(),
+    clearingAccountId: metadata.clearing.toString(),
+    settlementMultilateralAccountId: metadata.settlementMultilateral.toString()
+  }
+
+  return record
+}
+
 export class PersistedMetadataStore implements MetadataStore {
   private cacheAccount: MetadataStoreCacheAccount
   private cacheTransfer: MetadataStoreCacheTransfer
@@ -36,14 +76,28 @@ export class PersistedMetadataStore implements MetadataStore {
     this.cacheTransfer = new MetadataStoreCacheTransfer()
   }
 
+  async getAllDfspAccountMetadata(): Promise<Array<DfspAccountMetadata>> {
+    // Don't go to the cache
+    const records = await this.db.from(TABLE_ACCOUNT)
+      .orderBy('dfspId', 'desc')
+      .orderBy('currency', 'desc')
+      .limit(1000)
+    if (records.length === 1000) {
+      throw new Error(`getAllDfspAccountMetadata - found ${records.length} records, something has probably gone terribly wrong.`)
+    }
+
+    const hydrated = records.map(record => hydrateMetadataAccount(record))
+    return hydrated
+  }
+
   async getDfspAccountMetadata(dfspId: string, currency: string): Promise<DfspAccountMetadata | DfspAccountMetadataNone> {
-    // These values do't change very often, so it's safe to cache them
+    // These values don't change very often, so it's safe to cache them
     const cacheResult = this.cacheAccount.get(dfspId, currency)
     if (cacheResult.type === 'HIT') {
       return cacheResult.contents
     }
 
-    const result = await this.db.from('tigerBeetleAccountMetadata')
+    const result = await this.db.from(TABLE_ACCOUNT)
       .where({
         dfspId,
         currency,
@@ -56,16 +110,7 @@ export class PersistedMetadataStore implements MetadataStore {
       return { type: 'DfspAccountMetadataNone' };
     }
 
-    const record = result as AccountMetadataRecord;
-    const metadata: DfspAccountMetadata = {
-      type: 'DfspAccountMetadata',
-      dfspId: record.dfspId,
-      currency: record.currency,
-      collateral: BigInt(record.collateralAccountId),
-      liquidity: BigInt(record.liquidityAccountId),
-      clearing: BigInt(record.clearingAccountId),
-      settlementMultilateral: BigInt(record.settlementMultilateralAccountId)
-    }
+    const metadata = hydrateMetadataAccount(result)
     this.cacheAccount.put(dfspId, currency, metadata)
 
     return metadata
@@ -74,19 +119,20 @@ export class PersistedMetadataStore implements MetadataStore {
   async associateDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
     this.cacheAccount.delete(dfspId, currency)
 
-    await this.db.from('tigerBeetleAccountMetadata').insert({
+    const record = dehydrateMetadataAccount({
+      type: "DfspAccountMetadata",
       dfspId,
       currency,
-      collateralAccountId: accounts.collateral.toString(),
-      liquidityAccountId: accounts.liquidity.toString(),
-      clearingAccountId: accounts.clearing.toString(),
-      settlementMultilateralAccountId: accounts.settlementMultilateral.toString(),
+      ...accounts,
+    })
+    await this.db.from(TABLE_ACCOUNT).insert({
+      ...record,
       isTombstoned: false
     });
   }
 
   async tombstoneDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
-    await this.db.from('tigerBeetleAccountMetadata')
+    await this.db.from(TABLE_ACCOUNT)
       .where({
         dfspId,
         currency,
@@ -149,7 +195,7 @@ export class PersistedMetadataStore implements MetadataStore {
   private async lookupTransferMetadataPersisted(ids: Array<string>): Promise<Array<TransferMetadata | TransferMetadataNone>> {
     assert(ids)
 
-    const queryResult = await this.db.from('tigerBeetleTransferMetadata')
+    const queryResult = await this.db.from(TABLE_TRANSFER)
       .whereIn('id', ids)
 
     // maintain order of results, even when we find nulls
@@ -207,11 +253,11 @@ export class PersistedMetadataStore implements MetadataStore {
       })
 
       // TODO: when saving make sure it upserts properly
-      await this.db.from('tigerBeetleTransferMetadata')
+      await this.db.from(TABLE_TRANSFER)
         .insert(records)
         .onConflict('id')
         .merge(['fulfilment']);
-      this.cacheTransfer.put(metadata.map(m => ({type: 'TransferMetadata', ...m})))
+      this.cacheTransfer.put(metadata.map(m => ({ type: 'TransferMetadata', ...m })))
 
       return metadata.map(m => {
         return {
@@ -232,7 +278,7 @@ export class PersistedMetadataStore implements MetadataStore {
   //   try {
   //    // TODO: 
 
-      
+
   //   } catch (err) {
   //     logger.error(`updateTransferMetadataFulfilment() - failed with error: ${err.message}`)
   //     return transfersToUpdate.map(m => {
