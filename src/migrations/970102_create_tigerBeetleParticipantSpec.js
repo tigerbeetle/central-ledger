@@ -25,26 +25,23 @@
  **********/
 
 exports.up = async (knex) => {
-  return knex.schema.hasTable('tigerBeetleTransferSpec').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleParticipantSpec').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerBeetleTransferSpec', (t) => {
-        t.string('id', 36).primary().notNullable()
-        t.string('payerId', 256).notNullable()
-        t.foreign('payerId').references('name').inTable('participant')
-        t.string('payeeId', 256).notNullable()
-        t.foreign('payeeId').references('name').inTable('participant')
-        t.string('ilpCondition', 256).notNullable()
-        t.text('ilpPacket').notNullable()
-        t.string('fulfilment', 256)
+      return knex.schema.createTable('tigerBeetleParticipantSpec', (t) => {
+        t.string('dfspId', 256).notNullable()
+        t.foreign('dfspId').references('name').inTable('participant')
+        // Reference to the Master TigerBeetle Account for this participant
+        t.string('accountId', 64).notNullable()
+        t.unique(['dfspId'])
       })
     }
   })
 }
 
 exports.down = function (knex) {
-  return knex.schema.hasTable('tigerBeetleTransferSpec').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleParticipantSpec').then(function (exists) {
     if (exists) {
-      return knex.schema.dropTableIfExists('tigerBeetleTransferSpec')
+      return knex.schema.dropTableIfExists('tigerBeetleParticipantSpec')
     }
   })
 }
