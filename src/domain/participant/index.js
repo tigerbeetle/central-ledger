@@ -61,6 +61,7 @@ const ParticipantInitialPositionExistsText = 'Participant Limit or Initial Posit
 const ParticipantNotFoundText = 'Participant does not exist'
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const { destroyParticipantEndpointByParticipantId } = require('../../models/participant/participant')
+const { isProxy } = require('util/types')
 
 const create = async (payload) => {
   const log = logger.child({ payload })
@@ -70,6 +71,21 @@ const create = async (payload) => {
   } catch (err) {
     log.error('error creating participant', err)
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
+  }
+}
+
+/**
+ * Create a new Participant for a given participant name. If the participant
+ * already exists, do nothing.
+ */
+const ensureExists = async (name) => {
+  // TODO(LD): can we add a constraint to the database that names must be unique?
+  const existing = await ParticipantModel.getByName(name)
+  if (!existing) {
+    await ParticipantModel.create({
+      name,
+      isProxy: false
+    })
   }
 }
 
@@ -582,7 +598,7 @@ const adjustLimits = async (name, payload) => {
     participantExists(participant)
     const result = await ParticipantFacade.adjustLimits(participant.participantCurrencyId, limit)
     payload.name = name
-    
+
     return result
   } catch (err) {
     log.error('error adjusting limits', { message: err.message, stack: err.stack })
@@ -722,7 +738,7 @@ const getAccounts = async (name, query) => {
       })
     }
     log.debug(`getAccounts() found ${positions.length} positions for participant: ${name}`)
-    
+
     return positions
   } catch (err) {
     log.error('error getting accounts', err)
@@ -915,6 +931,7 @@ const createAssociatedParticipantAccounts = async (currency, ledgerAccountTypeId
 
 module.exports = {
   create,
+  ensureExists,
   getAll,
   getById,
   getByName,

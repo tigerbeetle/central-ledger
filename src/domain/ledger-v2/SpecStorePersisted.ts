@@ -120,7 +120,7 @@ export class PersistedSpecStore implements SpecStore {
     return {
       type: 'SpecDfsp',
       dfspId: specRecord.dfspId,
-      accountId: specRecord.accountId,
+      accountId: BigInt(specRecord.accountId),
     }
   }
 

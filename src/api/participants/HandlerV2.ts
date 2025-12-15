@@ -50,6 +50,7 @@ const getLedger = (request): Ledger => {
 }
 
 interface IParticipantService {
+  ensureExists(name: string): Promise<void>
   addEndpoint(name: string, payload: { type: string, value: string }): Promise<void>
   addEndpoints(name: string, endpoints: Array<{ type: string, value: string }>): Promise<Array<any>>
   getEndpoint(name: string, type: string): Promise<Array<{ name: string, value: string }>>
@@ -212,8 +213,9 @@ export default class ParticipantAPIHandlerV2 {
       assert(request.payload.currency)
       assert(request.payload.name)
 
-      // TODO: create the participant here with the participantService, then
+      // Create the participant here with the participantService, then
       // do everything else in the ledger
+      await this.participantService.ensureExists(request.payload.name)
 
       const { currency, name } = request.payload
       const ledger = getLedger(request)

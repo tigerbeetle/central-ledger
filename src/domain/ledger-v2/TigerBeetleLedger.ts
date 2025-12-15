@@ -303,8 +303,6 @@ export default class TigerBeetleLedger implements Ledger {
           error: new Error(`LedgerError: ${readableErrors.join(',')}`)
         }
       }
-      assert.strictEqual(createAccountsErrors.length, 0)
-
 
       // TODO: we should adjust the command to make it an amount string
       const collateralAmountStr = `${collateralAmount}`
@@ -320,8 +318,8 @@ export default class TigerBeetleLedger implements Ledger {
       const transfers = [
         {
           id: id(),
-          debit_account_id: accounts[0].id,
-          credit_account_id: accounts[1].id,
+          debit_account_id: accountIds.collateral,
+          credit_account_id: accountIds.liquidity,
           amount,
           pending_id: 0n,
           user_data_128: 0n,
@@ -335,8 +333,8 @@ export default class TigerBeetleLedger implements Ledger {
         },
         {
           id: id(),
-          debit_account_id: accounts[1].id,
-          credit_account_id: accounts[2].id,
+          debit_account_id: accountIds.liquidity,
+          credit_account_id: accountIds.clearing,
           amount,
           pending_id: 0n,
           user_data_128: 0n,
@@ -467,7 +465,7 @@ export default class TigerBeetleLedger implements Ledger {
 
       const ledgerDfsp: LedgerDfsp = {
         name: query.dfspId,
-        isActive: (masterAccount.flags & AccountFlags.closed) === 1,
+        isActive: !(masterAccount.flags & AccountFlags.closed),
         created: new Date(Number(masterAccount.timestamp / NS_PER_MS)),
         accounts: legacyLedgerAccounts
       }
@@ -519,7 +517,7 @@ export default class TigerBeetleLedger implements Ledger {
         return {
           name: dfspId,
           // TODO(LD): verify!
-          isActive: (masterAccount.flags & AccountFlags.closed) === 1,
+          isActive: !(masterAccount.flags & AccountFlags.closed),
           created: new Date(Number(masterAccount.timestamp / NS_PER_MS)),
           accounts: dfspLegacyAccounts
         } as LedgerDfsp;

@@ -55,6 +55,7 @@ describe('api/participants/handler', () => {
           memorySize: '256m',
           port: 3307,
           migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+          // migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
         },
         tigerBeetleConfig: {
           tigerbeetleBinaryPath: path.join(projectRoot, '../../', '.bin/tigerbeetle')
