@@ -32,6 +32,7 @@ import { FSPIOPError } from "@mojaloop/central-services-error-handling"
 import { Ledger } from "src/domain/ledger-v2/Ledger"
 import { CommandResult } from "src/domain/ledger-v2/types"
 
+// TODO(LD): change to imports!
 const Config = require('../../lib/config')
 const Logger = require('../../shared/logger').logger
 const ErrorHandler = require('@mojaloop/central-services-error-handling')

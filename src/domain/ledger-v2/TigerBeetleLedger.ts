@@ -380,7 +380,6 @@ export default class TigerBeetleLedger implements Ledger {
         return
       }
     })
-
   }
 
   public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
@@ -393,7 +392,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (specDfsp.type === 'SpecDfspNone') {
       return {
         type: 'FAILURE',
-        error: new Error(`no dfsp found for dfspId: ${cmd.dfspId}`)
+        error: new Error(`Participant does not exist`)
       }
     }
     let closeAccountResult = await this._closeDfspMasterAccount(specDfsp.accountId)
@@ -473,7 +472,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (specDfsp.type === 'SpecDfspNone') {
       return {
         type: 'FAILURE',
-        error: new Error(`no dfsp found for dfspId: ${cmd.dfspId}`)
+        error: new Error(`Participant does not exist`)
       }
     }
     const transfers = await this.deps.client.getAccountTransfers({
@@ -488,16 +487,18 @@ export default class TigerBeetleLedger implements Ledger {
       flags: AccountFilterFlags.credits |
         AccountFilterFlags.reversed,
     })
+
     if (transfers.length === 0) {
+      // consider this a success, the Account isn't closed!
       return {
-        type: 'FAILURE',
-        error: new Error(`no previous closing transfer found`)
+        type: 'SUCCESS',
+        result: undefined
       }
     }
 
     // get the latest pending transfer
     const lastClosingTransferId = transfers[0].id
-    const createTransferErrors = await this.deps.client.createTransfers([{
+    const createTransferResults = await this.deps.client.createTransfers([{
       ...Helper.createTransferTemplate,
       id: id(),
       debit_account_id: 0n,
@@ -509,18 +510,29 @@ export default class TigerBeetleLedger implements Ledger {
       flags: TransferFlags.void_pending_transfer
     }])
 
-    if (createTransferErrors.length > 0 &&
-      createTransferErrors[0].result !== CreateTransferError.ok
-    ) {
+    if (createTransferResults.length === 0) {
       return {
-        type: 'FAILURE',
-        error: new Error(`failed to void closing transfer: ${lastClosingTransferId}`)
+        type: 'SUCCESS',
+        result: undefined
       }
     }
 
-    return {
-      type: 'SUCCESS',
-      result: undefined
+    assert.equal(createTransferResults.length, 1, 'expected just 1 transferError result')
+    const result = createTransferResults[0]
+    switch (result.result) {
+      case CreateTransferError.ok:
+      // Pending closing transfer has already been voided, so the account must be open!
+      case CreateTransferError.pending_transfer_not_pending:
+      case CreateTransferError.pending_transfer_already_voided:
+        return {
+          type: 'SUCCESS',
+          result: undefined
+        }
+      default:
+        return {
+          type: 'FAILURE',
+          error: new Error(`enableDfsp failed to void closing transfer with error: ${CreateTransferError[result.result]}`)
+        }
     }
   }
 

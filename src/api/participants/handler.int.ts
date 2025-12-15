@@ -331,7 +331,7 @@ describe('api/participants/handler', () => {
       assert.equal(body.isActive, 0)
     })
 
-    it.skip('06 cannot deactivate a participant that does not exist', async () => {
+    it('06 cannot deactivate a participant that does not exist', async () => {
       // Arrange
       const request = {
         params: { name: 'not_a_dfsp' },
@@ -348,7 +348,7 @@ describe('api/participants/handler', () => {
       }
     })
 
-    it.skip('07 cannot deactivate the Hub participant', async () => {
+    it('07 cannot deactivate the Hub participant', async () => {
       // Arrange
       const request = {
         params: { name: 'Hub' },
@@ -365,7 +365,7 @@ describe('api/participants/handler', () => {
       }
     })
 
-    it.skip('08 cannot create the same currency for the dfsp twice', async () => {
+    it('08 cannot create the same currency for the dfsp twice', async () => {
       const request = {
         query: { isProxy: false },
         payload: {
@@ -386,7 +386,7 @@ describe('api/participants/handler', () => {
       }
     })
 
-    it.skip('09 activating an already active participant has no effect', async () => {
+    it('09 activating an already active participant has no effect', async () => {
       // Arrange
       const request = {
         params: { name: 'dfsp_x' },
@@ -394,13 +394,12 @@ describe('api/participants/handler', () => {
         server: { app: { ledger } }
       }
      
-
       // Act
       await participantHandler.update(request)
       const body = await participantHandler.update(request)
 
       // Assert
-      assert.equal(body.isActive, 0)
+      assert.equal(body.isActive, 1)
     })
   })
 
