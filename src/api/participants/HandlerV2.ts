@@ -682,6 +682,10 @@ export default class ParticipantAPIHandlerV2 {
           const result = await ledger.deposit(depositCmd)
 
           if (result.type === 'FAILURE') {
+            // Special case - deactivated participant
+            if (result.error.message === 'Participant is currently set inactive') {
+              return h.response(result.error).code(400)
+            }
             throw result.error
           }
 

@@ -133,16 +133,22 @@ export class GetHandler {
     const { transferId, isFx } = input;
 
     try {
-      // Validate participant exists
-      if (!await this.deps.validator.validateParticipantByName(message.value.from)) {
-        logger.info(`Participant does not exist: ${message.value.from} for transfer: ${transferId}`);
+      // TODO(LD): not sure what to do here! 
+      // This fails without returning an error when the requesting DFSP is not active, which I think
+      // isn't the desired behaviour.
+      // we should push off the active/deactive check to the same place where we check if the dfsp is
+      // allowed to request the dfsp
 
-        return {
-          type: 'success', // This is actually successfully processing (invalid participant is handled gracefully)
-          transferId,
-          data: { skipProcessing: true }
-        };
-      }
+      // // Validate participant exists
+      // if (!await this.deps.validator.validateParticipantByName(message.value.from)) {
+      //   logger.info(`Participant does not exist: ${message.value.from} for transfer: ${transferId}`);
+
+      //   return {
+      //     type: 'success',
+      //     transferId,
+      //     data: { skipProcessing: true }
+      //   };
+      // }
 
       if (isFx) {
         return await this.processFxGet(input, message);
@@ -248,6 +254,7 @@ export class GetHandler {
       }
     }
 
+    // TODO(LD): need to figure this out
     logger.warn('TODO(LD): GetHandler - disabled the participant id check - reinstate this once we implement the transfer metadata store')
 
     message.value.content.payload = responsePayload

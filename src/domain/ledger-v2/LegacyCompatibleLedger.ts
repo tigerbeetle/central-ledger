@@ -593,7 +593,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         }
       };
 
-      // Call recordFundsInOut for validation (Kafka disabled)
+      // Call recordFundsInOut directly
       const validationResult = await this.deps.lifecycle.participantService.recordFundsInOut(
         payload,
         { name: cmd.dfspId, id: settlementAccount.participantCurrencyId, transferId: cmd.transferId },
@@ -973,6 +973,7 @@ export default class LegacyCompatibleLedger implements Ledger {
   public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
     try {
       const participant = await this.deps.lifecycle.participantService.getByName(query.dfspId)
+      assert(participant, 'expected participant to be defined')
       const ledgerAccountTypes: Record<string, number> = this.deps.lifecycle.enums.ledgerAccountType
       const ledgerAccountIdMap = Object.keys(ledgerAccountTypes).reduce((acc, ledgerAccountType) => {
         const ledgerAccountId = ledgerAccountTypes[ledgerAccountType]
