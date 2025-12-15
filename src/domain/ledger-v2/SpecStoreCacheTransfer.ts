@@ -1,5 +1,5 @@
 import assert from "assert";
-import { TransferMetadata } from "./MetadataStore";
+import { TransferSpec } from "./SpecStore";
 
 type CacheHit<T> = {
   type: 'HIT',
@@ -13,16 +13,16 @@ type CacheMiss<T> = {
 type CacheMissOrHit<T> = CacheHit<T> | CacheMiss<T>
 
 
-export class MetadataStoreCacheTransfer {
+export class SpecStoreCacheTransfer {
   /**
    * Allow at most this number of transfers in the cache before we expire them in a FIFO 
    */
   private MAX_CACHE_SIZE = 1_000_000
-  private cacheMap: Record<string, TransferMetadata> = {};
+  private cacheMap: Record<string, TransferSpec> = {};
   private idQueue: Array<string> = []
 
-  get(ids: Array<string>): Array<CacheMissOrHit<TransferMetadata>> {
-    const results: Array<CacheMissOrHit<TransferMetadata>> = []
+  get(ids: Array<string>): Array<CacheMissOrHit<TransferSpec>> {
+    const results: Array<CacheMissOrHit<TransferSpec>> = []
     ids.forEach(id => {
       if (!this.cacheMap[id]) {
         results.push({ type: 'MISS' })
@@ -38,8 +38,8 @@ export class MetadataStoreCacheTransfer {
     return results
   }
 
-  put(metadata: Array<TransferMetadata>): void {
-    metadata.forEach(tm => {
+  put(spec: Array<TransferSpec>): void {
+    spec.forEach(tm => {
       assert(tm.id)
       assert(tm.payeeId)
       assert(tm.payerId)

@@ -15,7 +15,7 @@ import { Kafka } from '@mojaloop/central-services-stream';
 import { AdminHandler } from '../handlers-v2/AdminHandler';
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../domain/ledger-v2/LegacyCompatibleLedger';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from '../domain/ledger-v2/TigerBeetleLedger';
-import { PersistedMetadataStore } from '../domain/ledger-v2/PersistedMetadataStore';
+import { PersistedSpecStore } from '../domain/ledger-v2/PersistedSpecStore';
 import { TransferBatcher } from '../domain/ledger-v2/TransferBatcher';
 import { createClient } from 'tigerbeetle-node';
 import {
@@ -265,7 +265,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
     cluster_id: config.EXPERIMENTAL.TIGERBEETLE.CLUSTER_ID,
     replica_addresses: config.EXPERIMENTAL.TIGERBEETLE.ADDRESS
   })
-  const metadataStore = new PersistedMetadataStore(Db.getKnex())
+  const specStore = new PersistedSpecStore(Db.getKnex())
   const transferBatcher = new TransferBatcher(
     client,
     8000,
@@ -275,7 +275,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
   const tigerBeetleDeps: TigerBeetleLedgerDependencies = {
     config,
     client,
-    metadataStore,
+    specStore,
     transferBatcher,
     participantService: require('../domain/participant')
   }

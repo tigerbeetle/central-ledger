@@ -8,7 +8,7 @@ import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTr
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { Ledger } from "./Ledger";
-import { DfspAccountIds, DfspAccountMetadata, MetadataStore } from "./MetadataStore";
+import { DfspAccountIds, DfspAccountSpec, SpecStore } from "./SpecStore";
 import { TransferBatcher } from "./TransferBatcher";
 import {
   AnyQuery,
@@ -50,7 +50,7 @@ import Helper from './TigerBeetleLedgerHelper';
 export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
   client: Client
-  metadataStore: MetadataStore
+  specStore: SpecStore
   transferBatcher: TransferBatcher
   participantService: {
     create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
@@ -87,7 +87,7 @@ export type InterledgerValidationResult = InterledgerValidationPass
 
 
 /**
- * An internal representation of an Account, combined with metadata
+ * An internal representation of an Account, combined with spec
  */
 interface InternalLedgerAccount extends Account {
   dfspId: string,
@@ -147,14 +147,14 @@ export default class TigerBeetleLedger implements Ledger {
       assert(collateralAmount >= 0)
 
       // Lookup the dfsp first, ensure it's been correctly created
-      const accountMetadata = await this.deps.metadataStore.getDfspAccountMetadata(cmd.dfspId, currency)
-      if (accountMetadata.type === "DfspAccountMetadata") {
+      const accountSpec = await this.deps.specStore.getDfspAccountSpec(cmd.dfspId, currency)
+      if (accountSpec.type === "DfspAccountSpec") {
 
         const accounts = await this.deps.client.lookupAccounts([
-          accountMetadata.collateral,
-          accountMetadata.liquidity,
-          accountMetadata.clearing,
-          accountMetadata.settlementMultilateral,
+          accountSpec.collateral,
+          accountSpec.liquidity,
+          accountSpec.clearing,
+          accountSpec.settlementMultilateral,
         ]);
         if (accounts.length === 4) {
           return {
@@ -162,14 +162,14 @@ export default class TigerBeetleLedger implements Ledger {
           }
         }
 
-        // We have a partial save of accounts, that means metadata store and TigerBeetle are out of
+        // We have a partial save of accounts, that means spec store and TigerBeetle are out of
         // sync. We simply continue here and allow new accounts to be created in TigerBeetle, and
-        // the partial accounts to be ignored in the metadata store
+        // the partial accounts to be ignored in the spec store
         logger.warn(`createDfsp() - found only ${accounts.length} of expected 4 for dfsp: 
         ${cmd.dfspId} and currency: ${currency}. Overwriting old accounts.`)
 
         // TODO:
-        // This is potentially dangerous because somebody could tamper with the metadata store by
+        // This is potentially dangerous because somebody could tamper with the spec store by
         // inserting an invalid id, and calling `createDfsp` again. It would be better to be able to 
         // look up a Dfsp's accounts based on a query filter on TigerBeetle itself.
       }
@@ -254,7 +254,7 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ]
 
-      await this.deps.metadataStore.associateDfspAccounts(cmd.dfspId, currency, accountIds)
+      await this.deps.specStore.associateDfspAccounts(cmd.dfspId, currency, accountIds)
       const createAccountsErrors = await this.deps.client.createAccounts(accounts)
 
       let failed = false
@@ -267,7 +267,7 @@ export default class TigerBeetleLedger implements Ledger {
 
       if (failed) {
         // if THIS fails, then we have dangling entries in the database
-        await this.deps.metadataStore.tombstoneDfspAccounts(cmd.dfspId, currency, accountIds)
+        await this.deps.specStore.tombstoneDfspAccounts(cmd.dfspId, currency, accountIds)
 
         return {
           type: 'FAILURE',
@@ -410,15 +410,15 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
     try {
-      const dfspAccountMetadata = await this.deps.metadataStore.queryAccountsDfsp(query.dfspId)
-      if (dfspAccountMetadata.length === 0) {
+      const dfspAccountSpec = await this.deps.specStore.queryAccountsDfsp(query.dfspId)
+      if (dfspAccountSpec.length === 0) {
         return {
           type: 'FAILURE',
           error: new Error(`Dfsp not found for dfspId: ${query.dfspId}`)
         }
       }
 
-      const internalLedgerAccounts = await this._internalLedgerAccountsForMetadata(dfspAccountMetadata)
+      const internalLedgerAccounts = await this._internalLedgerAccountsForSpec(dfspAccountSpec)
 
       // Group by currency and convert to legacy accounts
       const internalLedgerAccountsPerCurrency = internalLedgerAccounts.reduce((acc, ila) => {
@@ -452,8 +452,8 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
     try {
-      const dfspsMetadata = await this.deps.metadataStore.queryAccountsAll()
-      const internalLedgerAccounts = await this._internalLedgerAccountsForMetadata(dfspsMetadata)
+      const dfspsSpec = await this.deps.specStore.queryAccountsAll()
+      const internalLedgerAccounts = await this._internalLedgerAccountsForSpec(dfspsSpec)
 
       // Group by dfspId and currency
       const internalLedgerAccountsPerDfsp = internalLedgerAccounts.reduce((acc, ila) => {
@@ -497,13 +497,13 @@ export default class TigerBeetleLedger implements Ledger {
   public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
     throw new Error('refactor me!')
 
-    // const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
-    // if (ids.type === 'DfspAccountMetadataNone') {
+    // const ids = await this.deps.specStore.getDfspAccountSpec(query.dfspId, query.currency)
+    // if (ids.type === 'DfspAccountSpecNone') {
     //   return {
     //     type: 'FAILURE',
     //     error: ErrorHandler.Factory.createFSPIOPError(
     //       ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-    //       `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+    //       `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
     //           dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
     //     )
     //   }
@@ -522,7 +522,7 @@ export default class TigerBeetleLedger implements Ledger {
     //     type: 'FAILURE',
     //     error: ErrorHandler.Factory.createFSPIOPError(
     //       ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
-    //       `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+    //       `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
     //           dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
     //     )
     //   }
@@ -585,7 +585,7 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse> {
     // TODO(LD): Implement this method for TigerBeetle
-    // This would require getting account metadata for all currencies for the DFSP
+    // This would require getting account spec for all currencies for the DFSP
     // and then looking up all accounts
     return {
       type: 'FAILURE',
@@ -639,13 +639,13 @@ export default class TigerBeetleLedger implements Ledger {
 
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
-    const ids = await this.deps.metadataStore.getDfspAccountMetadata(query.dfspId, query.currency)
-    if (ids.type === 'DfspAccountMetadataNone') {
+    const ids = await this.deps.specStore.getDfspAccountSpec(query.dfspId, query.currency)
+    if (ids.type === 'DfspAccountSpecNone') {
       return {
         type: 'FAILURE',
         error: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
-            `failed as getDfspAccountMetata() returned 'DfspAccountMetadataNone' for \
+            `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
               dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
         )
       }
@@ -704,8 +704,8 @@ export default class TigerBeetleLedger implements Ledger {
       const payee = input.payload.payeeFsp
 
       // TODO(LD): switch the interface to array based!
-      const payerMetadata = await this.deps.metadataStore.getDfspAccountMetadata(payer, currency)
-      if (payerMetadata.type === 'DfspAccountMetadataNone') {
+      const payerSpec = await this.deps.specStore.getDfspAccountSpec(payer, currency)
+      if (payerSpec.type === 'DfspAccountSpecNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
@@ -714,8 +714,8 @@ export default class TigerBeetleLedger implements Ledger {
           ),
         }
       }
-      const payeeMetadata = await this.deps.metadataStore.getDfspAccountMetadata(payee, currency)
-      if (payeeMetadata.type === 'DfspAccountMetadataNone') {
+      const payeeSpec = await this.deps.specStore.getDfspAccountSpec(payee, currency)
+      if (payeeSpec.type === 'DfspAccountSpecNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
@@ -772,7 +772,7 @@ export default class TigerBeetleLedger implements Ledger {
        * We write data dependencies first, then write to TigerBeetle
        * Reference: https://tigerbeetle.com/blog/2025-11-06-the-write-last-read-first-rule/
        */
-      await this.deps.metadataStore.saveTransferMetadata([
+      await this.deps.specStore.saveTransferSpec([
         {
           id: input.payload.transferId,
           payerId: input.payload.payerFsp,
@@ -789,8 +789,8 @@ export default class TigerBeetleLedger implements Ledger {
        */
       const transfer: Transfer = {
         id: prepareId,
-        debit_account_id: payerMetadata.clearing,
-        credit_account_id: payeeMetadata.clearing,
+        debit_account_id: payerSpec.clearing,
+        credit_account_id: payeeSpec.clearing,
         amount,
         pending_id: 0n,
         // Also used as a correlation to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
@@ -955,14 +955,14 @@ export default class TigerBeetleLedger implements Ledger {
     try {
       // TODO: this SHOULD be in cache if we use the Kafka key partitioning properly. We should add
       // some observability here to catch misconfiguration errors
-      const transferMetadataResults = await this.deps.metadataStore.lookupTransferMetadata([input.transferId])
-      assert(transferMetadataResults.length === 1, `expected transfer metadata for id: ${input.transferId}`)
-      const transferMetadata = transferMetadataResults[0]
-      assert(transferMetadata.type === 'TransferMetadata')
+      const transferSpecResults = await this.deps.specStore.lookupTransferSpec([input.transferId])
+      assert(transferSpecResults.length === 1, `expected transfer spec for id: ${input.transferId}`)
+      const transferSpec = transferSpecResults[0]
+      assert(transferSpec.type === 'TransferSpec')
 
-      await this.deps.metadataStore.saveTransferMetadata([
+      await this.deps.specStore.saveTransferSpec([
         {
-          ...transferMetadata,
+          ...transferSpec,
           fulfilment: input.payload.fulfilment,
         }
       ])
@@ -970,7 +970,7 @@ export default class TigerBeetleLedger implements Ledger {
 
       // Validate that the fulfilment matches the condition
       const fulfilmentAndConditionResult = TigerBeetleLedger.validateFulfilmentAndCondition(
-        input.payload.fulfilment, transferMetadata.condition
+        input.payload.fulfilment, transferSpec.condition
       )
       if (fulfilmentAndConditionResult.type === 'FAIL') {
         const transfer: Transfer = {
@@ -1137,24 +1137,24 @@ export default class TigerBeetleLedger implements Ledger {
 
     if (finalTransfer.flags & TransferFlags.post_pending_transfer) {
       const committedTime = convertBigIntToNumber(finalTransfer.timestamp / 1_000_000n)
-      const transferMetadata = await this.deps.metadataStore.lookupTransferMetadata([query.transferId])
-      assert(transferMetadata.length === 1, 'expected exactly one transferMetadata result')
+      const transferSpec = await this.deps.specStore.lookupTransferSpec([query.transferId])
+      assert(transferSpec.length === 1, 'expected exactly one transferSpec result')
 
-      const foundMetadata = transferMetadata[0]
-      if (foundMetadata.type === 'TransferMetadataNone') {
+      const foundSpec = transferSpec[0]
+      if (foundSpec.type === 'TransferSpecNone') {
         return {
           type: LookupTransferResultType.FAILED,
           error: ErrorHandler.Factory.createInternalServerFSPIOPError(
-            `missing transfer metadata for finalized transferId: ${query.transferId}`
+            `missing transfer spec for finalized transferId: ${query.transferId}`
           )
         }
       }
 
-      if (!foundMetadata.fulfilment) {
+      if (!foundSpec.fulfilment) {
         return {
           type: LookupTransferResultType.FAILED,
           error: ErrorHandler.Factory.createInternalServerFSPIOPError(
-            `missing metadata.fulfilment for finalized transferId: ${query.transferId}`
+            `missing spec.fulfilment for finalized transferId: ${query.transferId}`
           )
         }
       }
@@ -1164,7 +1164,7 @@ export default class TigerBeetleLedger implements Ledger {
         finalizedTransfer: {
           completedTimestamp: (new Date(committedTime)).toISOString(),
           transferState: "COMMITTED",
-          fulfilment: foundMetadata.fulfilment
+          fulfilment: foundSpec.fulfilment
         }
       }
     } else if (finalTransfer.flags & TransferFlags.void_pending_transfer) {
@@ -1309,20 +1309,19 @@ export default class TigerBeetleLedger implements Ledger {
 
       logger.debug(`sweepTimedOut - found ${timedOutTransfers.length} timed out transfers`)
 
-      // Lookup the metadata for each transfer from the metadata database. If this fails, throw an error.
-      // const metadata = await this.lookupTransfersMetadata(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
-      const metadata = await this.deps.metadataStore.lookupTransferMetadata(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
-      const missingMetadata = metadata.filter(m => m.type === 'TransferMetadataNone')
-      assert(missingMetadata.length === 0, `lookupTransferMetadata() missing ${missingMetadata.length} entries`)
-      const foundMetadata = metadata.filter(m => m.type === 'TransferMetadata')
-      assert(foundMetadata.length === timedOutTransfers.length, `lookupTransferMetadata() expected foundMetadata.length === ${timedOutTransfers.length}, but instead got: ${foundMetadata.length}`)
+      // Lookup the spec for each transfer from the spec database. If this fails, throw an error.
+      const specs = await this.deps.specStore.lookupTransferSpec(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
+      const missingSpec = specs.filter(m => m.type === 'TransferSpecNone')
+      assert(missingSpec.length === 0, `lookupTransferSpec() missing ${missingSpec.length} entries`)
+      const foundSpec = specs.filter(m => m.type === 'TransferSpec')
+      assert(foundSpec.length === timedOutTransfers.length, `lookupTransferSpec() expected foundSpec.length === ${timedOutTransfers.length}, but instead got: ${foundSpec.length}`)
 
-      const transfersWithMetadata: Array<TimedOutTransfer> = []
-      foundMetadata.forEach(metadata => {
-        transfersWithMetadata.push({
-          id: metadata.id,
-          payerId: metadata.payerId,
-          payeeId: metadata.payeeId,
+      const transfersWithSpec: Array<TimedOutTransfer> = []
+      foundSpec.forEach(spec => {
+        transfersWithSpec.push({
+          id: spec.id,
+          payerId: spec.payerId,
+          payeeId: spec.payeeId,
         })
       })
 
@@ -1385,7 +1384,7 @@ export default class TigerBeetleLedger implements Ledger {
 
       return {
         type: 'SUCCESS',
-        transfers: transfersWithMetadata
+        transfers: transfersWithSpec
       }
     } catch (err) {
       return {
@@ -1486,26 +1485,26 @@ export default class TigerBeetleLedger implements Ledger {
    * Private Methods
    */
 
-  private async _internalLedgerAccountsForMetadata(dfspsMetadata: Array<DfspAccountMetadata>): Promise<Array<InternalLedgerAccount>> {
+  private async _internalLedgerAccountsForSpec(dfspsSpec: Array<DfspAccountSpec>): Promise<Array<InternalLedgerAccount>> {
     // flat map
     const buildKey = (dfspId: string, currency: string, accountType: AccountType) => `${dfspId};${currency};${accountType}`
     const dfspIdMap: Record<string, null> = {}
     const accountKeys: Array<string> = []
     const accountIds: Array<bigint> = []
-    dfspsMetadata.forEach(dfspMetadata => {
-      dfspIdMap[dfspMetadata.dfspId] = null
+    dfspsSpec.forEach(dfspSpec => {
+      dfspIdMap[dfspSpec.dfspId] = null
       // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
       const keys = [
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Clearing),
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Collateral),
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Liquidity),
-        buildKey(dfspMetadata.dfspId, dfspMetadata.currency, AccountType.Settlement_Multilateral),
+        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Clearing),
+        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Collateral),
+        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Liquidity),
+        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Settlement_Multilateral),
       ]
       const ids = [
-        dfspMetadata.clearing,
-        dfspMetadata.collateral,
-        dfspMetadata.liquidity,
-        dfspMetadata.settlementMultilateral,
+        dfspSpec.clearing,
+        dfspSpec.collateral,
+        dfspSpec.liquidity,
+        dfspSpec.settlementMultilateral,
       ]
 
       accountKeys.push(...keys)

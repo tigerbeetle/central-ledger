@@ -25,10 +25,11 @@
  **********/
 
 exports.up = async (knex) => {
-  return knex.schema.hasTable('tigerBeetleTransferMetadata').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleTransferSpec').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerBeetleTransferMetadata', (t) => {
+      return knex.schema.createTable('tigerBeetleTransferSpec', (t) => {
         t.string('id', 36).primary().notNullable()
+        // TODO: add foreign key relationship to `participant`
         t.string('payerId', 256).notNullable()
         t.string('payeeId', 256).notNullable()
         t.string('ilpCondition', 256).notNullable()
@@ -40,9 +41,9 @@ exports.up = async (knex) => {
 }
 
 exports.down = function (knex) {
-  return knex.schema.hasTable('tigerBeetleTransferMetadata').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleTransferSpec').then(function (exists) {
     if (exists) {
-      return knex.schema.dropTableIfExists('tigerBeetleTransferMetadata')
+      return knex.schema.dropTableIfExists('tigerBeetleTransferSpec')
     }
   })
 }

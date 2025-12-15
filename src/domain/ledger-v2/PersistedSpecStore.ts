@@ -1,11 +1,11 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, DfspAccountMetadata, DfspAccountMetadataNone, MetadataStore, SaveTransferMetadataCommand, SaveTransferMetadataResult, TransferMetadata, TransferMetadataNone } from "./MetadataStore";
-import { MetadataStoreCacheAccount } from "./MetadataStoreCacheAccount";
-import { MetadataStoreCacheTransfer } from "./MetadataStoreCacheTransfer";
+import { DfspAccountIds, DfspAccountSpec, DfspAccountSpecNone, SpecStore, SaveTransferSpecCommand, SaveTransferSpecResult, TransferSpec, TransferSpecNone } from "./SpecStore";
+import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
+import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
 
-interface AccountMetadataRecord {
+interface AccountSpecRecord {
   id: number;
   dfspId: string;
   currency: string;
@@ -18,7 +18,7 @@ interface AccountMetadataRecord {
   updatedDate: string;
 }
 
-interface TransferMetadataRecord {
+interface TransferSpecRecord {
   id: string
   payerId: string
   payeeId: string
@@ -27,12 +27,12 @@ interface TransferMetadataRecord {
   fulfilment?: string
 }
 
-const TABLE_ACCOUNT = 'tigerBeetleAccountMetadata'
-const TABLE_TRANSFER = 'tigerBeetleTransferMetadata'
+const TABLE_ACCOUNT = 'tigerBeetleAccountSpec'
+const TABLE_TRANSFER = 'tigerBeetleTransferSpec'
 
 
-function hydrateMetadataAccount(result: any): DfspAccountMetadata {
-  const record = result as AccountMetadataRecord;
+function hydrateSpecAccount(result: any): DfspAccountSpec {
+  const record = result as AccountSpecRecord;
 
   assert(record.dfspId)
   assert(record.currency)
@@ -41,8 +41,8 @@ function hydrateMetadataAccount(result: any): DfspAccountMetadata {
   assert(record.clearingAccountId)
   assert(record.settlementMultilateralAccountId)
 
-  const metadata: DfspAccountMetadata = {
-    type: 'DfspAccountMetadata',
+  const spec: DfspAccountSpec = {
+    type: 'DfspAccountSpec',
     dfspId: record.dfspId,
     currency: record.currency,
     collateral: BigInt(record.collateralAccountId),
@@ -51,46 +51,46 @@ function hydrateMetadataAccount(result: any): DfspAccountMetadata {
     settlementMultilateral: BigInt(record.settlementMultilateralAccountId)
   }
 
-  return metadata
+  return spec
 }
 
-function dehydrateMetadataAccount(metadata: DfspAccountMetadata): any {
+function dehydrateSpecAccount(spec: DfspAccountSpec): any {
   const record = {
-    dfspId: metadata.dfspId,
-    currency: metadata.currency,
-    collateralAccountId: metadata.collateral.toString(),
-    liquidityAccountId: metadata.liquidity.toString(),
-    clearingAccountId: metadata.clearing.toString(),
-    settlementMultilateralAccountId: metadata.settlementMultilateral.toString()
+    dfspId: spec.dfspId,
+    currency: spec.currency,
+    collateralAccountId: spec.collateral.toString(),
+    liquidityAccountId: spec.liquidity.toString(),
+    clearingAccountId: spec.clearing.toString(),
+    settlementMultilateralAccountId: spec.settlementMultilateral.toString()
   }
 
   return record
 }
 
-export class PersistedMetadataStore implements MetadataStore {
-  private cacheAccount: MetadataStoreCacheAccount
-  private cacheTransfer: MetadataStoreCacheTransfer
+export class PersistedSpecStore implements SpecStore {
+  private cacheAccount: SpecStoreCacheAccount
+  private cacheTransfer: SpecStoreCacheTransfer
 
   constructor(private db: Knex) {
-    this.cacheAccount = new MetadataStoreCacheAccount()
-    this.cacheTransfer = new MetadataStoreCacheTransfer()
+    this.cacheAccount = new SpecStoreCacheAccount()
+    this.cacheTransfer = new SpecStoreCacheTransfer()
   }
 
-  async queryAccountsAll(): Promise<Array<DfspAccountMetadata>> {
+  async queryAccountsAll(): Promise<Array<DfspAccountSpec>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
       .orderBy('dfspId', 'desc')
       .orderBy('currency', 'desc')
       .limit(1000)
     if (records.length === 1000) {
-      throw new Error(`getAllDfspAccountMetadata - found ${records.length} records, something has probably gone terribly wrong.`)
+      throw new Error(`getAllDfspAccountSpec - found ${records.length} records, something has probably gone terribly wrong.`)
     }
 
-    const hydrated = records.map(record => hydrateMetadataAccount(record))
+    const hydrated = records.map(record => hydrateSpecAccount(record))
     return hydrated
   }
 
-  async queryAccountsDfsp(dfspId: string): Promise<Array<DfspAccountMetadata>> {
+  async queryAccountsDfsp(dfspId: string): Promise<Array<DfspAccountSpec>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
       .where({dfspId})
@@ -98,14 +98,14 @@ export class PersistedMetadataStore implements MetadataStore {
       .orderBy('currency', 'desc')
       .limit(1000)
     if (records.length === 1000) {
-      throw new Error(`getAllDfspAccountMetadata - found ${records.length} records, something has probably gone terribly wrong.`)
+      throw new Error(`getAllDfspAccountSpec - found ${records.length} records, something has probably gone terribly wrong.`)
     }
 
-    const hydrated = records.map(record => hydrateMetadataAccount(record))
+    const hydrated = records.map(record => hydrateSpecAccount(record))
     return hydrated
   }
 
-  async getDfspAccountMetadata(dfspId: string, currency: string): Promise<DfspAccountMetadata | DfspAccountMetadataNone> {
+  async getDfspAccountSpec(dfspId: string, currency: string): Promise<DfspAccountSpec | DfspAccountSpecNone> {
     // These values don't change very often, so it's safe to cache them
     const cacheResult = this.cacheAccount.get(dfspId, currency)
     if (cacheResult.type === 'HIT') {
@@ -122,20 +122,20 @@ export class PersistedMetadataStore implements MetadataStore {
       .first();
 
     if (!result) {
-      return { type: 'DfspAccountMetadataNone' };
+      return { type: 'DfspAccountSpecNone' };
     }
 
-    const metadata = hydrateMetadataAccount(result)
-    this.cacheAccount.put(dfspId, currency, metadata)
+    const spec = hydrateSpecAccount(result)
+    this.cacheAccount.put(dfspId, currency, spec)
 
-    return metadata
+    return spec
   }
 
   async associateDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
     this.cacheAccount.delete(dfspId, currency)
 
-    const record = dehydrateMetadataAccount({
-      type: "DfspAccountMetadata",
+    const record = dehydrateSpecAccount({
+      type: "DfspAccountSpec",
       dfspId,
       currency,
       ...accounts,
@@ -164,14 +164,14 @@ export class PersistedMetadataStore implements MetadataStore {
     this.cacheAccount.delete(dfspId, currency)
   }
 
-  async lookupTransferMetadata(ids: Array<string>): Promise<Array<TransferMetadata | TransferMetadataNone>> {
+  async lookupTransferSpec(ids: Array<string>): Promise<Array<TransferSpec | TransferSpecNone>> {
     // First port of call, check the cache
-    const transferMetadataCached = this.cacheTransfer.get(ids)
-    const transferMetadataFoundSet: Record<string, TransferMetadata> = {}
+    const transferSpecCached = this.cacheTransfer.get(ids)
+    const transferSpecFoundSet: Record<string, TransferSpec> = {}
     const missingIds: Array<string> = []
-    transferMetadataCached.forEach((hitOrMiss, idx) => {
+    transferSpecCached.forEach((hitOrMiss, idx) => {
       if (hitOrMiss.type === 'HIT') {
-        transferMetadataFoundSet[hitOrMiss.contents.id] = hitOrMiss.contents
+        transferSpecFoundSet[hitOrMiss.contents.id] = hitOrMiss.contents
         return
       }
 
@@ -181,41 +181,41 @@ export class PersistedMetadataStore implements MetadataStore {
 
     // Everything was in cache, we don't need to go to the database.
     if (missingIds.length === 0) {
-      return transferMetadataCached.map(tm => {
+      return transferSpecCached.map(tm => {
         assert(tm.type === 'HIT')
         return tm.contents
       })
     }
 
-    const tranferMetadataPersisted = await this.lookupTransferMetadataPersisted(missingIds)
-    tranferMetadataPersisted.forEach(tm => {
-      if (tm.type === 'TransferMetadata') {
-        transferMetadataFoundSet[tm.id] = tm
+    const tranferSpecPersisted = await this.lookupTransferSpecPersisted(missingIds)
+    tranferSpecPersisted.forEach(tm => {
+      if (tm.type === 'TransferSpec') {
+        transferSpecFoundSet[tm.id] = tm
         return
       }
     })
 
     // maintain ordering
     return ids.map(id => {
-      if (transferMetadataFoundSet[id]) {
-        return transferMetadataFoundSet[id]
+      if (transferSpecFoundSet[id]) {
+        return transferSpecFoundSet[id]
       }
       return {
-        type: 'TransferMetadataNone',
+        type: 'TransferSpecNone',
         id
       }
     })
   }
 
-  private async lookupTransferMetadataPersisted(ids: Array<string>): Promise<Array<TransferMetadata | TransferMetadataNone>> {
+  private async lookupTransferSpecPersisted(ids: Array<string>): Promise<Array<TransferSpec | TransferSpecNone>> {
     assert(ids)
 
     const queryResult = await this.db.from(TABLE_TRANSFER)
       .whereIn('id', ids)
 
     // maintain order of results, even when we find nulls
-    const resultSet: Record<string, TransferMetadataRecord> = queryResult.reduce((acc, curr) => {
-      const record = curr as TransferMetadataRecord
+    const resultSet: Record<string, TransferSpecRecord> = queryResult.reduce((acc, curr) => {
+      const record = curr as TransferSpecRecord
       assert(record.id)
       assert(record.payeeId)
       assert(record.payerId)
@@ -225,11 +225,11 @@ export class PersistedMetadataStore implements MetadataStore {
       acc[record.id] = record
     }, {})
 
-    const results: Array<TransferMetadata | TransferMetadataNone> = []
+    const results: Array<TransferSpec | TransferSpecNone> = []
     ids.forEach(id => {
       if (!resultSet[id]) {
         results.push({
-          type: 'TransferMetadataNone',
+          type: 'TransferSpecNone',
           id
         })
         return
@@ -237,7 +237,7 @@ export class PersistedMetadataStore implements MetadataStore {
 
       const record = resultSet[id]
       results.push({
-        type: 'TransferMetadata',
+        type: 'TransferSpec',
         id: record.id,
         payerId: record.payerId,
         payeeId: record.payeeId,
@@ -250,10 +250,10 @@ export class PersistedMetadataStore implements MetadataStore {
     return results
   }
 
-  async saveTransferMetadata(metadata: Array<SaveTransferMetadataCommand>): Promise<Array<SaveTransferMetadataResult>> {
+  async saveTransferSpec(spec: Array<SaveTransferSpecCommand>): Promise<Array<SaveTransferSpecResult>> {
     try {
-      const records: Array<TransferMetadataRecord> = metadata.map(m => {
-        const record: TransferMetadataRecord = {
+      const records: Array<TransferSpecRecord> = spec.map(m => {
+        const record: TransferSpecRecord = {
           id: m.id,
           payerId: m.payerId,
           payeeId: m.payeeId,
@@ -272,16 +272,16 @@ export class PersistedMetadataStore implements MetadataStore {
         .insert(records)
         .onConflict('id')
         .merge(['fulfilment']);
-      this.cacheTransfer.put(metadata.map(m => ({ type: 'TransferMetadata', ...m })))
+      this.cacheTransfer.put(spec.map(m => ({ type: 'TransferSpec', ...m })))
 
-      return metadata.map(m => {
+      return spec.map(m => {
         return {
           type: 'SUCCESS'
         }
       })
     } catch (err) {
-      logger.error(`saveTransferMetadata() - failed with error: ${err.message}`)
-      return metadata.map(m => {
+      logger.error(`saveTransferSpec() - failed with error: ${err.message}`)
+      return spec.map(m => {
         return {
           type: 'FAILURE'
         }
@@ -289,13 +289,13 @@ export class PersistedMetadataStore implements MetadataStore {
     }
   }
 
-  // updateTransferMetadataFulfilment(transfersToUpdate: Array<{ id: string; fulfilment: string; }>): Promise<Array<SaveTransferMetadataResult>> {
+  // updateTransferSpecFulfilment(transfersToUpdate: Array<{ id: string; fulfilment: string; }>): Promise<Array<SaveTransferSpecResult>> {
   //   try {
   //    // TODO: 
 
 
   //   } catch (err) {
-  //     logger.error(`updateTransferMetadataFulfilment() - failed with error: ${err.message}`)
+  //     logger.error(`updateTransferSpecFulfilment() - failed with error: ${err.message}`)
   //     return transfersToUpdate.map(m => {
   //       return {
   //         type: 'FAILURE'

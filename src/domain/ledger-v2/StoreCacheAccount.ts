@@ -1,5 +1,5 @@
 import assert from "assert";
-import { DfspAccountMetadata } from "./MetadataStore";
+import { DfspAccountSpec } from "./SpecStore";
 
 type CacheHit<T> = {
   type: 'HIT',
@@ -12,10 +12,10 @@ type CacheMiss<T> = {
 
 type CacheMissOrHit<T> = CacheHit<T> | CacheMiss<T>
 
-export class MetadataStoreCacheAccount {
-  private cacheMap: Record<string, DfspAccountMetadata> = {};
+export class SpecStoreCacheAccount {
+  private cacheMap: Record<string, DfspAccountSpec> = {};
 
-  get(dfspId: string, currency: string): CacheMissOrHit<DfspAccountMetadata> {
+  get(dfspId: string, currency: string): CacheMissOrHit<DfspAccountSpec> {
     const key = this.key(dfspId, currency);
     if (!this.cacheMap[key]) {
       return { type: 'MISS' };
@@ -27,16 +27,16 @@ export class MetadataStoreCacheAccount {
     };
   }
 
-  put(dfspId: string, currency: string, metadata: DfspAccountMetadata): void {
-    assert.equal(dfspId, metadata.dfspId);
-    assert.equal(currency, metadata.currency);
-    assert(typeof metadata.clearing === 'bigint');
-    assert(typeof metadata.collateral === 'bigint');
-    assert(typeof metadata.liquidity === 'bigint');
-    assert(typeof metadata.settlementMultilateral === 'bigint');
+  put(dfspId: string, currency: string, spec: DfspAccountSpec): void {
+    assert.equal(dfspId, spec.dfspId);
+    assert.equal(currency, spec.currency);
+    assert(typeof spec.clearing === 'bigint');
+    assert(typeof spec.collateral === 'bigint');
+    assert(typeof spec.liquidity === 'bigint');
+    assert(typeof spec.settlementMultilateral === 'bigint');
 
     const key = this.key(dfspId, currency);
-    this.cacheMap[key] = metadata;
+    this.cacheMap[key] = spec;
   }
 
   delete(dfspId: string, currency: string) {

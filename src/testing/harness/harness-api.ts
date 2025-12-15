@@ -3,7 +3,7 @@ import { Client, createClient } from "tigerbeetle-node";
 import { AdminHandler } from "../../handlers-v2/AdminHandler";
 import { Ledger } from "../../domain/ledger-v2/Ledger";
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from "../../domain/ledger-v2/LegacyCompatibleLedger";
-import { PersistedMetadataStore } from "../../domain/ledger-v2/PersistedMetadataStore";
+import { PersistedSpecStore } from "../../domain/ledger-v2/PersistedSpecStore";
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "../../domain/ledger-v2/TigerBeetleLedger";
 import { TransferBatcher } from "../../domain/ledger-v2/TransferBatcher";
 import { ApplicationConfig } from "../../shared/config";
@@ -189,7 +189,7 @@ export class HarnessApi implements Harness {
       // TODO: do we need to set up the ledger config based on what the harness did?
       config: this.config.applicationConfig,
       client: this.client,
-      metadataStore: new PersistedMetadataStore(this.dbLib.getKnex()),
+      specStore: new PersistedSpecStore(this.dbLib.getKnex()),
       transferBatcher: this.transferBatcher,
       participantService: this.participantService,
     }

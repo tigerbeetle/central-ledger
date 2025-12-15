@@ -14,9 +14,9 @@ import { PrepareResultType } from './types';
 import { Client, createClient } from 'tigerbeetle-node';
 import { DatabaseConfig, HarnessDatabase } from '../../testing/harness/harness-database';
 import { HarnessTigerBeetle, TigerBeetleConfig } from '../../testing/harness/harness-tigerbeetle';
-import { PersistedMetadataStore } from './PersistedMetadataStore';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "./TigerBeetleLedger";
 import { TransferBatcher } from './TransferBatcher';
+import { PersistedSpecStore } from './PersistedSpecStore';
 
 describe('TigerBeetleLedger', () => {
   let ledger: TigerBeetleLedger
@@ -75,7 +75,7 @@ describe('TigerBeetleLedger', () => {
       const deps: TigerBeetleLedgerDependencies = {
         config,
         client,
-        metadataStore: new PersistedMetadataStore(Db.getKnex()),
+        specStore: new PersistedSpecStore(Db.getKnex()),
         transferBatcher,
         participantService: require('../../domain/participant')
       }
