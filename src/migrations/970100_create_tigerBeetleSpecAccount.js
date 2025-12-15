@@ -25,9 +25,9 @@
  **********/
 
 exports.up = async (knex) => {
-  return knex.schema.hasTable('tigerBeetleAccountSpec').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleSpecAccount').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerBeetleAccountSpec', (t) => {
+      return knex.schema.createTable('tigerBeetleSpecAccount', (t) => {
         t.bigIncrements('id').primary().notNullable()
         t.string('dfspId', 256).notNullable()
         t.foreign('dfspId').references('name').inTable('participant')
@@ -53,9 +53,9 @@ exports.up = async (knex) => {
 }
 
 exports.down = function (knex) {
-  return knex.schema.hasTable('tigerBeetleAccountSpec').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleSpecAccount').then(function (exists) {
     if (exists) {
-      return knex.schema.dropTableIfExists('tigerBeetleAccountSpec')
+      return knex.schema.dropTableIfExists('tigerBeetleSpecAccount')
     }
   })
 }

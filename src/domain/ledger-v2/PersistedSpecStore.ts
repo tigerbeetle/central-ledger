@@ -27,9 +27,9 @@ interface TransferSpecRecord {
   fulfilment?: string
 }
 
-const TABLE_ACCOUNT = 'tigerBeetleAccountSpec'
-const TABLE_TRANSFER = 'tigerBeetleTransferSpec'
-
+const TABLE_ACCOUNT = 'tigerBeetleSpecAccount'
+const TABLE_TRANSFER = 'tigerBeetleSpecTransfer'
+const TABLE_DFSP = 'tigerBeetleSpecDfsp'
 
 function hydrateSpecAccount(result: any): DfspAccountSpec {
   const record = result as AccountSpecRecord;

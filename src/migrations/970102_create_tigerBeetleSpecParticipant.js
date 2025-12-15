@@ -25,9 +25,9 @@
  **********/
 
 exports.up = async (knex) => {
-  return knex.schema.hasTable('tigerBeetleParticipantSpec').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleSpecDfsp').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerBeetleParticipantSpec', (t) => {
+      return knex.schema.createTable('tigerBeetleSpecDfsp', (t) => {
         t.string('dfspId', 256).notNullable()
         t.foreign('dfspId').references('name').inTable('participant')
         // Reference to the Master TigerBeetle Account for this participant
@@ -39,9 +39,9 @@ exports.up = async (knex) => {
 }
 
 exports.down = function (knex) {
-  return knex.schema.hasTable('tigerBeetleParticipantSpec').then(function (exists) {
+  return knex.schema.hasTable('tigerBeetleSpecDfsp').then(function (exists) {
     if (exists) {
-      return knex.schema.dropTableIfExists('tigerBeetleParticipantSpec')
+      return knex.schema.dropTableIfExists('tigerBeetleSpecDfsp')
     }
   })
 }

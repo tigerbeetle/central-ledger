@@ -81,8 +81,4 @@ export class SpecStoreCacheTransfer {
     const idsToDelete = this.idQueue.slice(0, this.idQueue.length - this.MAX_CACHE_SIZE)
     this.delete(idsToDelete)
   }
-
-  private key(dfspId: string, currency: string): string {
-    return `${dfspId}+${currency}`;
-  }
 }
