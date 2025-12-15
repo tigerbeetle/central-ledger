@@ -4,7 +4,7 @@ import Crypto from 'node:crypto';
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { ApplicationConfig } from "src/shared/config";
-import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
+import { Account, AccountFilterFlags, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { Ledger } from "./Ledger";
@@ -365,7 +365,12 @@ export default class TigerBeetleLedger implements Ledger {
     logger.debug(`disableDfsp() - disabling dfsp: ${cmd.dfspId}`)
 
     const specDfsp = await this.deps.specStore.queryDfsp(cmd.dfspId)
-    assert(specDfsp.type === 'SpecDfsp', `no SpecDfsp found for dfspId: ${cmd.dfspId}`)
+    if (specDfsp.type === 'SpecDfspNone') {
+      return {
+        type: 'FAILURE',
+        error: new Error(`no dfsp found for dfspId: ${cmd.dfspId}`)
+      }
+    }
     let closeAccountResult = await this._closeDfspMasterAccount(specDfsp.accountId)
 
     if (closeAccountResult === 'FATAL') {
@@ -425,10 +430,60 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
-    logger.info('enableDfsp() - noop')
-
     // TODO: look up the SpecDfsp, get the account id and reopen the account! We probably need
     // to store the closing id somehwere
+    assert(cmd)
+    assert(cmd.dfspId)
+    logger.debug(`enableDfsp() - enabling dfsp: ${cmd.dfspId}`)
+
+    const specDfsp = await this.deps.specStore.queryDfsp(cmd.dfspId)
+    if (specDfsp.type === 'SpecDfspNone') {
+      return {
+        type: 'FAILURE',
+        error: new Error(`no dfsp found for dfspId: ${cmd.dfspId}`)
+      }
+    }
+    const transfers = await this.deps.client.getAccountTransfers({
+      account_id: specDfsp.accountId,
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      code: 0,
+      timestamp_min: 0n,
+      timestamp_max: 0n,
+      limit: 10,
+      flags: AccountFilterFlags.credits | 
+        AccountFilterFlags.reversed,
+    })
+    if (transfers.length === 0) {
+      return {
+        type: 'FAILURE',
+        error: new Error(`no previous closing transfer found`)
+      }
+    }
+
+    // get the latest pending transfer
+    const lastClosingTransferId = transfers[0].id
+    const createTransferErrors = await this.deps.client.createTransfers([{
+      ...Helper.createTransferTemplate,
+      id: id(),
+      debit_account_id: 0n,
+      credit_account_id: 0n,
+      pending_id: lastClosingTransferId,
+      amount: 0n,
+      ledger: Helper.ledgerIds.superLedger,
+      code: 100,
+      flags: TransferFlags.void_pending_transfer
+    }])
+
+    if (createTransferErrors.length > 0 && 
+        createTransferErrors[0].result !== CreateTransferError.ok
+      ) {
+      return {
+        type: 'FAILURE',
+        error: new Error(`failed to void closing transfer: ${lastClosingTransferId}`)
+      }
+    }
 
     return {
       type: 'SUCCESS',
