@@ -15,7 +15,7 @@ import { Kafka } from '@mojaloop/central-services-stream';
 import { AdminHandler } from '../handlers-v2/AdminHandler';
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../domain/ledger-v2/LegacyCompatibleLedger';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from '../domain/ledger-v2/TigerBeetleLedger';
-import { PersistedSpecStore } from '../domain/ledger-v2/PersistedSpecStore';
+import { PersistedSpecStore } from '../domain/ledger-v2/SpecStorePersisted';
 import { TransferBatcher } from '../domain/ledger-v2/TransferBatcher';
 import { createClient } from 'tigerbeetle-node';
 import {

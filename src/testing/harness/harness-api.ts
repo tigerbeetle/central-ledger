@@ -3,7 +3,7 @@ import { Client, createClient } from "tigerbeetle-node";
 import { AdminHandler } from "../../handlers-v2/AdminHandler";
 import { Ledger } from "../../domain/ledger-v2/Ledger";
 import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from "../../domain/ledger-v2/LegacyCompatibleLedger";
-import { PersistedSpecStore } from "../../domain/ledger-v2/PersistedSpecStore";
+import { PersistedSpecStore } from "../../domain/ledger-v2/SpecStorePersisted";
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "../../domain/ledger-v2/TigerBeetleLedger";
 import { TransferBatcher } from "../../domain/ledger-v2/TransferBatcher";
 import { ApplicationConfig } from "../../shared/config";

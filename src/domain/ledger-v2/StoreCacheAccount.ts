@@ -1,5 +1,5 @@
 import assert from "assert";
-import { DfspAccountSpec } from "./SpecStore";
+import { SpecAccount } from "./SpecStore";
 
 type CacheHit<T> = {
   type: 'HIT',
@@ -13,9 +13,9 @@ type CacheMiss<T> = {
 type CacheMissOrHit<T> = CacheHit<T> | CacheMiss<T>
 
 export class SpecStoreCacheAccount {
-  private cacheMap: Record<string, DfspAccountSpec> = {};
+  private cacheMap: Record<string, SpecAccount> = {};
 
-  get(dfspId: string, currency: string): CacheMissOrHit<DfspAccountSpec> {
+  get(dfspId: string, currency: string): CacheMissOrHit<SpecAccount> {
     const key = this.key(dfspId, currency);
     if (!this.cacheMap[key]) {
       return { type: 'MISS' };
@@ -27,7 +27,7 @@ export class SpecStoreCacheAccount {
     };
   }
 
-  put(dfspId: string, currency: string, spec: DfspAccountSpec): void {
+  put(dfspId: string, currency: string, spec: SpecAccount): void {
     assert.equal(dfspId, spec.dfspId);
     assert.equal(currency, spec.currency);
     assert(typeof spec.clearing === 'bigint');

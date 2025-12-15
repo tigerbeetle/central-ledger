@@ -1,11 +1,11 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, DfspAccountSpec, DfspAccountSpecNone, SpecStore, SaveTransferSpecCommand, SaveTransferSpecResult, TransferSpec, TransferSpecNone } from "./SpecStore";
+import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult } from "./SpecStore";
 import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
 import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
 
-interface AccountSpecRecord {
+interface SpecRecordAccount {
   id: number;
   dfspId: string;
   currency: string;
@@ -18,7 +18,7 @@ interface AccountSpecRecord {
   updatedDate: string;
 }
 
-interface TransferSpecRecord {
+interface SpecRecordTransfer {
   id: string
   payerId: string
   payeeId: string
@@ -27,12 +27,17 @@ interface TransferSpecRecord {
   fulfilment?: string
 }
 
+interface SpecRecordDfsp {
+  dfspId: string,
+  accountId: unknown
+}
+
 const TABLE_ACCOUNT = 'tigerBeetleSpecAccount'
 const TABLE_TRANSFER = 'tigerBeetleSpecTransfer'
 const TABLE_DFSP = 'tigerBeetleSpecDfsp'
 
-function hydrateSpecAccount(result: any): DfspAccountSpec {
-  const record = result as AccountSpecRecord;
+function hydrateSpecAccount(result: any): SpecAccount {
+  const record = result as SpecRecordAccount;
 
   assert(record.dfspId)
   assert(record.currency)
@@ -41,8 +46,8 @@ function hydrateSpecAccount(result: any): DfspAccountSpec {
   assert(record.clearingAccountId)
   assert(record.settlementMultilateralAccountId)
 
-  const spec: DfspAccountSpec = {
-    type: 'DfspAccountSpec',
+  const spec: SpecAccount = {
+    type: 'SpecAccount',
     dfspId: record.dfspId,
     currency: record.currency,
     collateral: BigInt(record.collateralAccountId),
@@ -54,7 +59,7 @@ function hydrateSpecAccount(result: any): DfspAccountSpec {
   return spec
 }
 
-function dehydrateSpecAccount(spec: DfspAccountSpec): any {
+function dehydrateSpecAccount(spec: SpecAccount): any {
   const record = {
     dfspId: spec.dfspId,
     currency: spec.currency,
@@ -76,7 +81,7 @@ export class PersistedSpecStore implements SpecStore {
     this.cacheTransfer = new SpecStoreCacheTransfer()
   }
 
-  async queryAccountsAll(): Promise<Array<DfspAccountSpec>> {
+  async queryAccountsAll(): Promise<Array<SpecAccount>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
       .orderBy('dfspId', 'desc')
@@ -90,7 +95,7 @@ export class PersistedSpecStore implements SpecStore {
     return hydrated
   }
 
-  async queryAccountsDfsp(dfspId: string): Promise<Array<DfspAccountSpec>> {
+  async queryAccountsDfsp(dfspId: string): Promise<Array<SpecAccount>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
       .where({dfspId})
@@ -105,7 +110,7 @@ export class PersistedSpecStore implements SpecStore {
     return hydrated
   }
 
-  async getDfspAccountSpec(dfspId: string, currency: string): Promise<DfspAccountSpec | DfspAccountSpecNone> {
+  async getDfspAccountSpec(dfspId: string, currency: string): Promise<SpecAccount | SpecAccountNone> {
     // These values don't change very often, so it's safe to cache them
     const cacheResult = this.cacheAccount.get(dfspId, currency)
     if (cacheResult.type === 'HIT') {
@@ -122,7 +127,7 @@ export class PersistedSpecStore implements SpecStore {
       .first();
 
     if (!result) {
-      return { type: 'DfspAccountSpecNone' };
+      return { type: 'SpecAccountNone' };
     }
 
     const spec = hydrateSpecAccount(result)
@@ -135,7 +140,7 @@ export class PersistedSpecStore implements SpecStore {
     this.cacheAccount.delete(dfspId, currency)
 
     const record = dehydrateSpecAccount({
-      type: "DfspAccountSpec",
+      type: 'SpecAccount',
       dfspId,
       currency,
       ...accounts,
@@ -164,10 +169,10 @@ export class PersistedSpecStore implements SpecStore {
     this.cacheAccount.delete(dfspId, currency)
   }
 
-  async lookupTransferSpec(ids: Array<string>): Promise<Array<TransferSpec | TransferSpecNone>> {
+  async lookupTransferSpec(ids: Array<string>): Promise<Array<SpecTransfer | SpecTransferNone>> {
     // First port of call, check the cache
     const transferSpecCached = this.cacheTransfer.get(ids)
-    const transferSpecFoundSet: Record<string, TransferSpec> = {}
+    const transferSpecFoundSet: Record<string, SpecTransfer> = {}
     const missingIds: Array<string> = []
     transferSpecCached.forEach((hitOrMiss, idx) => {
       if (hitOrMiss.type === 'HIT') {
@@ -189,7 +194,7 @@ export class PersistedSpecStore implements SpecStore {
 
     const tranferSpecPersisted = await this.lookupTransferSpecPersisted(missingIds)
     tranferSpecPersisted.forEach(tm => {
-      if (tm.type === 'TransferSpec') {
+      if (tm.type === 'SpecTransfer') {
         transferSpecFoundSet[tm.id] = tm
         return
       }
@@ -201,21 +206,21 @@ export class PersistedSpecStore implements SpecStore {
         return transferSpecFoundSet[id]
       }
       return {
-        type: 'TransferSpecNone',
+        type: 'SpecTransferNone',
         id
       }
     })
   }
 
-  private async lookupTransferSpecPersisted(ids: Array<string>): Promise<Array<TransferSpec | TransferSpecNone>> {
+  private async lookupTransferSpecPersisted(ids: Array<string>): Promise<Array<SpecTransfer | SpecTransferNone>> {
     assert(ids)
 
     const queryResult = await this.db.from(TABLE_TRANSFER)
       .whereIn('id', ids)
 
     // maintain order of results, even when we find nulls
-    const resultSet: Record<string, TransferSpecRecord> = queryResult.reduce((acc, curr) => {
-      const record = curr as TransferSpecRecord
+    const resultSet: Record<string, SpecRecordTransfer> = queryResult.reduce((acc, curr) => {
+      const record = curr as SpecRecordTransfer
       assert(record.id)
       assert(record.payeeId)
       assert(record.payerId)
@@ -225,11 +230,11 @@ export class PersistedSpecStore implements SpecStore {
       acc[record.id] = record
     }, {})
 
-    const results: Array<TransferSpec | TransferSpecNone> = []
+    const results: Array<SpecTransfer | SpecTransferNone> = []
     ids.forEach(id => {
       if (!resultSet[id]) {
         results.push({
-          type: 'TransferSpecNone',
+          type: 'SpecTransferNone',
           id
         })
         return
@@ -237,7 +242,7 @@ export class PersistedSpecStore implements SpecStore {
 
       const record = resultSet[id]
       results.push({
-        type: 'TransferSpec',
+        type: 'SpecTransfer',
         id: record.id,
         payerId: record.payerId,
         payeeId: record.payeeId,
@@ -250,10 +255,10 @@ export class PersistedSpecStore implements SpecStore {
     return results
   }
 
-  async saveTransferSpec(spec: Array<SaveTransferSpecCommand>): Promise<Array<SaveTransferSpecResult>> {
+  async saveTransferSpec(spec: Array<SaveTransferSpecCommand>): Promise<Array<SaveSpecTransferResult>> {
     try {
-      const records: Array<TransferSpecRecord> = spec.map(m => {
-        const record: TransferSpecRecord = {
+      const records: Array<SpecRecordTransfer> = spec.map(m => {
+        const record: SpecRecordTransfer = {
           id: m.id,
           payerId: m.payerId,
           payeeId: m.payeeId,
@@ -272,7 +277,7 @@ export class PersistedSpecStore implements SpecStore {
         .insert(records)
         .onConflict('id')
         .merge(['fulfilment']);
-      this.cacheTransfer.put(spec.map(m => ({ type: 'TransferSpec', ...m })))
+      this.cacheTransfer.put(spec.map(m => ({ type: 'SpecTransfer', ...m })))
 
       return spec.map(m => {
         return {

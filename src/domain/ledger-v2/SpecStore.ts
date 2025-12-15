@@ -5,18 +5,18 @@ export interface DfspAccountIds {
   settlementMultilateral: bigint,
 }
 
-export interface DfspAccountSpec extends DfspAccountIds {
-  readonly type: 'DfspAccountSpec'
+export interface SpecAccount extends DfspAccountIds {
+  readonly type: 'SpecAccount'
   dfspId: string,
   currency: string,
 }
 
-export interface DfspAccountSpecNone {
-  type: 'DfspAccountSpecNone'
+export interface SpecAccountNone {
+  type: 'SpecAccountNone'
 }
 
-export interface TransferSpec {
-  type: 'TransferSpec'
+export interface SpecTransfer {
+  type: 'SpecTransfer'
   id: string,
   payerId: string,
   payeeId: string,
@@ -25,39 +25,39 @@ export interface TransferSpec {
   fulfilment?: string
 }
 
-export interface TransferSpecNone {
-  type: 'TransferSpecNone'
+export interface SpecTransferNone {
+  type: 'SpecTransferNone'
   id: string
 }
 
-export type SaveTransferSpecCommand = Omit<TransferSpec, 'type'>
+export type SaveTransferSpecCommand = Omit<SpecTransfer, 'type'>
 
-export interface SaveTransferSpecResultSuccess {
+export interface SaveSpecTransferResultSuccess {
   type: 'SUCCESS'
 }
 
-export interface SaveTransferSpecResultFailure {
+export interface SaveSpecTransferResultFailure {
   type: 'FAILURE'
 }
 
-export type SaveTransferSpecResult = SaveTransferSpecResultSuccess | SaveTransferSpecResultFailure
+export type SaveSpecTransferResult = SaveSpecTransferResultSuccess | SaveSpecTransferResultFailure
 
 export interface SpecStore {
 
   /**
    * Get all all Dfsp Account Spec for all Dfsps + Currencies
    */
-  queryAccountsAll():  Promise<Array<DfspAccountSpec>>
+  queryAccountsAll(): Promise<Array<SpecAccount>>
 
   /**
    * Get all all Dfsp Account Spec for a single Dfsp
    */
-  queryAccountsDfsp(dfspId: string): Promise<Array<DfspAccountSpec>>
+  queryAccountsDfsp(dfspId: string): Promise<Array<SpecAccount>>
 
   /**
    * Gets the account spec for a DFSP + Currency
    */
-  getDfspAccountSpec(dfspId: string, currency: string): Promise<DfspAccountSpec | DfspAccountSpecNone>
+  getDfspAccountSpec(dfspId: string, currency: string): Promise<SpecAccount | SpecAccountNone>
 
   /**
    * Stores the account association between the DFSP + Currency + TigerBeetle Account IDs
@@ -79,12 +79,12 @@ export interface SpecStore {
    * Looks up the transfer spec for a given set of Mojaloop Ids. Always returns the transfers 
    * in the order they are given.
    */
-  lookupTransferSpec(ids: Array<string>): Promise<Array<TransferSpec | TransferSpecNone>>
+  lookupTransferSpec(ids: Array<string>): Promise<Array<SpecTransfer | SpecTransferNone>>
 
   /**
    * Saves the transfer spec to the spec store
    */
-  saveTransferSpec(spec: Array<SaveTransferSpecCommand>): Promise<Array<SaveTransferSpecResult>>
+  saveTransferSpec(spec: Array<SaveTransferSpecCommand>): Promise<Array<SaveSpecTransferResult>>
 
   // /**
   //  * Update existing transfers, attaching the fulfilment

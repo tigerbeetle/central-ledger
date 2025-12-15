@@ -16,7 +16,7 @@ import { DatabaseConfig, HarnessDatabase } from '../../testing/harness/harness-d
 import { HarnessTigerBeetle, TigerBeetleConfig } from '../../testing/harness/harness-tigerbeetle';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "./TigerBeetleLedger";
 import { TransferBatcher } from './TransferBatcher';
-import { PersistedSpecStore } from './PersistedSpecStore';
+import { PersistedSpecStore } from './SpecStorePersisted';
 
 describe('TigerBeetleLedger', () => {
   let ledger: TigerBeetleLedger
