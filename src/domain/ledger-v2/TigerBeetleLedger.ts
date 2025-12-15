@@ -8,7 +8,7 @@ import { Account, AccountFlags, amount_max, Client, CreateAccountError, CreateTr
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { Ledger } from "./Ledger";
-import { DfspAccountIds, DfspAccountSpec, SpecStore } from "./SpecStore";
+import { DfspAccountIds, SpecAccount, SpecDfsp, SpecStore } from "./SpecStore";
 import { TransferBatcher } from "./TransferBatcher";
 import {
   AnyQuery,
@@ -61,6 +61,7 @@ export interface TigerBeetleLedgerDependencies {
 // reserved for USD
 export const LedgerIdUSD = 100
 export const LedgerIdTimeoutHandler = 9000
+export const LedgerIdSuper = 9001
 
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
@@ -93,7 +94,10 @@ interface InternalLedgerAccount extends Account {
   dfspId: string,
   currency: string,
   accountType: AccountType,
+}
 
+interface InternalMasterAccount extends Account {
+  dfspId: string,
 }
 
 export default class TigerBeetleLedger implements Ledger {
@@ -137,6 +141,10 @@ export default class TigerBeetleLedger implements Ledger {
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     try {
       assert(cmd.dfspId)
+
+      // Get or create the SpecDfsp
+      const masterAccountId = await this._getOrCreateSpecDfsp(cmd.dfspId)
+
       assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
       this._assertCurrenciesEnabled(cmd.currencies)
       assert.equal(cmd.startingDeposits.length, cmd.currencies.length)
@@ -147,8 +155,8 @@ export default class TigerBeetleLedger implements Ledger {
       assert(collateralAmount >= 0)
 
       // Lookup the dfsp first, ensure it's been correctly created
-      const accountSpec = await this.deps.specStore.getDfspAccountSpec(cmd.dfspId, currency)
-      if (accountSpec.type === "DfspAccountSpec") {
+      const accountSpec = await this.deps.specStore.getAccountSpec(cmd.dfspId, currency)
+      if (accountSpec.type === "SpecAccount") {
 
         const accounts = await this.deps.client.lookupAccounts([
           accountSpec.collateral,
@@ -185,6 +193,22 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       const accounts: Array<Account> = [
+        // Master account. Keeps track of Dfsp active/not active and creation timestamp
+        {
+          id: BigInt(masterAccountId),
+          debits_pending: 0n,
+          debits_posted: 0n,
+          credits_pending: 0n,
+          credits_posted: 0n,
+          user_data_128: 0n,
+          user_data_64: 0n,
+          user_data_32: 0,
+          reserved: 0,
+          ledger: LedgerIdSuper,
+          code: AccountType.Collateral,
+          flags: 0,
+          timestamp: 0n,
+        },
         // Collateral Account. Funds Switch holds in security to ensure Dfsp meets it's obligations
         {
           id: accountIds.collateral,
@@ -254,20 +278,25 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ]
 
-      await this.deps.specStore.associateDfspAccounts(cmd.dfspId, currency, accountIds)
+      await this.deps.specStore.associateAccounts(cmd.dfspId, currency, accountIds)
       const createAccountsErrors = await this.deps.client.createAccounts(accounts)
 
       let failed = false
       const readableErrors = []
-      for (const error of createAccountsErrors) {
+      createAccountsErrors.forEach((error, idx) => {
+        // ignore exists error for masterAccount
+        if (error.index === 0 && error.result === CreateAccountError.exists) {
+          return
+        }
+
         readableErrors.push(CreateAccountError[error.result])
         console.error(`Batch account at ${error.index} failed to create: ${CreateAccountError[error.result]}.`)
         failed = true
-      }
+      })
 
       if (failed) {
         // if THIS fails, then we have dangling entries in the database
-        await this.deps.specStore.tombstoneDfspAccounts(cmd.dfspId, currency, accountIds)
+        await this.deps.specStore.tombstoneAccounts(cmd.dfspId, currency, accountIds)
 
         return {
           type: 'FAILURE',
@@ -363,6 +392,8 @@ export default class TigerBeetleLedger implements Ledger {
   public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
     logger.info('disableDfsp() - noop')
 
+    // TODO: look up the SpecDfsp, get the account id and close the account!
+
     return {
       type: 'SUCCESS',
       result: undefined
@@ -371,6 +402,9 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
     logger.info('enableDfsp() - noop')
+
+    // TODO: look up the SpecDfsp, get the account id and reopen the account! We probably need
+    // to store the closing id somehwere
 
     return {
       type: 'SUCCESS',
@@ -410,15 +444,17 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
     try {
-      const dfspAccountSpec = await this.deps.specStore.queryAccountsDfsp(query.dfspId)
-      if (dfspAccountSpec.length === 0) {
+      const specDfsp = await this.deps.specStore.queryDfsp(query.dfspId)
+      const specAccounts = await this.deps.specStore.queryAccounts(query.dfspId)
+      if (specAccounts.length === 0 || specDfsp.type === 'SpecDfspNone') {
         return {
           type: 'FAILURE',
           error: new Error(`Dfsp not found for dfspId: ${query.dfspId}`)
         }
       }
 
-      const internalLedgerAccounts = await this._internalLedgerAccountsForSpec(dfspAccountSpec)
+      const masterAccount = (await this._internalAccountsForSpecDfsps([specDfsp]))[0]
+      const internalLedgerAccounts = await this._internalAccountsForSpecAccounts(specAccounts)
 
       // Group by currency and convert to legacy accounts
       const internalLedgerAccountsPerCurrency = internalLedgerAccounts.reduce((acc, ila) => {
@@ -431,10 +467,8 @@ export default class TigerBeetleLedger implements Ledger {
 
       const ledgerDfsp: LedgerDfsp = {
         name: query.dfspId,
-        // TODO: need to look up on meta-account
-        isActive: true,
-        // TODO: need to look up on meta-account
-        created: new Date(),
+        isActive: (masterAccount.flags & AccountFlags.closed) === 1,
+        created: new Date(Number(masterAccount.timestamp / NS_PER_MS)),
         accounts: legacyLedgerAccounts
       }
 
@@ -452,8 +486,15 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
     try {
-      const dfspsSpec = await this.deps.specStore.queryAccountsAll()
-      const internalLedgerAccounts = await this._internalLedgerAccountsForSpec(dfspsSpec)
+      const specDfsps = await this.deps.specStore.queryDfspsAll()
+      const masterAccounts = await this._internalAccountsForSpecDfsps(specDfsps)
+      const masterAccountsPerDfsp = masterAccounts.reduce((acc, masterAccount) => {
+        acc[masterAccount.dfspId] = masterAccount
+        return acc
+      }, {} as Record<string, InternalMasterAccount>)
+
+      const specAccounts = await this.deps.specStore.queryAccountsAll()
+      const internalLedgerAccounts = await this._internalAccountsForSpecAccounts(specAccounts)
 
       // Group by dfspId and currency
       const internalLedgerAccountsPerDfsp = internalLedgerAccounts.reduce((acc, ila) => {
@@ -462,14 +503,24 @@ export default class TigerBeetleLedger implements Ledger {
         return acc;
       }, {} as Record<string, Record<string, Array<InternalLedgerAccount>>>);
 
+      // we should have exactly the same number of master accounts as internalLedgerAccountsPerDfsp
+      assert.equal(
+        Object.keys(masterAccountsPerDfsp).length, 
+        Object.keys(internalLedgerAccountsPerDfsp).length, 
+        'Expected the same number of dfsps in `masterAccountsPerDfsp` as `internalLedgerAccountsPerDfsp`' 
+      )
+
       const dfsps = Object.entries(internalLedgerAccountsPerDfsp).map(([dfspId, dfspAccountMap]) => {
+        const masterAccount = masterAccountsPerDfsp[dfspId]
+        assert(masterAccount)
         const dfspLegacyAccounts = Object.values(dfspAccountMap)
           .flatMap(currencyAccounts => this._fromInternalAccountsToLegacyLedgerAccounts(currencyAccounts));
 
         return {
           name: dfspId,
-          isActive: true,
-          created: new Date(),
+          // TODO(LD): verify!
+          isActive: (masterAccount.flags & AccountFlags.closed) === 1,
+          created: new Date(Number(masterAccount.timestamp / NS_PER_MS)),
           accounts: dfspLegacyAccounts
         } as LedgerDfsp;
       })
@@ -639,8 +690,8 @@ export default class TigerBeetleLedger implements Ledger {
 
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
-    const ids = await this.deps.specStore.getDfspAccountSpec(query.dfspId, query.currency)
-    if (ids.type === 'DfspAccountSpecNone') {
+    const ids = await this.deps.specStore.getAccountSpec(query.dfspId, query.currency)
+    if (ids.type === 'SpecAccountNone') {
       return {
         type: 'FAILURE',
         error: ErrorHandler.Factory.createFSPIOPError(
@@ -704,8 +755,8 @@ export default class TigerBeetleLedger implements Ledger {
       const payee = input.payload.payeeFsp
 
       // TODO(LD): switch the interface to array based!
-      const payerSpec = await this.deps.specStore.getDfspAccountSpec(payer, currency)
-      if (payerSpec.type === 'DfspAccountSpecNone') {
+      const payerSpec = await this.deps.specStore.getAccountSpec(payer, currency)
+      if (payerSpec.type === 'SpecAccountNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
@@ -714,8 +765,8 @@ export default class TigerBeetleLedger implements Ledger {
           ),
         }
       }
-      const payeeSpec = await this.deps.specStore.getDfspAccountSpec(payee, currency)
-      if (payeeSpec.type === 'DfspAccountSpecNone') {
+      const payeeSpec = await this.deps.specStore.getAccountSpec(payee, currency)
+      if (payeeSpec.type === 'SpecAccountNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
@@ -958,7 +1009,7 @@ export default class TigerBeetleLedger implements Ledger {
       const transferSpecResults = await this.deps.specStore.lookupTransferSpec([input.transferId])
       assert(transferSpecResults.length === 1, `expected transfer spec for id: ${input.transferId}`)
       const transferSpec = transferSpecResults[0]
-      assert(transferSpec.type === 'TransferSpec')
+      assert(transferSpec.type === 'SpecTransfer')
 
       await this.deps.specStore.saveTransferSpec([
         {
@@ -1141,7 +1192,7 @@ export default class TigerBeetleLedger implements Ledger {
       assert(transferSpec.length === 1, 'expected exactly one transferSpec result')
 
       const foundSpec = transferSpec[0]
-      if (foundSpec.type === 'TransferSpecNone') {
+      if (foundSpec.type === 'SpecTransferNone') {
         return {
           type: LookupTransferResultType.FAILED,
           error: ErrorHandler.Factory.createInternalServerFSPIOPError(
@@ -1311,9 +1362,9 @@ export default class TigerBeetleLedger implements Ledger {
 
       // Lookup the spec for each transfer from the spec database. If this fails, throw an error.
       const specs = await this.deps.specStore.lookupTransferSpec(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
-      const missingSpec = specs.filter(m => m.type === 'TransferSpecNone')
+      const missingSpec = specs.filter(m => m.type === 'SpecTransferNone')
       assert(missingSpec.length === 0, `lookupTransferSpec() missing ${missingSpec.length} entries`)
-      const foundSpec = specs.filter(m => m.type === 'TransferSpec')
+      const foundSpec = specs.filter(m => m.type === 'SpecTransfer')
       assert(foundSpec.length === timedOutTransfers.length, `lookupTransferSpec() expected foundSpec.length === ${timedOutTransfers.length}, but instead got: ${foundSpec.length}`)
 
       const transfersWithSpec: Array<TimedOutTransfer> = []
@@ -1485,40 +1536,77 @@ export default class TigerBeetleLedger implements Ledger {
    * Private Methods
    */
 
-  private async _internalLedgerAccountsForSpec(dfspsSpec: Array<DfspAccountSpec>): Promise<Array<InternalLedgerAccount>> {
+  /**
+   * Lookup the SpecDfsp for this dfspId or create a new one
+   */
+  private async _getOrCreateSpecDfsp(dfspId: string): Promise<bigint> {
+    const result = await this.deps.specStore.queryDfsp(dfspId)
+    if (result.type === 'SpecDfsp') {
+      return result.accountId
+    }
+
+    const accountId = Helper.id53()
+    await this.deps.specStore.associateDfsp(dfspId, accountId)
+    return accountId
+  }
+
+  private async _internalAccountsForSpecDfsps(specDfsps: Array<SpecDfsp>): Promise<Array<InternalMasterAccount>> {
+    const dfspIdMap: Record<string, null> = {}
+    const accountKeys: Array<string> = []
+
+    const accountIds = specDfsps.map(spec => spec.accountId)
+    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
+    if (accountResult.type === 'FAILURE') {
+      logger.error(`_internalAccountsForSpecDfsps() - failed with error: ${accountResult.error.message}`)
+      throw accountResult.error
+    }
+    
+    return accountResult.result.map((account, idx) => {
+      const spec = specDfsps[idx]
+      assert(spec)
+
+      return {
+        ...account,
+        dfspId: spec.dfspId
+      }
+    })
+  }
+
+  private async _internalAccountsForSpecAccounts(specAccounts: Array<SpecAccount>): Promise<Array<InternalLedgerAccount>> {
     // flat map
     const buildKey = (dfspId: string, currency: string, accountType: AccountType) => `${dfspId};${currency};${accountType}`
     const dfspIdMap: Record<string, null> = {}
     const accountKeys: Array<string> = []
     const accountIds: Array<bigint> = []
-    dfspsSpec.forEach(dfspSpec => {
-      dfspIdMap[dfspSpec.dfspId] = null
+
+    specAccounts.forEach(specAccount => {
+      dfspIdMap[specAccount.dfspId] = null
       // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
       const keys = [
-        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Clearing),
-        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Collateral),
-        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Liquidity),
-        buildKey(dfspSpec.dfspId, dfspSpec.currency, AccountType.Settlement_Multilateral),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountType.Clearing),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountType.Collateral),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountType.Liquidity),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountType.Settlement_Multilateral),
       ]
       const ids = [
-        dfspSpec.clearing,
-        dfspSpec.collateral,
-        dfspSpec.liquidity,
-        dfspSpec.settlementMultilateral,
+        specAccount.clearing,
+        specAccount.collateral,
+        specAccount.liquidity,
+        specAccount.settlementMultilateral,
       ]
 
       accountKeys.push(...keys)
       accountIds.push(...ids)
     })
     const dfspIds = Object.keys(dfspIdMap)
-    logger.debug(`getAllDfsps() - found: ${dfspIds.length} unique dfsps.`)
+    logger.debug(`_internalAccountsForSpecAccounts() - found: ${dfspIds.length} unique dfsps.`)
 
     assert(accountIds.length < 8000, 'Exceeded maximum number of accounts.')
 
     // Look up TigerBeetle Accounts
     const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
     if (accountResult.type === 'FAILURE') {
-      logger.error(`getAllDfsps() - failed with error: ${accountResult.error.message}`)
+      logger.error(`_internalAccountsForSpecAccounts() - failed with error: ${accountResult.error.message}`)
       throw accountResult.error
     }
 
@@ -1624,7 +1712,6 @@ export default class TigerBeetleLedger implements Ledger {
     })
     return
   }
-
 
   /**
    * Utility Methods

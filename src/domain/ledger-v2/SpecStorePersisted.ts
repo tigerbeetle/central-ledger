@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult } from "./SpecStore";
+import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone } from "./SpecStore";
 import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
 import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
@@ -29,7 +29,7 @@ interface SpecRecordTransfer {
 
 interface SpecRecordDfsp {
   dfspId: string,
-  accountId: unknown
+  accountId: bigint
 }
 
 const TABLE_ACCOUNT = 'tigerBeetleSpecAccount'
@@ -81,6 +81,49 @@ export class PersistedSpecStore implements SpecStore {
     this.cacheTransfer = new SpecStoreCacheTransfer()
   }
 
+  async associateDfsp(dfspId: string, accountId: bigint): Promise<void> {
+    await this.db.from(TABLE_DFSP).insert({
+      dfspId,
+      accountId: accountId.toString()
+    });
+  }
+
+  async queryDfspsAll(): Promise<Array<SpecDfsp>> {
+    const records = await this.db.from(TABLE_DFSP)
+      .orderBy('dfspId', 'asc')
+      .limit(1000)
+
+    if (records.length === 1000) {
+      throw new Error(`queryDfspsAll - found ${records.length} records, something has probably gone terribly wrong.`)
+    }
+
+    return records.map(record => {
+      const specRecord = record as SpecRecordDfsp
+      return {
+        type: 'SpecDfsp',
+        dfspId: specRecord.dfspId,
+        accountId: BigInt(specRecord.accountId)
+      }
+    })
+  }
+
+  async queryDfsp(dfspId: string): Promise<SpecDfsp | SpecDfspNone> {
+    const result = await this.db.from(TABLE_DFSP)
+      .where({ dfspId })
+      .first();
+
+    if (!result) {
+      return { type: 'SpecDfspNone' };
+    }
+
+    const specRecord = result as SpecRecordDfsp
+    return {
+      type: 'SpecDfsp',
+      dfspId: specRecord.dfspId,
+      accountId: specRecord.accountId,
+    }
+  }
+
   async queryAccountsAll(): Promise<Array<SpecAccount>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
@@ -95,7 +138,7 @@ export class PersistedSpecStore implements SpecStore {
     return hydrated
   }
 
-  async queryAccountsDfsp(dfspId: string): Promise<Array<SpecAccount>> {
+  async queryAccounts(dfspId: string): Promise<Array<SpecAccount>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
       .where({dfspId})
@@ -110,7 +153,7 @@ export class PersistedSpecStore implements SpecStore {
     return hydrated
   }
 
-  async getDfspAccountSpec(dfspId: string, currency: string): Promise<SpecAccount | SpecAccountNone> {
+  async getAccountSpec(dfspId: string, currency: string): Promise<SpecAccount | SpecAccountNone> {
     // These values don't change very often, so it's safe to cache them
     const cacheResult = this.cacheAccount.get(dfspId, currency)
     if (cacheResult.type === 'HIT') {
@@ -136,7 +179,7 @@ export class PersistedSpecStore implements SpecStore {
     return spec
   }
 
-  async associateDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
+  async associateAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
     this.cacheAccount.delete(dfspId, currency)
 
     const record = dehydrateSpecAccount({
@@ -151,7 +194,7 @@ export class PersistedSpecStore implements SpecStore {
     });
   }
 
-  async tombstoneDfspAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
+  async tombstoneAccounts(dfspId: string, currency: string, accounts: DfspAccountIds): Promise<void> {
     await this.db.from(TABLE_ACCOUNT)
       .where({
         dfspId,
