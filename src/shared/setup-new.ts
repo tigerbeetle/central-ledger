@@ -277,7 +277,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
     client,
     specStore,
     transferBatcher,
-    participantService: require('../domain/participant')
+    // participantService: require('../domain/participant')
   }
   return new TigerBeetleLedger(tigerBeetleDeps)
 }

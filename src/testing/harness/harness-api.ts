@@ -191,7 +191,7 @@ export class HarnessApi implements Harness {
       client: this.client,
       specStore: new PersistedSpecStore(this.dbLib.getKnex()),
       transferBatcher: this.transferBatcher,
-      participantService: this.participantService,
+      // participantService: this.participantService,
     }
     return new TigerBeetleLedger(deps)
   }

@@ -77,7 +77,7 @@ describe('TigerBeetleLedger', () => {
         client,
         specStore: new PersistedSpecStore(Db.getKnex()),
         transferBatcher,
-        participantService: require('../../domain/participant')
+        // participantService: require('../../domain/participant')
       }
       ledger = new TigerBeetleLedger(deps)
 

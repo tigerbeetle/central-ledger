@@ -92,10 +92,6 @@ export interface TigerBeetleLedgerDependencies {
   client: Client
   specStore: SpecStore
   transferBatcher: TransferBatcher
-  participantService: {
-    create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
-    getById: (id: number) => Promise<{ participantId: number, name: string, isActive: boolean, createdDate: Date, currencyList: any[], isProxy?: boolean }>
-  }
 }
 
 export default class TigerBeetleLedger implements Ledger {
