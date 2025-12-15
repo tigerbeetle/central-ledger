@@ -42,6 +42,8 @@ import {
   WithdrawCommitResponse,
   WithdrawPrepareCommand,
   WithdrawPrepareResponse,
+  DeactivateDfspResponse,
+  DeactivateDfspResponseType,
 } from "./types";
 import { Enum } from '@mojaloop/central-services-shared';
 import { QueryResult } from 'src/shared/results';
@@ -330,7 +332,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  private async _closeDfspMasterAccount(masterAccountId: bigint): Promise<'CREATE_ACCOUNT' | 'FATAL' | 'NONE'> {
+  private async _closeDfspMasterAccount(masterAccountId: bigint): Promise<DeactivateDfspResponse> {
     // Create a closing transfer to mark this Dfsp as deactivated
     const closingTransfer: Transfer = {
       ...Helper.createTransferTemplate,
@@ -343,19 +345,42 @@ export default class TigerBeetleLedger implements Ledger {
       flags: TransferFlags.closing_credit | TransferFlags.pending,
     }
     const transferErrors = await this.deps.client.createTransfers([closingTransfer])
+    if (transferErrors.length === 0) {
+      return {
+        type: DeactivateDfspResponseType.SUCCESS
+      }
+    }
 
-    let errorType: 'CREATE_ACCOUNT' | 'FATAL' | 'NONE' = transferErrors.reduce((acc, curr) => {
-      if (curr.result === CreateTransferError.debit_account_not_found) {
-        return 'CREATE_ACCOUNT'
+    for (const err of transferErrors) {
+      if (err.result === CreateTransferError.debit_account_not_found) {
+        return {
+          type: DeactivateDfspResponseType.CREATE_ACCOUNT
+        }
       }
 
-      if (curr.result !== CreateTransferError.ok) {
-        return 'FATAL'
+      if (err.result === CreateTransferError.ok) {
+        return {
+          type: DeactivateDfspResponseType.SUCCESS
+        }
       }
 
-    }, 'NONE')
+      if (err.result === CreateTransferError.credit_account_already_closed) {
+        return {
+          type: DeactivateDfspResponseType.ALREADY_CLOSED
+        }
+      }
 
-    return errorType;
+      return {
+        type: DeactivateDfspResponseType.FAILED,
+        error: new Error(`_closeDfspMasterAccount failed with unexpected error: ${CreateTransferError[err.result]}`)
+      }
+    }
+    transferErrors.forEach((err, idx) => {
+      if (err.result === CreateTransferError.debit_account_not_found) {
+        return
+      }
+    })
+
   }
 
   public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
@@ -373,21 +398,23 @@ export default class TigerBeetleLedger implements Ledger {
     }
     let closeAccountResult = await this._closeDfspMasterAccount(specDfsp.accountId)
 
-    if (closeAccountResult === 'FATAL') {
-      return {
-        type: 'FAILURE',
-        error: new Error('disableDfsp failed')
+    switch (closeAccountResult.type) {
+      case DeactivateDfspResponseType.SUCCESS:
+      case DeactivateDfspResponseType.ALREADY_CLOSED: {
+        return {
+          type: 'SUCCESS',
+          result: undefined
+        }
+      }
+      case DeactivateDfspResponseType.FAILED: {
+        return {
+          type: 'FAILURE',
+          error: closeAccountResult.error
+        }
       }
     }
 
-    if (closeAccountResult === 'NONE') {
-      return {
-        type: 'SUCCESS',
-        result: undefined
-      }
-    }
-
-    assert(closeAccountResult === 'CREATE_ACCOUNT')
+    assert(closeAccountResult.type === DeactivateDfspResponseType.CREATE_ACCOUNT)
     const createAccountsErrors = await this.deps.client.createAccounts([
       {
         ...Helper.createAccountTemplate,
@@ -416,16 +443,22 @@ export default class TigerBeetleLedger implements Ledger {
       }
     }
     closeAccountResult = await this._closeDfspMasterAccount(specDfsp.accountId)
-    if (closeAccountResult !== 'NONE') {
-      return {
-        type: 'FAILURE',
-        error: new Error('Failed to close the dfsp account after retry.')
+    switch (closeAccountResult.type) {
+      case DeactivateDfspResponseType.SUCCESS:
+      case DeactivateDfspResponseType.ALREADY_CLOSED: {
+        return {
+          type: 'SUCCESS',
+          result: undefined
+        }
       }
-    }
-
-    return {
-      type: 'SUCCESS',
-      result: undefined
+      // We shouldn't see the same CREATE_ACCOUNT error twice!
+      case DeactivateDfspResponseType.CREATE_ACCOUNT:
+      case DeactivateDfspResponseType.FAILED: {
+        return {
+          type: 'FAILURE',
+          error: new Error('Failed to close the dfsp account after retry.')
+        }
+      }
     }
   }
 
@@ -452,7 +485,7 @@ export default class TigerBeetleLedger implements Ledger {
       timestamp_min: 0n,
       timestamp_max: 0n,
       limit: 10,
-      flags: AccountFilterFlags.credits | 
+      flags: AccountFilterFlags.credits |
         AccountFilterFlags.reversed,
     })
     if (transfers.length === 0) {
@@ -476,9 +509,9 @@ export default class TigerBeetleLedger implements Ledger {
       flags: TransferFlags.void_pending_transfer
     }])
 
-    if (createTransferErrors.length > 0 && 
-        createTransferErrors[0].result !== CreateTransferError.ok
-      ) {
+    if (createTransferErrors.length > 0 &&
+      createTransferErrors[0].result !== CreateTransferError.ok
+    ) {
       return {
         type: 'FAILURE',
         error: new Error(`failed to void closing transfer: ${lastClosingTransferId}`)

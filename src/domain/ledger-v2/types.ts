@@ -1,6 +1,8 @@
 import { FSPIOPError } from '@mojaloop/central-services-error-handling';
 
 
+
+
 // Type definitions for participant facade functions
 export interface ParticipantWithCurrency {
   // From participant table
@@ -551,6 +553,45 @@ export enum LookupTransferResultType {
    */
   FAILED = 'FAILED',
 }
+
+export enum DeactivateDfspResponseType {
+  /**
+   * Closed the account successfully
+   */
+  SUCCESS = 'SUCCESS',
+
+  /**
+   * Account is already closed
+   */
+  ALREADY_CLOSED = 'ALREADY_CLOSED',
+
+  /**
+   * Retryable error - control account not created
+   */
+  CREATE_ACCOUNT = 'CREATE_ACCOUNT',
+
+  /**
+   * Fatal Error
+   */
+  FAILED = 'FAILED'
+}
+
+export interface DeactivateDfspResponseSuccess {
+  type: DeactivateDfspResponseType.SUCCESS | DeactivateDfspResponseType.ALREADY_CLOSED
+}
+
+export interface DeactivateDfspResponseRetryable {
+  type: DeactivateDfspResponseType.CREATE_ACCOUNT
+}
+
+export interface DeactivateDfspResponseFailure {
+  type: DeactivateDfspResponseType.FAILED,
+  error: Error
+}
+
+export type DeactivateDfspResponse = DeactivateDfspResponseSuccess |
+  DeactivateDfspResponseRetryable |
+  DeactivateDfspResponseFailure
 
 export interface LookupTransferQueryResponseFoundNonFinal {
   type: LookupTransferResultType.FOUND_NON_FINAL

@@ -287,17 +287,9 @@ describe('api/participants/handler', () => {
     it('03 deactivates a participant', async () => {
       // Arrange
       const request = {
-        params: {
-          name: 'dfsp_x'
-        },
-        payload: {
-          isActive: false,
-        },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        params: { name: 'dfsp_x' },
+        payload: { isActive: false, },
+        server: { app: { ledger } }
       }
 
       // Act
@@ -310,17 +302,9 @@ describe('api/participants/handler', () => {
     it('04 reactivates a participant', async () => {
       // Arrange
       const request = {
-        params: {
-          name: 'dfsp_x'
-        },
-        payload: {
-          isActive: true,
-        },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        params: { name: 'dfsp_x' },
+        payload: { isActive: true, },
+        server: { app: { ledger } }
       }
 
       // Act
@@ -330,21 +314,14 @@ describe('api/participants/handler', () => {
       assert.equal(body.isActive, 1)
     })
 
-    it.skip('05 deactivating a deactivated participant has no effect', async () => {
+    it('05 deactivating a deactivated participant has no effect', async () => {
       // Arrange
       const request = {
-        params: {
-          name: 'dfsp_x'
-        },
-        payload: {
-          isActive: false,
-        },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        params: { name: 'dfsp_x' },
+        payload: { isActive: false, },
+        server: { app: { ledger } }
       }
+     
 
       // Act
       await participantHandler.update(request)
@@ -407,6 +384,23 @@ describe('api/participants/handler', () => {
       } catch (err) {
         assert.equal(err.message, 'Participant currency has already been registered')
       }
+    })
+
+    it.skip('09 activating an already active participant has no effect', async () => {
+      // Arrange
+      const request = {
+        params: { name: 'dfsp_x' },
+        payload: { isActive: true, },
+        server: { app: { ledger } }
+      }
+     
+
+      // Act
+      await participantHandler.update(request)
+      const body = await participantHandler.update(request)
+
+      // Assert
+      assert.equal(body.isActive, 0)
     })
   })
 
