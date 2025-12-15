@@ -115,6 +115,7 @@ export class HarnessTigerBeetle implements Harness {
   }
 
   public async teardown(): Promise<void> {
+    // TODO(LD): This isn't tearing down properly!
     if (this.process) {
       try {
         this.process.kill('SIGTERM');

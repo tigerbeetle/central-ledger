@@ -47,26 +47,13 @@ import { Enum } from '@mojaloop/central-services-shared';
 import { QueryResult } from 'src/shared/results';
 import Helper from './TigerBeetleLedgerHelper';
 
-export interface TigerBeetleLedgerDependencies {
-  config: ApplicationConfig
-  client: Client
-  specStore: SpecStore
-  transferBatcher: TransferBatcher
-  participantService: {
-    create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
-    getById: (id: number) => Promise<{ participantId: number, name: string, isActive: boolean, createdDate: Date, currencyList: any[], isProxy?: boolean }>
-  }
-}
-
 // reserved for USD
 export const LedgerIdUSD = 100
-export const LedgerIdTimeoutHandler = 9000
-export const LedgerIdSuper = 9001
 
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
 
-// TODO(LD): rename DfspAccountType>
+// TODO(LD): rename DfspAccountType
 export enum AccountType {
   Collateral = 1,
   Liquidity = 2,
@@ -98,6 +85,17 @@ interface InternalLedgerAccount extends Account {
 
 interface InternalMasterAccount extends Account {
   dfspId: string,
+}
+
+export interface TigerBeetleLedgerDependencies {
+  config: ApplicationConfig
+  client: Client
+  specStore: SpecStore
+  transferBatcher: TransferBatcher
+  participantService: {
+    create: (payload: { name: string, isProxy?: boolean }) => Promise<number>
+    getById: (id: number) => Promise<{ participantId: number, name: string, isActive: boolean, createdDate: Date, currencyList: any[], isProxy?: boolean }>
+  }
 }
 
 export default class TigerBeetleLedger implements Ledger {
@@ -145,6 +143,8 @@ export default class TigerBeetleLedger implements Ledger {
       // Get or create the SpecDfsp
       const masterAccountId = await this._getOrCreateSpecDfsp(cmd.dfspId)
 
+      // TODO(LD): get the ledgerId here, and keep track of the amount of 0s!
+
       assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
       this._assertCurrenciesEnabled(cmd.currencies)
       assert.equal(cmd.startingDeposits.length, cmd.currencies.length)
@@ -154,10 +154,9 @@ export default class TigerBeetleLedger implements Ledger {
       assert(Number.isInteger(collateralAmount))
       assert(collateralAmount >= 0)
 
-      // Lookup the dfsp first, ensure it's been correctly created
+      // Lookup the dfsp first, ensure it's been created
       const accountSpec = await this.deps.specStore.getAccountSpec(cmd.dfspId, currency)
       if (accountSpec.type === "SpecAccount") {
-
         const accounts = await this.deps.client.lookupAccounts([
           accountSpec.collateral,
           accountSpec.liquidity,
@@ -195,86 +194,46 @@ export default class TigerBeetleLedger implements Ledger {
       const accounts: Array<Account> = [
         // Master account. Keeps track of Dfsp active/not active and creation timestamp
         {
-          id: BigInt(masterAccountId),
-          debits_pending: 0n,
-          debits_posted: 0n,
-          credits_pending: 0n,
-          credits_posted: 0n,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          reserved: 0,
-          ledger: LedgerIdSuper,
+          ...Helper.createAccountTemplate,
+          id: masterAccountId,
+          ledger: Helper.ledgerIds.superLedger,
           code: AccountType.Collateral,
           flags: 0,
-          timestamp: 0n,
         },
         // Collateral Account. Funds Switch holds in security to ensure Dfsp meets it's obligations
         {
+          ...Helper.createAccountTemplate,
           id: accountIds.collateral,
-          debits_pending: 0n,
-          debits_posted: 0n,
-          credits_pending: 0n,
-          credits_posted: 0n,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          reserved: 0,
           ledger: LedgerIdUSD,
           code: AccountType.Collateral,
           flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
-          timestamp: 0n,
         },
         // Liquidity Account. Depositing Collateral unlocks liquidity that a Dfsp can use to make
         // commitments to other Dfsps.
         {
+          ...Helper.createAccountTemplate,
           id: accountIds.liquidity,
-          debits_pending: 0n,
-          debits_posted: 0n,
-          credits_pending: 0n,
-          credits_posted: 0n,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          reserved: 0,
           ledger: LedgerIdUSD,
           code: AccountType.Liquidity,
           flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
-          timestamp: 0n,
         },
         // Clearing Account. Payments from this Dfsp where Dfsp is Payer are debits, payments to this
         // Dfsp where Dfsp is Payee, are credits.
         {
+          ...Helper.createAccountTemplate,
           id: accountIds.clearing,
-          debits_pending: 0n,
-          debits_posted: 0n,
-          credits_pending: 0n,
-          credits_posted: 0n,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          reserved: 0,
           ledger: LedgerIdUSD,
           code: AccountType.Clearing,
           flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
-          timestamp: 0n,
         },
         // Settlement_Multilateral. Records the settlement obligations that this Dfsp holds
         // to other Dfsps in the scheme.
         {
+          ...Helper.createAccountTemplate,
           id: accountIds.settlementMultilateral,
-          debits_pending: 0n,
-          debits_posted: 0n,
-          credits_pending: 0n,
-          credits_posted: 0n,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          reserved: 0,
           ledger: LedgerIdUSD,
           code: AccountType.Settlement_Multilateral,
           flags: AccountFlags.debits_must_not_exceed_credits,
-          timestamp: 0n,
         }
       ]
 
@@ -306,7 +265,7 @@ export default class TigerBeetleLedger implements Ledger {
 
       // TODO: we should adjust the command to make it an amount string
       const collateralAmountStr = `${collateralAmount}`
-      const amount = TigerBeetleLedger.fromMojaloopAmount(collateralAmountStr, 2)
+      const amount = Helper.fromMojaloopAmount(collateralAmountStr, 2)
 
       // Now deposit collateral and unlock liquidity, as well as make funds available for clearing.
       //
@@ -315,36 +274,24 @@ export default class TigerBeetleLedger implements Ledger {
       // Dr Liquidity
       //  Cr Clearing
       //
-      const transfers = [
+      const transfers: Array<Transfer> = [
         {
+          ...Helper.createTransferTemplate,
           id: id(),
           debit_account_id: accountIds.collateral,
           credit_account_id: accountIds.liquidity,
           amount,
-          pending_id: 0n,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          timeout: 0,
           ledger: LedgerIdUSD,
-          code: 1,
           flags: TransferFlags.linked,
-          timestamp: 0n,
         },
         {
+          ...Helper.createTransferTemplate,
           id: id(),
           debit_account_id: accountIds.liquidity,
           credit_account_id: accountIds.clearing,
           amount,
-          pending_id: 0n,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          timeout: 0,
           ledger: LedgerIdUSD,
-          code: 1,
-          flags: 0,
-          timestamp: 0n,
+          flags: 0
         }
       ]
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
@@ -387,10 +334,93 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
-    logger.info('disableDfsp() - noop')
+  private async _closeDfspMasterAccount(masterAccountId: bigint): Promise<'CREATE_ACCOUNT' | 'FATAL' | 'NONE'> {
+    // Create a closing transfer to mark this Dfsp as deactivated
+    const closingTransfer: Transfer = {
+      ...Helper.createTransferTemplate,
+      id: id(),
+      debit_account_id: Helper.accountIds.devNull,
+      credit_account_id: masterAccountId,
+      amount: 0n,
+      ledger: Helper.ledgerIds.superLedger,
+      code: 100,
+      flags: TransferFlags.closing_credit | TransferFlags.pending,
+    }
+    const transferErrors = await this.deps.client.createTransfers([closingTransfer])
 
-    // TODO: look up the SpecDfsp, get the account id and close the account!
+    let errorType: 'CREATE_ACCOUNT' | 'FATAL' | 'NONE' = transferErrors.reduce((acc, curr) => {
+      if (curr.result === CreateTransferError.debit_account_not_found) {
+        return 'CREATE_ACCOUNT'
+      }
+
+      if (curr.result !== CreateTransferError.ok) {
+        return 'FATAL'
+      }
+
+    }, 'NONE')
+
+    return errorType;
+  }
+
+  public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
+    assert(cmd)
+    assert(cmd.dfspId)
+
+    logger.debug(`disableDfsp() - disabling dfsp: ${cmd.dfspId}`)
+
+    const specDfsp = await this.deps.specStore.queryDfsp(cmd.dfspId)
+    assert(specDfsp.type === 'SpecDfsp', `no SpecDfsp found for dfspId: ${cmd.dfspId}`)
+    let closeAccountResult = await this._closeDfspMasterAccount(specDfsp.accountId)
+
+    if (closeAccountResult === 'FATAL') {
+      return {
+        type: 'FAILURE',
+        error: new Error('disableDfsp failed')
+      }
+    }
+
+    if (closeAccountResult === 'NONE') {
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+    }
+
+    assert(closeAccountResult === 'CREATE_ACCOUNT')
+    const createAccountsErrors = await this.deps.client.createAccounts([
+      {
+        ...Helper.createAccountTemplate,
+        id: Helper.accountIds.devNull,
+        ledger: Helper.ledgerIds.superLedger,
+        code: Helper.transferCodes.unknown,
+        flags: 0,
+      }
+    ])
+    const fatal = createAccountsErrors.reduce((acc, curr) => {
+      if (acc) {
+        return acc
+      }
+
+      if (curr.result === CreateAccountError.exists ||
+        curr.result === CreateAccountError.ok
+      ) {
+        return false
+      }
+      return true
+    }, false)
+    if (fatal) {
+      return {
+        type: 'FAILURE',
+        error: new Error('disableDfsp - failed to create counterparty account.')
+      }
+    }
+    closeAccountResult = await this._closeDfspMasterAccount(specDfsp.accountId)
+    if (closeAccountResult !== 'NONE') {
+      return {
+        type: 'FAILURE',
+        error: new Error('Failed to close the dfsp account after retry.')
+      }
+    }
 
     return {
       type: 'SUCCESS',
@@ -503,9 +533,9 @@ export default class TigerBeetleLedger implements Ledger {
 
       // we should have exactly the same number of master accounts as internalLedgerAccountsPerDfsp
       assert.equal(
-        Object.keys(masterAccountsPerDfsp).length, 
-        Object.keys(internalLedgerAccountsPerDfsp).length, 
-        'Expected the same number of dfsps in `masterAccountsPerDfsp` as `internalLedgerAccountsPerDfsp`' 
+        Object.keys(masterAccountsPerDfsp).length,
+        Object.keys(internalLedgerAccountsPerDfsp).length,
+        'Expected the same number of dfsps in `masterAccountsPerDfsp` as `internalLedgerAccountsPerDfsp`'
       )
 
       const dfsps = Object.entries(internalLedgerAccountsPerDfsp).map(([dfspId, dfspAccountMap]) => {
@@ -685,8 +715,6 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-
-
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
     const ids = await this.deps.specStore.getAccountSpec(query.dfspId, query.currency)
     if (ids.type === 'SpecAccountNone') {
@@ -774,8 +802,8 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      const prepareId = TigerBeetleLedger.fromMojaloopId(input.payload.transferId)
-      const amount = TigerBeetleLedger.fromMojaloopAmount(amountStr, 2)
+      const prepareId = Helper.fromMojaloopId(input.payload.transferId)
+      const amount = Helper.fromMojaloopAmount(amountStr, 2)
 
       const nowMs = (new Date()).getTime()
       const expirationMs = Date.parse(input.payload.expiration)
@@ -837,6 +865,7 @@ export default class TigerBeetleLedger implements Ledger {
        * Flags: pending
        */
       const transfer: Transfer = {
+        ...Helper.createTransferTemplate,
         id: prepareId,
         debit_account_id: payerSpec.clearing,
         credit_account_id: payeeSpec.clearing,
@@ -844,13 +873,10 @@ export default class TigerBeetleLedger implements Ledger {
         pending_id: 0n,
         // Also used as a correlation to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
         user_data_128: prepareId,
-        user_data_64: 0n,
-        user_data_32: 0,
         timeout: timeoutSeconds,
         ledger: LedgerIdUSD,
         code: 1,
         flags: TransferFlags.pending,
-        timestamp: 0n
       }
 
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
@@ -953,21 +979,17 @@ export default class TigerBeetleLedger implements Ledger {
     logger.debug('TigerBeetleLedger.abort()')
     assert(input.action === Enum.Events.Event.Action.ABORT)
 
-    const prepareId = TigerBeetleLedger.fromMojaloopId(input.transferId)
+    const prepareId = Helper.fromMojaloopId(input.transferId)
     const transfer: Transfer = {
+      ...Helper.createTransferTemplate,
       id: id(),
       debit_account_id: 0n,
       credit_account_id: 0n,
       amount: 0n,
       pending_id: prepareId,
-      user_data_128: 0n,
-      user_data_64: 0n,
-      user_data_32: 0,
-      timeout: 0,
       ledger: LedgerIdUSD,
       code: 1,
       flags: TransferFlags.void_pending_transfer,
-      timestamp: 0n
     }
     const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
     if (error) {
@@ -1015,27 +1037,23 @@ export default class TigerBeetleLedger implements Ledger {
           fulfilment: input.payload.fulfilment,
         }
       ])
-      const prepareId = TigerBeetleLedger.fromMojaloopId(input.transferId)
+      const prepareId = Helper.fromMojaloopId(input.transferId)
 
       // Validate that the fulfilment matches the condition
-      const fulfilmentAndConditionResult = TigerBeetleLedger.validateFulfilmentAndCondition(
+      const fulfilmentAndConditionResult = Helper.validateFulfilmentAndCondition(
         input.payload.fulfilment, transferSpec.condition
       )
       if (fulfilmentAndConditionResult.type === 'FAIL') {
         const transfer: Transfer = {
+          ...Helper.createTransferTemplate,
           id: id(),
           debit_account_id: 0n,
           credit_account_id: 0n,
           amount: amount_max,
           pending_id: prepareId,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          timeout: 0,
           ledger: LedgerIdUSD,
           code: 1,
           flags: TransferFlags.void_pending_transfer,
-          timestamp: 0n
         }
 
         const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
@@ -1065,19 +1083,16 @@ export default class TigerBeetleLedger implements Ledger {
        * Flags: post_pending_transfer
        */
       const transfer: Transfer = {
+        ...Helper.createTransferTemplate,
         id: id(),
         debit_account_id: 0n,
         credit_account_id: 0n,
         amount: amount_max,
         pending_id: prepareId,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
         timeout: 0,
         ledger: LedgerIdUSD,
         code: 1,
         flags: TransferFlags.post_pending_transfer,
-        timestamp: 0n
       }
 
       const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
@@ -1108,7 +1123,7 @@ export default class TigerBeetleLedger implements Ledger {
    * @method lookupTransfer
    */
   public async lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse> {
-    const prepareId = TigerBeetleLedger.fromMojaloopId(query.transferId)
+    const prepareId = Helper.fromMojaloopId(query.transferId)
 
     // look up all TigerBeetle Transfers related to this MojaloopId
     const relatedTransfers = await this.deps.client.queryTransfers({
@@ -1239,8 +1254,6 @@ export default class TigerBeetleLedger implements Ledger {
 
   /**
    * @description Looks up a list of transfers that have timed out.
-   * 
-   * 
    */
   public async sweepTimedOut(): Promise<SweepResult> {
     const MAX_TRANSFERS_IN_PAGE = 8000
@@ -1251,7 +1264,7 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_128: 0n,
         user_data_64: 0n,
         user_data_32: 0,
-        ledger: LedgerIdTimeoutHandler,
+        ledger: Helper.ledgerIds.timeoutHandler,
         code: 0,
         timestamp_min: 0n,
         timestamp_max: 0n,
@@ -1359,7 +1372,7 @@ export default class TigerBeetleLedger implements Ledger {
       logger.debug(`sweepTimedOut - found ${timedOutTransfers.length} timed out transfers`)
 
       // Lookup the spec for each transfer from the spec database. If this fails, throw an error.
-      const specs = await this.deps.specStore.lookupTransferSpec(timedOutTransfers.map(t => TigerBeetleLedger.toMojaloopId(t.id)))
+      const specs = await this.deps.specStore.lookupTransferSpec(timedOutTransfers.map(t => Helper.toMojaloopId(t.id)))
       const missingSpec = specs.filter(m => m.type === 'SpecTransferNone')
       assert(missingSpec.length === 0, `lookupTransferSpec() missing ${missingSpec.length} entries`)
       const foundSpec = specs.filter(m => m.type === 'SpecTransfer')
@@ -1384,35 +1397,27 @@ export default class TigerBeetleLedger implements Ledger {
       const atomicBookmarks: Array<Transfer> = [
         // Close the last bookmark
         {
+          ...Helper.createTransferTemplate,
           id: id(),
-          debit_account_id: 1000n,
-          credit_account_id: 1001n,
+          debit_account_id: Helper.accountIds.bookmarkDebit,
+          credit_account_id: Helper.accountIds.bookmarkCredit,
           amount: 0n,
           pending_id: openingBookmark.id,
-          user_data_128: 0n,
-          user_data_64: 0n,
-          user_data_32: 0,
-          timeout: 0,
-          ledger: LedgerIdTimeoutHandler,
-          code: 9000,
+          ledger: Helper.ledgerIds.timeoutHandler,
+          code: Helper.transferCodes.timeoutBookmark,
           flags: TransferFlags.void_pending_transfer | TransferFlags.linked,
-          timestamp: 0n
         },
         // Open a new bookmark
         {
+          ...Helper.createTransferTemplate,
           id: id(),
-          debit_account_id: 1000n,
-          credit_account_id: 1001n,
+          debit_account_id: Helper.accountIds.bookmarkDebit,
+          credit_account_id: Helper.accountIds.bookmarkCredit,
           amount: 0n,
-          pending_id: 0n,
-          user_data_128: 0n,
           user_data_64: newOpeningTimestamp,
-          user_data_32: 0,
-          timeout: 0,
-          ledger: LedgerIdTimeoutHandler,
-          code: 9000,
+          ledger: Helper.ledgerIds.timeoutHandler,
+          code: Helper.transferCodes.timeoutBookmark,
           flags: TransferFlags.pending,
-          timestamp: 0n
         },
       ]
       const atomicBookmarkErrors = await this.deps.client.createTransfers(atomicBookmarks)
@@ -1446,35 +1451,18 @@ export default class TigerBeetleLedger implements Ledger {
   private async createOpeningBookmarkTransfer(): Promise<void> {
     const bookmarkControlAcounts: Array<Account> = [
       {
-        // TODO(LD): Find better account ids
-        id: 1000n,
-        debits_pending: 0n,
-        debits_posted: 0n,
-        credits_pending: 0n,
-        credits_posted: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        reserved: 0,
-        ledger: LedgerIdTimeoutHandler,
-        code: 9000,
+        ...Helper.createAccountTemplate,
+        id: Helper.accountIds.bookmarkDebit,
+        ledger: Helper.ledgerIds.timeoutHandler,
+        code: Helper.accountCodes.timeout,
         flags: 0,
-        timestamp: 0n
       },
       {
-        id: 1001n,
-        debits_pending: 0n,
-        debits_posted: 0n,
-        credits_pending: 0n,
-        credits_posted: 0n,
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        reserved: 0,
-        ledger: LedgerIdTimeoutHandler,
-        code: 9000,
+        ...Helper.createAccountTemplate,
+        id: Helper.accountIds.bookmarkCredit,
+        ledger: Helper.ledgerIds.timeoutHandler,
+        code: Helper.accountCodes.timeout,
         flags: 0,
-        timestamp: 0n
       },
     ]
     const createAccountsErrors = await this.deps.client.createAccounts(bookmarkControlAcounts)
@@ -1493,19 +1481,14 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     const openingBookmarkTransfer: Transfer = {
+      ...Helper.createTransferTemplate,
       id: id(),
-      debit_account_id: 1000n,
-      credit_account_id: 1001n,
+      debit_account_id: Helper.accountIds.bookmarkDebit,
+      credit_account_id: Helper.accountIds.bookmarkCredit,
       amount: 0n,
-      pending_id: 0n,
-      user_data_128: 0n,
-      user_data_64: 0n,
-      user_data_32: 0,
-      timeout: 0,
-      ledger: LedgerIdTimeoutHandler,
-      code: 9000,
+      ledger: Helper.ledgerIds.timeoutHandler,
+      code: Helper.transferCodes.timeoutBookmark,
       flags: TransferFlags.pending,
-      timestamp: 0n
     }
     const createTransfersErrors = await this.deps.client.createTransfers([openingBookmarkTransfer])
     const fatalTransferErrors = []
@@ -1558,7 +1541,7 @@ export default class TigerBeetleLedger implements Ledger {
       logger.error(`_internalAccountsForSpecDfsps() - failed with error: ${accountResult.error.message}`)
       throw accountResult.error
     }
-    
+
     return accountResult.result.map((account, idx) => {
       const spec = specDfsps[idx]
       assert(spec)
@@ -1709,100 +1692,5 @@ export default class TigerBeetleLedger implements Ledger {
       }
     })
     return
-  }
-
-  /**
-   * Utility Methods
-   */
-  public static fromMojaloopId(mojaloopId: string): bigint {
-    assert(mojaloopId)
-    // TODO: assert that this actually is a uuid
-
-    const hex = mojaloopId.replace(/-/g, '');
-    return BigInt(`0x${hex}`);
-  }
-
-  public static toMojaloopId(id: bigint): string {
-    assert(id !== undefined && id !== null, 'id is required')
-
-    // Convert bigint to hex string (without 0x prefix)
-    let hex = id.toString(16);
-
-    // Pad to 32 characters (128 bits = 16 bytes = 32 hex chars)
-    hex = hex.padStart(32, '0');
-
-    // Insert dashes to create UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
-  }
-
-  /**
-   * Converts a Mojaloop amount string to a bigint representation based on the currency's scale
-   */
-  public static fromMojaloopAmount(amountStr: string, currencyScale: number): bigint {
-    assert(currencyScale >= 0)
-    assert(currencyScale <= 10)
-    // Validate input
-    if (typeof amountStr !== 'string') {
-      throw new Error('Amount must be a string');
-    }
-
-    if (!/^-?\d+(\.\d+)?$/.test(amountStr.trim())) {
-      throw new Error('Invalid amount format. Expected format: "123.45" or "123"');
-    }
-
-    const trimmed = amountStr.trim();
-    const [integerPart, decimalPart = ''] = trimmed.split('.');
-
-    const normalizedDecimal = decimalPart.padEnd(currencyScale, '0').slice(0, currencyScale);
-    const combinedStr = integerPart + normalizedDecimal;
-
-    return BigInt(combinedStr);
-  }
-
-  /**
-   * Checks that the fulfilment matches the preimage
-   * 
-   * From the Mojaloop FSPIOP Specification v1.1:
-   * https://docs.mojaloop.io/api/fspiop/v1.1/api-definition.html#interledger-payment-request-2
-   * 
-   * > The fulfilment is submitted to the Payee FSP ledger to instruct the ledger to commit the 
-   * > reservation in favor of the Payee. The ledger will validate that the SHA-256 hash of the
-   * > fulfilment matches the condition attached to the transfer. If it does, it commits the 
-   * > reservation of the transfer. If not, it rejects the transfer and the Payee FSP rejects the 
-   * > payment and cancels the previously-performed reservation.
-   * 
-   */
-  public static validateFulfilmentAndCondition(fulfilment: string, condition: string): InterledgerValidationResult {
-    try {
-      assert(fulfilment)
-      assert(condition)
-      const preimage = Buffer.from(fulfilment, 'base64url')
-      if (preimage.length !== 32) {
-        return {
-          type: 'FAIL',
-          reason: 'Interledger preimages must be exactly 32 bytes'
-        }
-      }
-
-      const calculatedCondition = Crypto.createHash('sha256')
-        .update(preimage)
-        .digest('base64url')
-
-      if (calculatedCondition !== condition) {
-        return {
-          type: 'FAIL',
-          reason: 'Condition and Fulfulment mismatch'
-        }
-      }
-
-      return {
-        type: 'PASS'
-      }
-    } catch (err) {
-      return {
-        type: "FAIL",
-        reason: err.message
-      }
-    }
   }
 }
