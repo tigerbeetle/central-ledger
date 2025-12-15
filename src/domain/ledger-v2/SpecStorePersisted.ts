@@ -20,6 +20,7 @@ interface SpecRecordAccount {
 
 interface SpecRecordTransfer {
   id: string
+  currency: string
   payerId: string
   payeeId: string
   ilpCondition: string
@@ -265,6 +266,7 @@ export class PersistedSpecStore implements SpecStore {
     const resultSet: Record<string, SpecRecordTransfer> = queryResult.reduce((acc, curr) => {
       const record = curr as SpecRecordTransfer
       assert(record.id)
+      assert(record.currency)
       assert(record.payeeId)
       assert(record.payerId)
       assert(record.ilpCondition)
@@ -287,6 +289,7 @@ export class PersistedSpecStore implements SpecStore {
       results.push({
         type: 'SpecTransfer',
         id: record.id,
+        currency: record.currency,
         payerId: record.payerId,
         payeeId: record.payeeId,
         condition: record.ilpCondition,
@@ -303,6 +306,7 @@ export class PersistedSpecStore implements SpecStore {
       const records: Array<SpecRecordTransfer> = spec.map(m => {
         const record: SpecRecordTransfer = {
           id: m.id,
+          currency: m.currency,
           payerId: m.payerId,
           payeeId: m.payeeId,
           ilpCondition: m.condition,
@@ -336,19 +340,4 @@ export class PersistedSpecStore implements SpecStore {
       })
     }
   }
-
-  // updateTransferSpecFulfilment(transfersToUpdate: Array<{ id: string; fulfilment: string; }>): Promise<Array<SaveTransferSpecResult>> {
-  //   try {
-  //    // TODO: 
-
-
-  //   } catch (err) {
-  //     logger.error(`updateTransferSpecFulfilment() - failed with error: ${err.message}`)
-  //     return transfersToUpdate.map(m => {
-  //       return {
-  //         type: 'FAILURE'
-  //       }
-  //     })
-  //   }
-  // }
 }

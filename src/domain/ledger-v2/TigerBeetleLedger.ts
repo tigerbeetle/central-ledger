@@ -1,14 +1,17 @@
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
+import { Enum } from '@mojaloop/central-services-shared';
 import assert from "assert";
-import Crypto from 'node:crypto';
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { ApplicationConfig } from "src/shared/config";
+import { QueryResult } from 'src/shared/results';
 import { Account, AccountFilterFlags, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
+import { CurrencyManager } from './CurrencyManager';
 import { Ledger } from "./Ledger";
 import { DfspAccountIds, SpecAccount, SpecDfsp, SpecStore } from "./SpecStore";
+import Helper from './TigerBeetleLedgerHelper';
 import { TransferBatcher } from "./TransferBatcher";
 import {
   AnyQuery,
@@ -17,13 +20,15 @@ import {
   CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
+  DeactivateDfspResponse,
+  DeactivateDfspResponseType,
   DepositCommand,
   DepositResponse,
   DfspAccountResponse,
   FulfilResult,
   FulfilResultType,
-  GetAllDfspsResponse,
   GetAllDfspAccountsQuery,
+  GetAllDfspsResponse,
   GetDfspAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
@@ -42,15 +47,7 @@ import {
   WithdrawCommitResponse,
   WithdrawPrepareCommand,
   WithdrawPrepareResponse,
-  DeactivateDfspResponse,
-  DeactivateDfspResponseType,
 } from "./types";
-import { Enum } from '@mojaloop/central-services-shared';
-import { QueryResult } from 'src/shared/results';
-import Helper from './TigerBeetleLedgerHelper';
-
-// reserved for USD
-export const LedgerIdUSD = 100
 
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
@@ -62,18 +59,6 @@ export enum AccountType {
   Clearing = 3,
   Settlement_Multilateral = 4,
 }
-
-interface InterledgerValidationPass {
-  type: 'PASS'
-}
-
-interface InterledgerValidationFail {
-  type: 'FAIL',
-  reason: string
-}
-
-export type InterledgerValidationResult = InterledgerValidationPass
-  | InterledgerValidationFail
 
 
 /**
@@ -97,7 +82,11 @@ export interface TigerBeetleLedgerDependencies {
 }
 
 export default class TigerBeetleLedger implements Ledger {
-  constructor(private deps: TigerBeetleLedgerDependencies) { }
+  private currencyManager;
+
+  constructor(private deps: TigerBeetleLedgerDependencies) {
+    this.currencyManager = new CurrencyManager(this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS)
+  }
 
   /**
    * Onboarding/Lifecycle Management
@@ -144,10 +133,12 @@ export default class TigerBeetleLedger implements Ledger {
       // TODO(LD): get the ledgerId here, and keep track of the amount of 0s!
 
       assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
-      this._assertCurrenciesEnabled(cmd.currencies)
+      this.currencyManager.assertCurrenciesEnabled(cmd.currencies)
       assert.equal(cmd.startingDeposits.length, cmd.currencies.length)
 
       const currency = cmd.currencies[0]
+      const clearingLedgerId = this.currencyManager.getClearingLedgerId(currency)
+      const controlLedgerId = this.currencyManager.getControlLedgerId(currency)
       const collateralAmount = cmd.startingDeposits[0]
       assert(Number.isInteger(collateralAmount))
       assert(collateralAmount >= 0)
@@ -198,11 +189,15 @@ export default class TigerBeetleLedger implements Ledger {
           code: AccountType.Collateral,
           flags: 0,
         },
+
+        // TODO(LD): Create the net debit cap account
+
+
         // Collateral Account. Funds Switch holds in security to ensure Dfsp meets it's obligations
         {
           ...Helper.createAccountTemplate,
           id: accountIds.collateral,
-          ledger: LedgerIdUSD,
+          ledger: clearingLedgerId,
           code: AccountType.Collateral,
           flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
         },
@@ -211,7 +206,7 @@ export default class TigerBeetleLedger implements Ledger {
         {
           ...Helper.createAccountTemplate,
           id: accountIds.liquidity,
-          ledger: LedgerIdUSD,
+          ledger: clearingLedgerId,
           code: AccountType.Liquidity,
           flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         },
@@ -220,7 +215,7 @@ export default class TigerBeetleLedger implements Ledger {
         {
           ...Helper.createAccountTemplate,
           id: accountIds.clearing,
-          ledger: LedgerIdUSD,
+          ledger: clearingLedgerId,
           code: AccountType.Clearing,
           flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         },
@@ -229,7 +224,7 @@ export default class TigerBeetleLedger implements Ledger {
         {
           ...Helper.createAccountTemplate,
           id: accountIds.settlementMultilateral,
-          ledger: LedgerIdUSD,
+          ledger: clearingLedgerId,
           code: AccountType.Settlement_Multilateral,
           flags: AccountFlags.debits_must_not_exceed_credits,
         }
@@ -279,7 +274,7 @@ export default class TigerBeetleLedger implements Ledger {
           debit_account_id: accountIds.collateral,
           credit_account_id: accountIds.liquidity,
           amount,
-          ledger: LedgerIdUSD,
+          ledger: clearingLedgerId,
           flags: TransferFlags.linked,
         },
         {
@@ -288,9 +283,11 @@ export default class TigerBeetleLedger implements Ledger {
           debit_account_id: accountIds.liquidity,
           credit_account_id: accountIds.clearing,
           amount,
-          ledger: LedgerIdUSD,
+          ledger: clearingLedgerId,
           flags: 0
         }
+
+        // Create the initial net debit cap with amount max
       ]
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
         return {
@@ -666,6 +663,7 @@ export default class TigerBeetleLedger implements Ledger {
   /**
    * @method getDfspAccounts
    * @description Lookup the accounts for a Dfsp + Currency
+   * 
    * TODO: revisit in light of other get dfsp calls, we can probably simplify and 
    * map all in one place
    */
@@ -899,6 +897,8 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       const prepareId = Helper.fromMojaloopId(input.payload.transferId)
+      const clearingLedgerId = this.currencyManager.getClearingLedgerId(currency)
+      // TODO(LD): move this to the CurrencyManager
       const amount = Helper.fromMojaloopAmount(amountStr, 2)
 
       const nowMs = (new Date()).getTime()
@@ -948,8 +948,9 @@ export default class TigerBeetleLedger implements Ledger {
       await this.deps.specStore.saveTransferSpec([
         {
           id: input.payload.transferId,
-          payerId: input.payload.payerFsp,
-          payeeId: input.payload.payeeFsp,
+          currency: currency,
+          payerId: payer,
+          payeeId: payee,
           condition: input.payload.condition,
           ilpPacket: input.payload.ilpPacket
         }
@@ -970,10 +971,13 @@ export default class TigerBeetleLedger implements Ledger {
         // Also used as a correlation to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
         user_data_128: prepareId,
         timeout: timeoutSeconds,
-        ledger: LedgerIdUSD,
+        ledger: clearingLedgerId,
         code: 1,
         flags: TransferFlags.pending,
       }
+
+      // TODO(LD): add a 1 value linked transfer between the payer and payee master accounts
+      // these will fail if either of the master accounts are disabled
 
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
         return {
@@ -1083,7 +1087,8 @@ export default class TigerBeetleLedger implements Ledger {
       credit_account_id: 0n,
       amount: 0n,
       pending_id: prepareId,
-      ledger: LedgerIdUSD,
+      ledger: 0,
+      // ledger: clearingLedgerId,
       code: 1,
       flags: TransferFlags.void_pending_transfer,
     }
@@ -1126,6 +1131,7 @@ export default class TigerBeetleLedger implements Ledger {
       assert(transferSpecResults.length === 1, `expected transfer spec for id: ${input.transferId}`)
       const transferSpec = transferSpecResults[0]
       assert(transferSpec.type === 'SpecTransfer')
+      const clearingLedgerId = this.currencyManager.getClearingLedgerId(transferSpec.currency)
 
       await this.deps.specStore.saveTransferSpec([
         {
@@ -1147,7 +1153,7 @@ export default class TigerBeetleLedger implements Ledger {
           credit_account_id: 0n,
           amount: amount_max,
           pending_id: prepareId,
-          ledger: LedgerIdUSD,
+          ledger: clearingLedgerId,
           code: 1,
           flags: TransferFlags.void_pending_transfer,
         }
@@ -1186,7 +1192,7 @@ export default class TigerBeetleLedger implements Ledger {
         amount: amount_max,
         pending_id: prepareId,
         timeout: 0,
-        ledger: LedgerIdUSD,
+        ledger: clearingLedgerId,
         code: 1,
         flags: TransferFlags.post_pending_transfer,
       }
@@ -1387,7 +1393,7 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_128: 0n,
         user_data_64: 0n,
         user_data_32: 0,
-        ledger: LedgerIdUSD,
+        ledger: 0,
         code: 1,
         timestamp_min: openingBookmarkTimestamp,
         timestamp_max: 0n,

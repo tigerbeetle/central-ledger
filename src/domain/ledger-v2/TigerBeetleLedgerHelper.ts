@@ -2,7 +2,19 @@ import { failureWithError, QueryResult } from "../../shared/results"
 import { Account, Client } from "tigerbeetle-node";
 import crypto from "crypto";
 import assert from "assert";
-import { InterledgerValidationResult } from "./TigerBeetleLedger";
+
+interface InterledgerValidationPass {
+  type: 'PASS'
+}
+
+interface InterledgerValidationFail {
+  type: 'FAIL',
+  reason: string
+}
+
+export type InterledgerValidationResult = InterledgerValidationPass
+  | InterledgerValidationFail
+
 
 export default class TigerBeetleLedgerHelper {
 

@@ -38,14 +38,16 @@ describe('api/participants/handler', () => {
         {
           currency: 'USD',
           assetScale: 4,
-          clearingLedgerId: 12n,
-          settlementLedgerId: 13n
+          clearingLedgerId: 12,
+          settlementLedgerId: 13,
+          controlLedgerId: 14,
         },
         {
           currency: 'KES',
           assetScale: 4,
-          clearingLedgerId: 22n,
-          settlementLedgerId: 23n
+          clearingLedgerId: 22,
+          settlementLedgerId: 23,
+          controlLedgerId: 24,
         },
       ]
       const config: HarnessApiConfig = {
@@ -54,8 +56,8 @@ describe('api/participants/handler', () => {
           mysqlImage: 'mysql:8.0',
           memorySize: '256m',
           port: 3307,
-          migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
-          // migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+          // migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+          migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
         },
         tigerBeetleConfig: {
           tigerbeetleBinaryPath: path.join(projectRoot, '../../', '.bin/tigerbeetle')
@@ -178,15 +180,9 @@ describe('api/participants/handler', () => {
     it('01 Returns the hub information', async () => {
       // Arrange
       const request = {
-        query: {
-          isProxy: false
-        },
+        query: { isProxy: false },
         payload: {},
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
@@ -201,18 +197,12 @@ describe('api/participants/handler', () => {
     it('02 Creates a new DFSP and then calls getAll', async () => {
       // Arrange
       const request = {
-        query: {
-          isProxy: false
-        },
+        query: { isProxy: false },
         payload: {
           currency: 'USD',
           name: 'dfsp_d',
         },
-        server: {
-          app: {
-            ledger
-          }
-        }
+        server: { app: { ledger } }
       }
 
       // Act
@@ -321,7 +311,7 @@ describe('api/participants/handler', () => {
         payload: { isActive: false, },
         server: { app: { ledger } }
       }
-     
+
 
       // Act
       await participantHandler.update(request)
@@ -393,7 +383,7 @@ describe('api/participants/handler', () => {
         payload: { isActive: true, },
         server: { app: { ledger } }
       }
-     
+
       // Act
       await participantHandler.update(request)
       const body = await participantHandler.update(request)

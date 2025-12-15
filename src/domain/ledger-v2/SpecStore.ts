@@ -25,6 +25,7 @@ export interface SpecAccountNone {
 export interface SpecTransfer {
   type: 'SpecTransfer'
   id: string,
+  currency: string,
   payerId: string,
   payeeId: string,
   condition: string,

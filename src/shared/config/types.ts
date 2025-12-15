@@ -183,6 +183,44 @@ export interface DatabaseConfig {
 }
 
 /**
+ * Defines a Currency in the TigerBeetle Ledger
+ */
+// TODO(LD): find a better name than "CurrencyLedger"
+export interface CurrencyLedgerConfig {
+  /**
+   * ISO currency code
+   */
+  currency: string,
+
+  /**
+   * TODO: look up definition of asset scale
+   */
+  assetScale: number,
+
+  /**
+   * The LedgerId to use for the clearing side of the ledger
+   * 
+   * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
+   *   but it can't hurt
+   */
+  clearingLedgerId: number,
+
+  /**
+   * The LedgerId to use for the settlement side of the ledger
+   * 
+   * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
+   *   but it can't hurt
+   */
+  settlementLedgerId: number
+
+  /**
+   * The LedgerId to use for non-real assets or liabilities, but relating
+   * to the currency.
+   */
+  controlLedgerId: number
+}
+
+/**
  * @interface ApplicationConfig
  * @description Root config for central-ledger
  */
@@ -308,12 +346,12 @@ export interface ApplicationConfig {
 
     TIGERBEETLE: {
 
-       /**
-       * The TigerBeetle cluster id
-       * See: https://docs.tigerbeetle.com/coding/clients/node/#creating-a-client
-       * 
-       * @default 0n
-       */
+      /**
+      * The TigerBeetle cluster id
+      * See: https://docs.tigerbeetle.com/coding/clients/node/#creating-a-client
+      * 
+      * @default 0n
+      */
       CLUSTER_ID: bigint
 
       /**
@@ -341,33 +379,7 @@ export interface ApplicationConfig {
        *   check upon startup, to detect changes to this option and shut down in case it was
        *   modified
        */
-      CURRENCY_LEDGERS: Array<{
-        /**
-         * ISO currency code
-         */
-        currency: string,
-
-        /**
-         * TODO: look up definition of asset scale
-         */
-        assetScale: number,
-
-        /**
-         * The LedgerId to use for the clearing side of the ledger
-         * 
-         * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
-         *   but it can't hurt
-         */
-        clearingLedgerId: bigint,
-
-        /**
-         * The LedgerId to use for the settlement side of the ledger
-         * 
-         * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
-         *   but it can't hurt
-         */
-        settlementLedgerId: bigint
-      }>
+      CURRENCY_LEDGERS: Array<CurrencyLedgerConfig>
     },
 
 
