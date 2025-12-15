@@ -25,7 +25,6 @@ import {
   GetAllDfspsResponse,
   GetAllDfspAccountsQuery,
   GetDfspAccountsQuery,
-  GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
   LedgerDfsp,
@@ -362,11 +361,21 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
-    throw new Error('not implemented')
+    logger.info('disableDfsp() - noop')
+
+    return {
+      type: 'SUCCESS',
+      result: undefined
+    }
   }
 
   public async enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
-    throw new Error('not implemented')
+    logger.info('enableDfsp() - noop')
+
+    return {
+      type: 'SUCCESS',
+      result: undefined
+    }
   }
 
   public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {

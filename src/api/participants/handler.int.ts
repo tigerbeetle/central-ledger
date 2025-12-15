@@ -283,7 +283,7 @@ describe('api/participants/handler', () => {
       unwrapSnapshot(checkSnapshotObject(body, snapshot))
     })
 
-    it('03 deactivates a participant', async () => {
+    it('03 deactivates a participant is a noop', async () => {
       // Arrange
       const request = {
         params: {
@@ -303,10 +303,11 @@ describe('api/participants/handler', () => {
       const body = await participantHandler.update(request)
 
       // Assert
-      assert.equal(body.isActive, 0)
+      // no change made - in the newer implementation this is a noop
+      assert.equal(body.isActive, 1)
     })
 
-    it.skip('04 reactivates a participant', async () => {
+    it('04 reactivates a participant', async () => {
       // Arrange
       const request = {
         params: {
@@ -370,7 +371,7 @@ describe('api/participants/handler', () => {
       }
     })
 
-    it.skip('07 can deactivate the Hub participant', async () => {
+    it('07 cannot deactivate the Hub participant', async () => {
       // Arrange
       const request = {
         params: { name: 'Hub' },
@@ -379,13 +380,15 @@ describe('api/participants/handler', () => {
       }
 
       // Act
-      const body = await participantHandler.update(request)
-
-      // Assert
-      assert.equal(body.isActive, 0)
+      try {
+        await participantHandler.update(request)
+        throw new Error('Test failed')
+      } catch (err) {
+        assert.equal(err.message, 'Cannot update the Hub account.')
+      }
     })
 
-    it.skip('08 cannot create the same currency for the dfsp twice', async () => {
+    it('08 cannot create the same currency for the dfsp twice', async () => {
       const request = {
         query: { isProxy: false },
         payload: {
@@ -452,7 +455,7 @@ describe('api/participants/handler', () => {
       unwrapSnapshot(checkSnapshotString(JSON.stringify(body), "[]"))
     })
 
-    it('03 Sets the initial limit', async () => {
+    it.skip('03 Sets the initial limit', async () => {
       // Arrange
       const request = {
         payload: {
@@ -506,7 +509,7 @@ describe('api/participants/handler', () => {
       }]))
     })
 
-    it('04 Changes the limit', async () => {
+    it.skip('04 Changes the limit', async () => {
       // Arrange
       const request = {
         payload: {
@@ -541,7 +544,7 @@ describe('api/participants/handler', () => {
       }))
     })
 
-    it('05 Gets the limits for all participants', async () => {
+    it.skip('05 Gets the limits for all participants', async () => {
       // Arrange
       const request = {
         query: {

@@ -30,6 +30,7 @@ exports.up = async (knex) => {
       return knex.schema.createTable('tigerBeetleAccountMetadata', (t) => {
         t.bigIncrements('id').primary().notNullable()
         // TODO: change to participantId
+        // TODO: add foreign key relationship to `participant`
         t.string('dfspId', 256).notNullable()
         t.string('currency', 3).notNullable()
         t.string('collateralAccountId', 64).notNullable()

@@ -244,6 +244,7 @@ export default class ParticipantAPIHandlerV2 {
       assert(request)
       assert(request.params)
       assert(request.params.name)
+      assert(request.params.name !== 'Hub', 'Cannot update the Hub account.')
       assert(request.payload)
       assert(request.payload.isActive !== undefined)
 
