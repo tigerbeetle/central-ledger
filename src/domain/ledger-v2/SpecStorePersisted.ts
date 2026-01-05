@@ -13,6 +13,7 @@ interface SpecRecordAccount {
   liquidityAccountId: string;
   clearingAccountId: string;
   settlementMultilateralAccountId: string;
+  netDebitCapAccountId: string;
   isTombstoned: boolean;
   createdDate: string;
   updatedDate: string;
@@ -54,7 +55,8 @@ function hydrateSpecAccount(result: any): SpecAccount {
     collateral: BigInt(record.collateralAccountId),
     liquidity: BigInt(record.liquidityAccountId),
     clearing: BigInt(record.clearingAccountId),
-    settlementMultilateral: BigInt(record.settlementMultilateralAccountId)
+    settlementMultilateral: BigInt(record.settlementMultilateralAccountId),
+    netDebitCap: BigInt(record.netDebitCapAccountId)
   }
 
   return spec

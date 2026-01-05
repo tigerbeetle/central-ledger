@@ -92,7 +92,7 @@ export default class TigerBeetleLedgerHelper {
   /**
    * Create a random bigint id within Number.MAX_SAFE_INTEGER (53 bits)
    */
-  public static id53(): bigint {
+  public static idSmall(): bigint {
     const bytes = crypto.randomBytes(8);
     const value = bytes.readBigUInt64BE();
     return value & 0x1FFFFFFFFFFFFFn;

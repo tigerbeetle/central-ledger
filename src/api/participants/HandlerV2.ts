@@ -222,8 +222,7 @@ export default class ParticipantAPIHandlerV2 {
       const ledger = getLedger(request)
       const createDfspResult = await ledger.createDfsp({
         dfspId: name,
-        currencies: [currency],
-        startingDeposits: [0]
+        currencies: [currency]
       })
 
       if (createDfspResult.type === 'ALREADY_EXISTS') {

@@ -52,17 +52,22 @@ import {
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
 
+
 // TODO(LD): rename DfspAccountType
 export enum AccountType {
   Collateral = 1,
   Liquidity = 2,
   Clearing = 3,
   Settlement_Multilateral = 4,
+  Net_Debit_Cap = 5,
+  Master = 10,
+  // used for accounts that only exist as counterparties in control ledgers
+  Counterparty = 11
 }
 
 
 /**
- * An internal representation of an Account, combined with spec
+ * An internal representation of an Account, combined with Spec
  */
 interface InternalLedgerAccount extends Account {
   dfspId: string,
@@ -82,7 +87,7 @@ export interface TigerBeetleLedgerDependencies {
 }
 
 export default class TigerBeetleLedger implements Ledger {
-  private currencyManager;
+  private currencyManager: CurrencyManager
 
   constructor(private deps: TigerBeetleLedgerDependencies) {
     this.currencyManager = new CurrencyManager(this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS)
@@ -130,27 +135,21 @@ export default class TigerBeetleLedger implements Ledger {
       // Get or create the SpecDfsp
       const masterAccountId = await this._getOrCreateSpecDfsp(cmd.dfspId)
 
-      // TODO(LD): get the ledgerId here, and keep track of the amount of 0s!
-
       assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
       this.currencyManager.assertCurrenciesEnabled(cmd.currencies)
-      assert.equal(cmd.startingDeposits.length, cmd.currencies.length)
 
       const currency = cmd.currencies[0]
       const clearingLedgerId = this.currencyManager.getClearingLedgerId(currency)
       const controlLedgerId = this.currencyManager.getControlLedgerId(currency)
-      const collateralAmount = cmd.startingDeposits[0]
-      assert(Number.isInteger(collateralAmount))
-      assert(collateralAmount >= 0)
 
       // Lookup the dfsp first, ensure it's been created
-      const accountSpec = await this.deps.specStore.getAccountSpec(cmd.dfspId, currency)
-      if (accountSpec.type === "SpecAccount") {
+      const accountSpecResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, currency)
+      if (accountSpecResult.type === "SpecAccount") {
         const accounts = await this.deps.client.lookupAccounts([
-          accountSpec.collateral,
-          accountSpec.liquidity,
-          accountSpec.clearing,
-          accountSpec.settlementMultilateral,
+          accountSpecResult.collateral,
+          accountSpecResult.liquidity,
+          accountSpecResult.clearing,
+          accountSpecResult.settlementMultilateral,
         ]);
         if (accounts.length === 4) {
           return {
@@ -161,23 +160,19 @@ export default class TigerBeetleLedger implements Ledger {
         // We have a partial save of accounts, that means spec store and TigerBeetle are out of
         // sync. We simply continue here and allow new accounts to be created in TigerBeetle, and
         // the partial accounts to be ignored in the spec store
-        logger.warn(`createDfsp() - found only ${accounts.length} of expected 4 for dfsp: 
-        ${cmd.dfspId} and currency: ${currency}. Overwriting old accounts.`)
-
-        // TODO:
-        // This is potentially dangerous because somebody could tamper with the spec store by
-        // inserting an invalid id, and calling `createDfsp` again. It would be better to be able to 
-        // look up a Dfsp's accounts based on a query filter on TigerBeetle itself.
+        logger.warn(`createDfsp() - found only ${accounts.length} of expected 4 for dfsp: \
+          ${cmd.dfspId} and currency: ${currency}. Overwriting old accounts.`)
       }
 
       // TigerBeetle Accounts can be 128 bits, but since the Admin API uses javascript/json numbers
       // to maintain backwards compatibility, we generate our own random accountIds under 
       // Number.MAX_SAFE_INTEGER to be safe.
       const accountIds: DfspAccountIds = {
-        collateral: Helper.id53(),
-        liquidity: Helper.id53(),
-        clearing: Helper.id53(),
-        settlementMultilateral: Helper.id53(),
+        collateral: Helper.idSmall(),
+        liquidity: Helper.idSmall(),
+        clearing: Helper.idSmall(),
+        settlementMultilateral: Helper.idSmall(),
+        netDebitCap: Helper.idSmall(),
       }
 
       const accounts: Array<Account> = [
@@ -189,9 +184,23 @@ export default class TigerBeetleLedger implements Ledger {
           code: AccountType.Collateral,
           flags: 0,
         },
+        // dev/null account
+        {
+          ...Helper.createAccountTemplate,
+          id: Helper.accountIds.devNull,
+          ledger: controlLedgerId,
+          code: AccountType.Counterparty,
+          flags: 0,
+        },
 
-        // TODO(LD): Create the net debit cap account
-
+        // Net debit cap contol account - stores the Net Debit Cap for this Dfsp + Currency
+        {
+          ...Helper.createAccountTemplate,
+          id: accountIds.netDebitCap,
+          ledger: controlLedgerId,
+          code: AccountType.Net_Debit_Cap,
+          flags: AccountFlags.linked
+        },
 
         // Collateral Account. Funds Switch holds in security to ensure Dfsp meets it's obligations
         {
@@ -256,38 +265,27 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      // TODO: we should adjust the command to make it an amount string
-      const collateralAmountStr = `${collateralAmount}`
-      const amount = Helper.fromMojaloopAmount(collateralAmountStr, 2)
-
-      // Now deposit collateral and unlock liquidity, as well as make funds available for clearing.
-      //
-      // Dr Collateral 
-      //  Cr Liquidity 
-      // Dr Liquidity
-      //  Cr Clearing
-      //
+      // TODO: set the net debit cap - blocked by revisiting how this operates with Chart of Accounts
       const transfers: Array<Transfer> = [
-        {
-          ...Helper.createTransferTemplate,
-          id: id(),
-          debit_account_id: accountIds.collateral,
-          credit_account_id: accountIds.liquidity,
-          amount,
-          ledger: clearingLedgerId,
-          flags: TransferFlags.linked,
-        },
-        {
-          ...Helper.createTransferTemplate,
-          id: id(),
-          debit_account_id: accountIds.liquidity,
-          credit_account_id: accountIds.clearing,
-          amount,
-          ledger: clearingLedgerId,
-          flags: 0
-        }
-
-        // Create the initial net debit cap with amount max
+        // TODO: set up net debit cap to be **infinite** here
+        // {
+        //   ...Helper.createTransferTemplate,
+        //   id: id(),
+        //   debit_account_id: accountIds.collateral,
+        //   credit_account_id: accountIds.liquidity,
+        //   amount,
+        //   ledger: clearingLedgerId,
+        //   flags: TransferFlags.linked,
+        // },
+        // {
+        //   ...Helper.createTransferTemplate,
+        //   id: id(),
+        //   debit_account_id: accountIds.liquidity,
+        //   credit_account_id: accountIds.clearing,
+        //   amount,
+        //   ledger: clearingLedgerId,
+        //   flags: 0
+        // }
       ]
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
         return {
@@ -310,12 +308,6 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       assert.strictEqual(createTransferErrors.length, 0)
-
-      // Create the participant in the legacy system
-      // TODO: this is required when running properly, but causes problems in test
-      // indeed we should actually create the participant first before creating the account in 
-      // TigerBeetle
-      // await this.deps.participantService.create({ name: cmd.dfspId })
 
       return {
         type: 'SUCCESS'
@@ -1628,7 +1620,7 @@ export default class TigerBeetleLedger implements Ledger {
       return result.accountId
     }
 
-    const accountId = Helper.id53()
+    const accountId = Helper.idSmall()
     await this.deps.specStore.associateDfsp(dfspId, accountId)
     return accountId
   }
@@ -1694,7 +1686,6 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     const internalLedgerAccounts: Array<InternalLedgerAccount> = []
-
     for (let idx = 0; idx < accountResult.result.length; idx++) {
       const key = accountKeys[idx]
       const [dfspId, currency, accountTypeStr] = key.split(';')
@@ -1719,7 +1710,8 @@ export default class TigerBeetleLedger implements Ledger {
    * @description Map from an internal TigerBeetle Ledger representation of a LedgerAccount to a backwards compatible 
    * representation
    */
-  private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>): Array<LegacyLedgerAccount> {
+  private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>): 
+    Array<LegacyLedgerAccount> {
     const accounts: Array<LegacyLedgerAccount> = []
     const currencies = [...new Set(input.map(item => item.currency))]
     input.map(internalAccount => internalAccount.currency)
@@ -1782,17 +1774,17 @@ export default class TigerBeetleLedger implements Ledger {
     return currencyConfig.assetScale
   }
 
-  /**
-   * Check that the currencies are enabled on the switch, throw if they are not
-   */
-  private _assertCurrenciesEnabled(currencies: Array<string>) {
-    const configCurrencyLedgers = this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS
-    const enabledCurrencies = [...new Set(configCurrencyLedgers.map(cl => cl.currency))]
-    currencies.forEach(currency => {
-      if (enabledCurrencies.indexOf(currency) === -1) {
-        throw new Error(`_assertCurrenciesEnabled - currency ${currency} not enabled in config.`)
-      }
-    })
-    return
-  }
+  // /**
+  //  * Check that the currencies are enabled on the switch, throw if they are not
+  //  */
+  // private _assertCurrenciesEnabled(currencies: Array<string>) {
+  //   const configCurrencyLedgers = this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS
+  //   const enabledCurrencies = [...new Set(configCurrencyLedgers.map(cl => cl.currency))]
+  //   currencies.forEach(currency => {
+  //     if (enabledCurrencies.indexOf(currency) === -1) {
+  //       throw new Error(`_assertCurrenciesEnabled - currency ${currency} not enabled in config.`)
+  //     }
+  //   })
+  //   return
+  // }
 }

@@ -1,8 +1,11 @@
 export interface DfspAccountIds {
+  // TODO(LD): These need a rework!
   collateral: bigint,
   liquidity: bigint,
   clearing: bigint,
   settlementMultilateral: bigint,
+  
+  netDebitCap: bigint,
 }
 
 /**

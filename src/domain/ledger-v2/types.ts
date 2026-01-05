@@ -334,13 +334,7 @@ export type CreateHubAccountResponse = CreateHubAccountResponseSuccess
 
 export interface CreateDfspCommand {
   dfspId: string,
-  // TODO: limit this to just one currency for now!
   currencies: Array<string>
-
-  /**
-   * @deprecated
-   */
-  startingDeposits: Array<number>
 }
 
 export interface CreateDfspResponseSuccess {
