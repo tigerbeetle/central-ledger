@@ -9,23 +9,16 @@ interface SpecRecordAccount {
   id: number;
   dfspId: string;
   currency: string;
-  // TODO: remove
-  collateralAccountId: string;
-  liquidityAccountId: string;
-  clearingAccountId: string;
-  settlementMultilateralAccountId: string;
-  netDebitCapAccountId: string;
-
-  isTombstoned: boolean;
-  createdDate: string;
-  updatedDate: string;
-
   deposit: string,
   unrestricted: string,
   unrestrictedLock: string,
   restricted: string,
   reserved: string,
   commitedOutgoing: string,
+  netDebitCap: string,
+  isTombstoned: boolean;
+  createdDate: string;
+  updatedDate: string;
 }
 
 interface SpecRecordTransfer {
@@ -52,28 +45,18 @@ function hydrateSpecAccount(result: any): SpecAccount {
 
   assert(record.dfspId)
   assert(record.currency)
-  assert(record.collateralAccountId)
-  assert(record.liquidityAccountId)
-  assert(record.clearingAccountId)
-  assert(record.settlementMultilateralAccountId)
-
   assert(record.deposit)
   assert(record.unrestricted)
   assert(record.unrestrictedLock)
   assert(record.restricted)
   assert(record.reserved)
   assert(record.commitedOutgoing)
+  assert(record.netDebitCap)
 
   const spec: SpecAccount = {
     type: 'SpecAccount',
     dfspId: record.dfspId,
     currency: record.currency,
-    // TODO(LD): remove me
-    collateral: BigInt(record.collateralAccountId),
-    liquidity: BigInt(record.liquidityAccountId),
-    clearing: BigInt(record.clearingAccountId),
-    settlementMultilateral: BigInt(record.settlementMultilateralAccountId),
-
     
     deposit: BigInt(record.deposit),
     unrestricted: BigInt(record.unrestricted),
@@ -81,7 +64,7 @@ function hydrateSpecAccount(result: any): SpecAccount {
     restricted: BigInt(record.restricted),
     reserved: BigInt(record.reserved),
     commitedOutgoing: BigInt(record.commitedOutgoing),
-    netDebitCap: BigInt(record.netDebitCapAccountId),
+    netDebitCap: BigInt(record.netDebitCap),
   }
 
   return spec
@@ -91,10 +74,13 @@ function dehydrateSpecAccount(spec: SpecAccount): any {
   const record = {
     dfspId: spec.dfspId,
     currency: spec.currency,
-    collateralAccountId: spec.collateral.toString(),
-    liquidityAccountId: spec.liquidity.toString(),
-    clearingAccountId: spec.clearing.toString(),
-    settlementMultilateralAccountId: spec.settlementMultilateral.toString()
+    deposit: spec.deposit,
+    unrestricted: spec.unrestricted,
+    unrestrictedLock: spec.unrestrictedLock,
+    restricted: spec.restricted,
+    reserved: spec.reserved,
+    commitedOutgoing: spec.commitedOutgoing,
+    netDebitCap: spec.netDebitCap,
   }
 
   return record
@@ -227,10 +213,13 @@ export class PersistedSpecStore implements SpecStore {
       .where({
         dfspId,
         currency,
-        collateralAccountId: accounts.collateral.toString(),
-        liquidityAccountId: accounts.liquidity.toString(),
-        clearingAccountId: accounts.clearing.toString(),
-        settlementMultilateralAccountId: accounts.settlementMultilateral.toString()
+        deposit: accounts.deposit.toString(),
+        unrestricted: accounts.unrestricted.toString(),
+        unrestrictedLock: accounts.unrestrictedLock.toString(),
+        restricted: accounts.restricted.toString(),
+        reserved: accounts.reserved.toString(),
+        commitedOutgoing: accounts.commitedOutgoing.toString(),
+        netDebitCap: accounts.netDebitCap.toString(),
       })
       .update({
         isTombstoned: true,

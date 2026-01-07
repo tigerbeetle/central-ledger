@@ -30,11 +30,14 @@ export class SpecStoreCacheAccount {
   put(dfspId: string, currency: string, spec: SpecAccount): void {
     assert.equal(dfspId, spec.dfspId);
     assert.equal(currency, spec.currency);
-    assert(typeof spec.clearing === 'bigint');
-    assert(typeof spec.collateral === 'bigint');
-    assert(typeof spec.liquidity === 'bigint');
-    assert(typeof spec.settlementMultilateral === 'bigint');
-
+    assert(typeof spec.deposit === 'bigint');
+    assert(typeof spec.unrestricted === 'bigint');
+    assert(typeof spec.unrestrictedLock === 'bigint');
+    assert(typeof spec.restricted === 'bigint');
+    assert(typeof spec.reserved === 'bigint');
+    assert(typeof spec.commitedOutgoing === 'bigint');
+    assert(typeof spec.netDebitCap === 'bigint');
+    
     const key = this.key(dfspId, currency);
     this.cacheMap[key] = spec;
   }

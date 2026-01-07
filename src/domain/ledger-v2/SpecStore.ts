@@ -1,24 +1,4 @@
 export interface DfspAccountIds {
-  // TODO(LD): These need a rework!
-  /**
-   * @deprecated
-   */
-  collateral: bigint,
-  /**
-   * @deprecated
-   */
-  liquidity: bigint,
-  /**
-   * @deprecated
-   */
-  clearing: bigint,
-  /**
-   * @deprecated
-   */
-  settlementMultilateral: bigint,
-  
-  
-
   deposit: bigint,
   unrestricted: bigint,
   unrestrictedLock: bigint,

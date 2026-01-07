@@ -171,12 +171,6 @@ export default class TigerBeetleLedger implements Ledger {
       const accountIdSettlementBalance = this.currencyManager.getAccountIdSettlementBalance(currency)
 
       const accountIds: DfspAccountIds = {
-        // TODO(LD): Remove me
-        collateral: Helper.idSmall(),
-        liquidity: Helper.idSmall(),
-        clearing: Helper.idSmall(),
-        settlementMultilateral: Helper.idSmall(),
-
         deposit: Helper.idSmall(),
         unrestricted: Helper.idSmall(),
         unrestrictedLock: Helper.idSmall(),
@@ -847,7 +841,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
     const tbAccountIds = [
       // TODO: we need to define the limit as an account in TigerBeetle
-      ids.collateral,
+      ids.netDebitCap
     ]
     const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
     if (tbAccounts.length !== tbAccountIds.length) {
@@ -988,8 +982,8 @@ export default class TigerBeetleLedger implements Ledger {
       const transfer: Transfer = {
         ...Helper.createTransferTemplate,
         id: prepareId,
-        debit_account_id: payerSpec.clearing,
-        credit_account_id: payeeSpec.clearing,
+        debit_account_id: payerSpec.unrestricted,
+        credit_account_id: payeeSpec.restricted,
         amount,
         pending_id: 0n,
         // Also used as a correlation to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
