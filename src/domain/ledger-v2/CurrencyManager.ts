@@ -26,10 +26,28 @@ export class CurrencyManager {
     return this.get(currency).assetScale
   }
 
+  /**
+   * @deprecated
+   */
   public getClearingLedgerId(currency: string): number {
     return this.get(currency).clearingLedgerId
   }
 
+  public getLedgerOperation(currency: string): number {
+    return this.get(currency).ledgerOperation
+  }
+
+  public getLedgerControl(currency: string): number {
+    return this.get(currency).ledgerControl
+  }
+
+  public getAccountIdSettlementBalance(currency: string): bigint {
+    return this.get(currency).accountIdSettlementBalance
+  }
+
+  /**
+   * @deprecated
+   */
   public getControlLedgerId(currency: string): number {
     return this.get(currency).controlLedgerId
   }

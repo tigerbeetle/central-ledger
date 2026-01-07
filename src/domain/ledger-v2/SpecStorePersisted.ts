@@ -9,14 +9,23 @@ interface SpecRecordAccount {
   id: number;
   dfspId: string;
   currency: string;
+  // TODO: remove
   collateralAccountId: string;
   liquidityAccountId: string;
   clearingAccountId: string;
   settlementMultilateralAccountId: string;
   netDebitCapAccountId: string;
+
   isTombstoned: boolean;
   createdDate: string;
   updatedDate: string;
+
+  deposit: string,
+  unrestricted: string,
+  unrestrictedLock: string,
+  restricted: string,
+  reserved: string,
+  commitedOutgoing: string,
 }
 
 interface SpecRecordTransfer {
@@ -48,15 +57,31 @@ function hydrateSpecAccount(result: any): SpecAccount {
   assert(record.clearingAccountId)
   assert(record.settlementMultilateralAccountId)
 
+  assert(record.deposit)
+  assert(record.unrestricted)
+  assert(record.unrestrictedLock)
+  assert(record.restricted)
+  assert(record.reserved)
+  assert(record.commitedOutgoing)
+
   const spec: SpecAccount = {
     type: 'SpecAccount',
     dfspId: record.dfspId,
     currency: record.currency,
+    // TODO(LD): remove me
     collateral: BigInt(record.collateralAccountId),
     liquidity: BigInt(record.liquidityAccountId),
     clearing: BigInt(record.clearingAccountId),
     settlementMultilateral: BigInt(record.settlementMultilateralAccountId),
-    netDebitCap: BigInt(record.netDebitCapAccountId)
+
+    
+    deposit: BigInt(record.deposit),
+    unrestricted: BigInt(record.unrestricted),
+    unrestrictedLock: BigInt(record.unrestrictedLock),
+    restricted: BigInt(record.restricted),
+    reserved: BigInt(record.reserved),
+    commitedOutgoing: BigInt(record.commitedOutgoing),
+    netDebitCap: BigInt(record.netDebitCapAccountId),
   }
 
   return spec

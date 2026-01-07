@@ -41,6 +41,10 @@ describe('api/participants/handler', () => {
           clearingLedgerId: 12,
           settlementLedgerId: 13,
           controlLedgerId: 14,
+
+          ledgerOperation: 1001,
+          ledgerControl: 2001,
+          accountIdSettlementBalance: 123098124n
         },
         {
           currency: 'KES',
@@ -48,6 +52,9 @@ describe('api/participants/handler', () => {
           clearingLedgerId: 22,
           settlementLedgerId: 23,
           controlLedgerId: 24,
+          ledgerOperation: 1002,
+          ledgerControl: 2002,
+          accountIdSettlementBalance: 9253488424n
         },
       ]
       const config: HarnessApiConfig = {

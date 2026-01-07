@@ -18,6 +18,9 @@ export type InterledgerValidationResult = InterledgerValidationPass
 
 export default class TigerBeetleLedgerHelper {
 
+  /**
+   * Global account ids that persist across all Ledgers
+   */
   public static accountIds = {
     // TODO(LD): Find better account ids
     bookmarkDebit: 1000n,
@@ -30,18 +33,22 @@ export default class TigerBeetleLedgerHelper {
     devNull: 80000000000n
   }
 
-  public static accountCodes = {
-    timeout: 9000,
-  }
-
   /**
    * Fixed ledger ids
    */
   public static ledgerIds = {
-    timeoutHandler: 9000,
-    superLedger: 9001
+    globalControl: 9000,
+    /**
+     * @deprecated
+     */
+    timeoutHandler: 9001,
+    /**
+     * @deprecated
+     */
+    superLedger: 9002,
   }
 
+  // TODO
   public static transferCodes = {
     unknown: 1,
     timeoutBookmark: 9000,
@@ -91,6 +98,10 @@ export default class TigerBeetleLedgerHelper {
 
   /**
    * Create a random bigint id within Number.MAX_SAFE_INTEGER (53 bits)
+   * 
+   * TigerBeetle Accounts can be 128 bits, but since the Admin API uses javascript/json numbers
+   * to maintain backwards compatibility, we generate our own random accountIds under 
+   * Number.MAX_SAFE_INTEGER to be safe.
    */
   public static idSmall(): bigint {
     const bytes = crypto.randomBytes(8);

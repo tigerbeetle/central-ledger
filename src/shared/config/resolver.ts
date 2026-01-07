@@ -1,7 +1,7 @@
 import path from 'node:path'
 import parseStringsInObject from 'parse-strings-in-object'
 import RC from 'rc'
-import { ApplicationConfig } from './types'
+import { ApplicationConfig, CurrencyLedgerConfig } from './types'
 import { assertBoolean, assertKafkaConfig, assertNumber, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo, kafkaWithBrokerDefaults } from './util'
 import assert from 'node:assert'
 import { raw } from 'mysql'
@@ -97,7 +97,7 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
   return unsafeConfig
 }
 
-const validateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfig => {
+const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfig => {
   assertString(unsafeConfig.HOSTNAME)
   assertNumber(unsafeConfig.PORT)
   assertString(unsafeConfig.MONGODB_HOST)
@@ -166,13 +166,47 @@ const validateConfig = (unsafeConfig: UnsafeApplicationConfig): ApplicationConfi
     if (unsafeConfig.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS.length === 0) {
       throw new Error(`EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS must contain at least 1 currency/ledger mapping`)
     }
+
+    const currencyLedgers = unsafeConfig.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS.map(cl => parseAndValidateCurrencyLedgerConfig(cl))
+    unsafeConfig.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS = currencyLedgers  
   }
 
-  // TODO(LD): if and TigerBeetle is enabled, then PROVISIONING.enabled == true 
+  // TODO(LD): iff TigerBeetle is enabled, then PROVISIONING.enabled == true 
 
   return unsafeConfig as ApplicationConfig
 }
 
+const parseAndValidateCurrencyLedgerConfig = (input: any): CurrencyLedgerConfig => {
+  const unsafeConfig = input as CurrencyLedgerConfig
+  assert(unsafeConfig.currency, 'expected currency to be defined')
+  assert(unsafeConfig.assetScale, 'expected assetScale to be defined')
+  assert(unsafeConfig.ledgerOperation, 'expected ledgerOperation to be defined')
+  assert(unsafeConfig.ledgerControl, 'expected ledgerControl to be defined')
+  assert(unsafeConfig.accountIdSettlementBalance, 'expected accountIdSettlementBalance to be defined')
+
+  assert(typeof unsafeConfig.currency === 'string', 'expected currency to be a string')
+  assert.equal(unsafeConfig.currency.length, 3, `expected currency to be exactly 3 characters, found: ${unsafeConfig.currency}`)
+
+  assertRange(unsafeConfig.assetScale, -7, 8)
+  assertRange(unsafeConfig.ledgerOperation, 1001, 1100)
+  assertRange(unsafeConfig.ledgerControl, 2001, 2100)
+
+  // Coerce to bigint
+  let accountIdSettlementBalance: bigint
+  assert(typeof unsafeConfig.accountIdSettlementBalance === 'number')
+  accountIdSettlementBalance = BigInt(unsafeConfig.accountIdSettlementBalance)
+
+  return {
+    ...unsafeConfig,
+    accountIdSettlementBalance
+  }
+}
+
+const assertRange = (input: any, minInclusive: number, maxInclusive: number): void => {
+  assert(maxInclusive < minInclusive, `assertRange invalid args - expected maxInclusive > minInclusive`)
+  assert(typeof input === 'number')
+  assert(input >= minInclusive && maxInclusive <= 1100, `assertRange valid range: [${minInclusive}, ${maxInclusive}]`)
+}
 
 const printConfigWarnings = (config: ApplicationConfig): void => {
 
@@ -191,7 +225,7 @@ const makeConfig = (): ApplicationConfig => {
   logger.warn(`makeConfig() - Loading config from: ${PATH_TO_CONFIG_FILE}`)
   const raw = parseStringsInObject(RC('CLEDG', require(PATH_TO_CONFIG_FILE)))
   const resolved = resolveConfig(raw)
-  const validated = validateConfig(resolved)
+  const validated = parseAndValidateConfig(resolved)
 
   printConfigWarnings(validated)
 
@@ -199,4 +233,4 @@ const makeConfig = (): ApplicationConfig => {
 }
 
 
-export { makeConfig, resolveConfig, validateConfig }
+export { makeConfig, resolveConfig, parseAndValidateConfig }

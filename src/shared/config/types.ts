@@ -185,7 +185,6 @@ export interface DatabaseConfig {
 /**
  * Defines a Currency in the TigerBeetle Ledger
  */
-// TODO(LD): find a better name than "CurrencyLedger"
 export interface CurrencyLedgerConfig {
   /**
    * ISO currency code
@@ -193,12 +192,37 @@ export interface CurrencyLedgerConfig {
   currency: string,
 
   /**
-   * TODO: look up definition of asset scale
+   * TigerBeetle stores values as bigints, assetScale allows us to define the precision of the
+   * integer value of funds in the ledger.
+   * 
+   * For example, representing USD in cents uses an asset scale of 2.
+   * 
+   * Valid ranges: [-7, 8]
    */
   assetScale: number,
 
   /**
+   * Operation Ledger for balance-sheet accounts and transfers
+   * Valid ranges: [1001 - 1100]
+   */
+  ledgerOperation: number,
+
+  /**
+   * Control Ledger for non-balance sheet accounts and transfers
+   * Valid ranges: [2001 - 2100]
+   */
+  ledgerControl: number,
+
+  /**
+   * Ids for currency-specific accounts 
+   */
+  accountIdSettlementBalance: bigint,
+
+
+  /**
    * The LedgerId to use for the clearing side of the ledger
+   * @deprecated
+
    * 
    * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
    *   but it can't hurt
@@ -207,6 +231,7 @@ export interface CurrencyLedgerConfig {
 
   /**
    * The LedgerId to use for the settlement side of the ledger
+   * @deprecated
    * 
    * TODO: I'm not sure if we need to separate out the ledgerIds at this stage, 
    *   but it can't hurt

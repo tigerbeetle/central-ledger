@@ -363,14 +363,11 @@ export default class LegacyCompatibleLedger implements Ledger {
    *   currency combinations already exist.
    * 
    */
-  // TODO(LD): Remove the starting deposit here - we implemented it in addInitialPositionAndLimits
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     assert(cmd.dfspId)
     assert(cmd.currencies)
     assert(cmd.currencies.length > 0)
     assert(cmd.currencies.length < 16, 'Cannot register more than 16 currencies for a DFSP')
-    assert(cmd.startingDeposits)
-    assert.equal(cmd.currencies.length, cmd.startingDeposits.length, 'Expected currencies and startingDeposits to have the same length')
 
     try {
       const participant = await this.deps.lifecycle.participantService.getByName(cmd.dfspId);
