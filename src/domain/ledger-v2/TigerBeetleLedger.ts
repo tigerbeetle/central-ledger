@@ -69,7 +69,7 @@ export enum AccountCode {
   Net_Debit_Cap = 60200,
   Net_Debit_Cap_Control = 60201,
   Dev_Null = 60300,
-  
+
   // Remove me
   TIMEOUT = 9000,
 }
@@ -213,7 +213,7 @@ export default class TigerBeetleLedger implements Ledger {
           code: AccountCode.Net_Debit_Cap,
           flags: AccountFlags.linked
         },
-         // Net Debit Cap Control account - counterparty for the Net Debit Cap Setting
+        // Net Debit Cap Control account - counterparty for the Net Debit Cap Setting
         {
           ...Helper.createAccountTemplate,
           id: accountIds.netDebitCapControl,
@@ -555,36 +555,98 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.currency)
     assert(cmd.dfspId)
 
-    let amount: bigint
-    switch(cmd.netDebitCapType) {
+    let amountNetDebitCap: bigint
+    // 8 for limited, 9 for unlimited
+    let code: number
+    switch (cmd.netDebitCapType) {
       case 'AMOUNT': {
         assert(cmd.amount)
         assert(cmd.amount >= 0, 'expected amount to 0 or a positive integer')
         const assetScale = this.currencyManager.getAssetScale(cmd.currency)
-        amount = BigInt(Math.floor(cmd.amount * assetScale))
+        amountNetDebitCap = BigInt(Math.floor(cmd.amount * assetScale))
+        code = 8
+
+        break;
       }
-      case 'UNLIMITED': amount = Helper.netDebitCapEventHorizon + 1n
+      case 'UNLIMITED': {
+        amountNetDebitCap = 0n
+        code = 9
+      }
     }
     const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
     if (specAccounts.length === 0) {
       throw new Error(`no dfspId found: ${cmd.dfspId}`)
     }
     const spec = specAccounts[0]
+    const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
     const ledgerControl = this.currencyManager.getLedgerControl(cmd.currency)
-    const transfer: Transfer = {
-      ...Helper.createTransferTemplate,
-      id: 0n,
-      debit_account_id: spec.netDebitCapControl,
-      credit_account_id: spec.netDebitCap,
-      amount,
-      ledger: ledgerControl,
-      code: 8,
-      flags: 0
-    }
-    const fatalErrors = (await this.deps.client.createTransfers([transfer])).reduce((acc, curr) => {
-      if (curr.result !== CreateTransferError.ok) {
-        acc.push(CreateTransferError[curr.result])
-      }  
+
+    // TODO(LD): transfers to actually move funds between accounts!
+    const idLockTransfer = id()
+    const transfers: Array<Transfer> = [
+      // Set the new Net Debit Cap
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.netDebitCapControl,
+        credit_account_id: spec.netDebitCap,
+        amount: amountNetDebitCap,
+        ledger: ledgerControl,
+        code,
+        flags: TransferFlags.linked,
+      },
+      // Sweep total balance from Restricted to Unrestricted
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.restricted,
+        credit_account_id: spec.unrestricted,
+        amount: amount_max,
+        ledger: ledgerOperation,
+        code: 10,
+        flags: TransferFlags.linked | TransferFlags.balancing_debit
+      },
+      // Move the new NDC amount out to a temporary account.
+      // if the new NDC amount is unlimited, then move all into temporary account.
+      {
+        ...Helper.createTransferTemplate,
+        id: idLockTransfer,
+        debit_account_id: spec.unrestricted,
+        credit_account_id: spec.unrestrictedLock,
+        amount: cmd.netDebitCapType === 'AMOUNT' && amountNetDebitCap || amount_max,
+        ledger: ledgerOperation,
+        code: 10,
+        flags: TransferFlags.linked | TransferFlags.balancing_credit | TransferFlags.pending
+      },
+      // Sweep whatever remains in Unrestricted to Restricted.
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.unrestricted,
+        credit_account_id: spec.restricted,
+        amount: amount_max,
+        ledger: ledgerOperation,
+        code: 10,
+        flags: TransferFlags.linked | TransferFlags.balancing_credit
+      },
+      // Void the pending limit lock transfer.
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        pending_id: idLockTransfer,
+        debit_account_id: 0n,
+        credit_account_id: 0n,
+        amount: 0n,
+        ledger: ledgerOperation,
+        code: 10,
+        flags: TransferFlags.void_pending_transfer
+      },
+    ]
+    const fatalErrors = (await this.deps.client.createTransfers(transfers)).reduce((acc, curr) => {
+      if (curr.index === 0 && curr.result === CreateTransferError.ok) {
+        return acc
+      }
+      acc.push(CreateTransferError[curr.result])
       return acc
     }, [])
     if (fatalErrors.length > 0) {
@@ -863,6 +925,8 @@ export default class TigerBeetleLedger implements Ledger {
     }
     const assetScale = this.currencyManager.getAssetScale(query.currency)
     // Net Debit Cap is defined as the amount of the last transfer in the account
+    // + code. If the transfer code === 8, then we consider the amount, if it is 9, then
+    // we consider the net debit cap to be unlimited.
     const transfers = await this.deps.client.getAccountTransfers({
       account_id: ids.netDebitCap,
       user_data_128: 0n,
@@ -872,7 +936,7 @@ export default class TigerBeetleLedger implements Ledger {
       timestamp_min: 0n,
       timestamp_max: 0n,
       limit: 1,
-      flags: AccountFilterFlags.credits & AccountFilterFlags.reversed,
+      flags: AccountFilterFlags.credits | AccountFilterFlags.reversed,
     })
     if (transfers.length === 0) {
       return {
@@ -885,46 +949,43 @@ export default class TigerBeetleLedger implements Ledger {
     }
     assert(transfers.length === 1, 'Expected to find only 1 transfer')
     const amount = transfers[0].amount
+    const code = transfers[0].code
 
+    switch (code) {
+      case 9: {
+        assert(amount === 0n, 'Expected amount to be 0 for unlimited net debit cap transfer')
 
-    // const tbAccounts = await this.deps.client.lookupAccounts([ids.netDebitCap])
-    // if (tbAccounts.length !== 1) {
-    //   return {
-    //     type: 'FAILURE',
-    //     error: ErrorHandler.Factory.createFSPIOPError(
-    //       ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
-    //       `getNetDebitCap() failed - could not find the account: ${ids.netDebitCap}`
-    //     )
-    //   }
-    // }
-
-    // const account = tbAccounts[0]
-    // const netCredits = Number(account.credits_posted - account.debits_posted);
-    // assert(netCredits >= 0, 'Net Debit Cap account should never be in a net debit balance.')
-
-    // If the net credits on this account are beyond the event horizon, this is considered
-    // to be no cap - we return the same response as the LegacyLedger for now.
-    if (amount > Helper.netDebitCapEventHorizon) {
-      return {
-        type: 'FAILURE',
-        error: ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-          `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
-        )
+        return {
+          type: 'FAILURE',
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
+          )
+        }
       }
-    }
+      case 8: {
+        // Map to an external number
+        const value = Number(amount / BigInt(assetScale))
+        const limit: LegacyLimit = {
+          type: "NET_DEBIT_CAP",
+          value,
+          alarmPercentage: 10
+        }
 
-    // Map to an external number
-    const value = Number(amount/BigInt(assetScale))
-    const limit: LegacyLimit = {
-      type: "NET_DEBIT_CAP",
-      value,
-      alarmPercentage: 0
-    }
-
-    return {
-      type: 'SUCCESS',
-      result: limit
+        return {
+          type: 'SUCCESS',
+          result: limit
+        }
+      }
+      default: {
+        return {
+          type: 'FAILURE',
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            `getNetDebitCap() - expected code: ${code} for net debit cap transfer. Expected 8 or 9`
+          )
+        }
+      }
     }
   }
 

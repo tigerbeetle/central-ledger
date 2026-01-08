@@ -1,5 +1,5 @@
 import { failureWithError, QueryResult } from "../../shared/results"
-import { Account, Client } from "tigerbeetle-node";
+import { Account, amount_max, Client } from "tigerbeetle-node";
 import crypto from "crypto";
 import assert from "assert";
 
@@ -54,7 +54,7 @@ export default class TigerBeetleLedgerHelper {
    * If the Net Debit Cap account's net credits are beyond this number,
    * we consider the Net Debits to be uncapped.
    */
-  public static netDebitCapEventHorizon = BigInt(2**128 - 2)
+  public static netDebitCapEventHorizon = BigInt(2**64)
 
   public static createAccountTemplate = {
     debits_pending: 0n,

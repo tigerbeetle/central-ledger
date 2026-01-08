@@ -421,7 +421,7 @@ describe('api/participants/handler', () => {
       await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
     })
 
-    it.skip('02 Gets the opening limits', async () => {
+    it('02 Gets the opening limits', async () => {
       // Arrange
       const request = {
         query: {
@@ -499,7 +499,7 @@ describe('api/participants/handler', () => {
       }]))
     })
 
-    it.skip('04 Changes the limit', async () => {
+    it('04 Changes the limit', async () => {
       // Arrange
       const request = {
         payload: {
@@ -534,7 +534,7 @@ describe('api/participants/handler', () => {
       }))
     })
 
-    it.skip('05 Gets the limits for all participants', async () => {
+    it('05 Gets the limits for all participants', async () => {
       // Arrange
       const request = {
         query: {
@@ -562,6 +562,10 @@ describe('api/participants/handler', () => {
         }
       }]))
     })
+
+    // TODO: need test the rebalancing the restricted/unrestricted when:
+    // 1. limited NDC -> unlimited NDC:       all funds should move into unrestricted
+    // 2. limited NDC -> smaller limited NDC: unrestricted must <= limit 
   })
 
   describe('Accounts', () => {
