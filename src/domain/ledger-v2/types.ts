@@ -434,10 +434,19 @@ export interface DisableDfspAccountCommand {
   accountId: number
 }
 
-export interface SetNetDebitCapCommand {
+export type SetNetDebitCapCommand = SetNetDebitCapAmountCommand | SetNetDebitCapUnlimitedCommand
+
+export interface SetNetDebitCapAmountCommand {
+  netDebitCapType: 'AMOUNT',
   dfspId: string,
   currency: string,
-  amount: number
+  amount: number 
+}
+
+export interface SetNetDebitCapUnlimitedCommand {
+  netDebitCapType: 'UNLIMITED',
+  dfspId: string,
+  currency: string,
 }
 
 /**

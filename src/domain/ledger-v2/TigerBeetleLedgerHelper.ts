@@ -42,10 +42,6 @@ export default class TigerBeetleLedgerHelper {
      * @deprecated
      */
     timeoutHandler: 9001,
-    /**
-     * @deprecated
-     */
-    superLedger: 9002,
   }
 
   // TODO
@@ -53,6 +49,12 @@ export default class TigerBeetleLedgerHelper {
     unknown: 1,
     timeoutBookmark: 9000,
   }
+
+  /**
+   * If the Net Debit Cap account's net credits are beyond this number,
+   * we consider the Net Debits to be uncapped.
+   */
+  public static netDebitCapEventHorizon = BigInt(2**128 - 2)
 
   public static createAccountTemplate = {
     debits_pending: 0n,

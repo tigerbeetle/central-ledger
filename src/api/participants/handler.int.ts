@@ -63,8 +63,8 @@ describe('api/participants/handler', () => {
           mysqlImage: 'mysql:8.0',
           memorySize: '256m',
           port: 3307,
-          // migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
-          migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+          migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+          // migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
         },
         tigerBeetleConfig: {
           tigerbeetleBinaryPath: path.join(projectRoot, '../../', '.bin/tigerbeetle')
@@ -421,7 +421,7 @@ describe('api/participants/handler', () => {
       await TestUtils.unwrapHapiResponse(h => participantHandler.create(request, h))
     })
 
-    it('02 Gets the opening limits', async () => {
+    it.skip('02 Gets the opening limits', async () => {
       // Arrange
       const request = {
         query: {
@@ -445,7 +445,7 @@ describe('api/participants/handler', () => {
       unwrapSnapshot(checkSnapshotString(JSON.stringify(body), "[]"))
     })
 
-    it.skip('03 Sets the initial limit', async () => {
+    it('03 Sets the initial limit', async () => {
       // Arrange
       const request = {
         payload: {

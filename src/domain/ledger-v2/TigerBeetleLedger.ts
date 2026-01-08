@@ -58,19 +58,18 @@ const NS_PER_SECOND = NS_PER_MS * 1_000n
 // TODO(LD): rename DfspAccountType?
 // TODO: should we just move this to Helper.accountCodes? Or rename to be AccountCode
 export enum AccountCode {
-  Settlement_Balance = 101000,
-  Deposit = 102000,
-  Unrestricted = 201000,
-  Unrestricted_Lock = 201001,
-  Restricted = 202000,
-  Reserved = 203000,
-  Committed_Outgoing = 204000,
-  Net_Debit_Cap = 601000,
-  Dfsp = 602000,
-  Dev_Null = 603000,
+  Settlement_Balance = 10100,
+  Deposit = 10200,
+  Unrestricted = 20100,
+  Unrestricted_Lock = 20101,
+  Restricted = 20200,
+  Reserved = 20300,
+  Committed_Outgoing = 20400,
+  Dfsp = 60100,
+  Net_Debit_Cap = 60200,
+  Net_Debit_Cap_Control = 60201,
+  Dev_Null = 60300,
   
-
-
   // Remove me
   TIMEOUT = 9000,
 }
@@ -139,8 +138,8 @@ export default class TigerBeetleLedger implements Ledger {
       this.currencyManager.assertCurrenciesEnabled([currency])
 
       // Get or create the SpecDfsp
-      const masterAccountId = await this._getOrCreateSpecDfsp(cmd.dfspId)      
-      
+      const masterAccountId = await this._getOrCreateSpecDfsp(cmd.dfspId)
+
       // Lookup the dfsp first, ensure it's been created
       const accountSpecResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, currency)
       if (accountSpecResult.type === "SpecAccount") {
@@ -178,6 +177,7 @@ export default class TigerBeetleLedger implements Ledger {
         reserved: Helper.idSmall(),
         commitedOutgoing: Helper.idSmall(),
         netDebitCap: Helper.idSmall(),
+        netDebitCapControl: Helper.idSmall(),
       }
 
       const accounts: Array<Account> = [
@@ -205,12 +205,20 @@ export default class TigerBeetleLedger implements Ledger {
           code: AccountCode.Dfsp,
           flags: 0,
         },
-        // Net debit cap contol account - stores the Net Debit Cap for this Dfsp + Currency
+        // Net Debit Cap - stores the Net Debit Cap for this Dfsp + Currency
         {
           ...Helper.createAccountTemplate,
           id: accountIds.netDebitCap,
           ledger: ledgerControl,
           code: AccountCode.Net_Debit_Cap,
+          flags: AccountFlags.linked
+        },
+         // Net Debit Cap Control account - counterparty for the Net Debit Cap Setting
+        {
+          ...Helper.createAccountTemplate,
+          id: accountIds.netDebitCapControl,
+          ledger: ledgerControl,
+          code: AccountCode.Net_Debit_Cap_Control,
           flags: AccountFlags.linked
         },
         // Deposit
@@ -259,7 +267,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.commitedOutgoing,
           ledger: ledgerOperation,
           code: AccountCode.Committed_Outgoing,
-          flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
+          flags: AccountFlags.credits_must_not_exceed_debits,
         },
       ]
 
@@ -290,50 +298,18 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       // TODO(LD): Set up the net debit cap with an opening transfer of Maximum amount
-
-
-      // const transfers: Array<Transfer> = [
-      //   // TODO: set up net debit cap to be **infinite** here
-      //   // {
-      //   //   ...Helper.createTransferTemplate,
-      //   //   id: id(),
-      //   //   debit_account_id: accountIds.collateral,
-      //   //   credit_account_id: accountIds.liquidity,
-      //   //   amount,
-      //   //   ledger: clearingLedgerId,
-      //   //   flags: TransferFlags.linked,
-      //   // },
-      //   // {
-      //   //   ...Helper.createTransferTemplate,
-      //   //   id: id(),
-      //   //   debit_account_id: accountIds.liquidity,
-      //   //   credit_account_id: accountIds.clearing,
-      //   //   amount,
-      //   //   ledger: clearingLedgerId,
-      //   //   flags: 0
-      //   // }
-      // ]
-      // if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
-      //   return {
-      //     type: 'SUCCESS'
-      //   }
-      // }
-      // const createTransferErrors = await this.deps.client.createTransfers(transfers);
-
-      // for (const error of createTransferErrors) {
-      //   readableErrors.push(CreateTransferError[error.result])
-      //   console.error(`Batch transfer at ${error.index} failed to create: ${CreateTransferError[error.result]}.`)
-      //   failed = true
-      // }
-
-      // if (failed) {
-      //   return {
-      //     type: 'FAILURE',
-      //     error: new Error(`LedgerError: ${readableErrors.join(',')}`)
-      //   }
-      // }
-
-      // assert.strictEqual(createTransferErrors.length, 0)
+      const setNetDebitCapResult = await this.setNetDebitCap({
+        netDebitCapType: 'UNLIMITED',
+        dfspId: cmd.dfspId,
+        currency
+      })
+      if (setNetDebitCapResult.type === 'FAILURE') {
+        logger.error(`Successfully created dfsp, but failed to set the net debit cap with error: ${setNetDebitCapResult.error}`)
+        return {
+          type: 'FAILURE',
+          error: setNetDebitCapResult.error
+        }
+      }
 
       return {
         type: 'SUCCESS'
@@ -355,7 +331,7 @@ export default class TigerBeetleLedger implements Ledger {
       debit_account_id: Helper.accountIds.devNull,
       credit_account_id: masterAccountId,
       amount: 0n,
-      ledger: Helper.ledgerIds.superLedger,
+      ledger: Helper.ledgerIds.globalControl,
       code: 100,
       flags: TransferFlags.closing_credit | TransferFlags.pending,
     }
@@ -433,7 +409,7 @@ export default class TigerBeetleLedger implements Ledger {
       {
         ...Helper.createAccountTemplate,
         id: Helper.accountIds.devNull,
-        ledger: Helper.ledgerIds.superLedger,
+        ledger: Helper.ledgerIds.globalControl,
         code: Helper.transferCodes.unknown,
         flags: 0,
       }
@@ -477,8 +453,6 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
-    // TODO: look up the SpecDfsp, get the account id and reopen the account! We probably need
-    // to store the closing id somehwere
     assert(cmd)
     assert(cmd.dfspId)
     logger.debug(`enableDfsp() - enabling dfsp: ${cmd.dfspId}`)
@@ -520,7 +494,7 @@ export default class TigerBeetleLedger implements Ledger {
       credit_account_id: 0n,
       pending_id: lastClosingTransferId,
       amount: 0n,
-      ledger: Helper.ledgerIds.superLedger,
+      ledger: Helper.ledgerIds.globalControl,
       code: 100,
       flags: TransferFlags.void_pending_transfer
     }])
@@ -578,7 +552,52 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
-    throw new Error('Method not implemented.');
+    assert(cmd.currency)
+    assert(cmd.dfspId)
+
+    let amount: bigint
+    switch(cmd.netDebitCapType) {
+      case 'AMOUNT': {
+        assert(cmd.amount)
+        assert(cmd.amount >= 0, 'expected amount to 0 or a positive integer')
+        const assetScale = this.currencyManager.getAssetScale(cmd.currency)
+        amount = BigInt(Math.floor(cmd.amount * assetScale))
+      }
+      case 'UNLIMITED': amount = Helper.netDebitCapEventHorizon + 1n
+    }
+    const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
+    if (specAccounts.length === 0) {
+      throw new Error(`no dfspId found: ${cmd.dfspId}`)
+    }
+    const spec = specAccounts[0]
+    const ledgerControl = this.currencyManager.getLedgerControl(cmd.currency)
+    const transfer: Transfer = {
+      ...Helper.createTransferTemplate,
+      id: 0n,
+      debit_account_id: spec.netDebitCapControl,
+      credit_account_id: spec.netDebitCap,
+      amount,
+      ledger: ledgerControl,
+      code: 8,
+      flags: 0
+    }
+    const fatalErrors = (await this.deps.client.createTransfers([transfer])).reduce((acc, curr) => {
+      if (curr.result !== CreateTransferError.ok) {
+        acc.push(CreateTransferError[curr.result])
+      }  
+      return acc
+    }, [])
+    if (fatalErrors.length > 0) {
+      return {
+        type: 'FAILURE',
+        error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+      }
+    }
+
+    return {
+      type: 'SUCCESS',
+      result: undefined
+    }
   }
 
   public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
@@ -828,6 +847,9 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
+    assert(query.currency)
+    assert(query.dfspId)
+
     const ids = await this.deps.specStore.getAccountSpec(query.dfspId, query.currency)
     if (ids.type === 'SpecAccountNone') {
       return {
@@ -839,26 +861,64 @@ export default class TigerBeetleLedger implements Ledger {
         )
       }
     }
-    const tbAccountIds = [
-      // TODO: we need to define the limit as an account in TigerBeetle
-      ids.netDebitCap
-    ]
-    const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
-    if (tbAccounts.length !== tbAccountIds.length) {
+    const assetScale = this.currencyManager.getAssetScale(query.currency)
+    // Net Debit Cap is defined as the amount of the last transfer in the account
+    const transfers = await this.deps.client.getAccountTransfers({
+      account_id: ids.netDebitCap,
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      code: 0,
+      timestamp_min: 0n,
+      timestamp_max: 0n,
+      limit: 1,
+      flags: AccountFilterFlags.credits & AccountFilterFlags.reversed,
+    })
+    if (transfers.length === 0) {
       return {
         type: 'FAILURE',
         error: ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
-          `getNetDebitCap() failed - expected ${tbAccountIds.length} accounts from \
-          client.lookupAccounts(), but instead found: ${tbAccounts.length}.`.replace(/\s+/g, ' ')
+          `getNetDebitCap() failed - no net debit cap transfers found for account: ${ids.netDebitCap}`
+        )
+      }
+    }
+    assert(transfers.length === 1, 'Expected to find only 1 transfer')
+    const amount = transfers[0].amount
+
+
+    // const tbAccounts = await this.deps.client.lookupAccounts([ids.netDebitCap])
+    // if (tbAccounts.length !== 1) {
+    //   return {
+    //     type: 'FAILURE',
+    //     error: ErrorHandler.Factory.createFSPIOPError(
+    //       ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+    //       `getNetDebitCap() failed - could not find the account: ${ids.netDebitCap}`
+    //     )
+    //   }
+    // }
+
+    // const account = tbAccounts[0]
+    // const netCredits = Number(account.credits_posted - account.debits_posted);
+    // assert(netCredits >= 0, 'Net Debit Cap account should never be in a net debit balance.')
+
+    // If the net credits on this account are beyond the event horizon, this is considered
+    // to be no cap - we return the same response as the LegacyLedger for now.
+    if (amount > Helper.netDebitCapEventHorizon) {
+      return {
+        type: 'FAILURE',
+        error: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+          `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
         )
       }
     }
 
+    // Map to an external number
+    const value = Number(amount/BigInt(assetScale))
     const limit: LegacyLimit = {
       type: "NET_DEBIT_CAP",
-      // TODO(LD): load from the tigerbeetle account
-      value: 100000,
+      value,
       alarmPercentage: 0
     }
 
@@ -1743,7 +1803,7 @@ export default class TigerBeetleLedger implements Ledger {
    * @description Map from an internal TigerBeetle Ledger representation of a LedgerAccount to a backwards compatible 
    * representation
    */
-  private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>): 
+  private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>):
     Array<LegacyLedgerAccount> {
     const accounts: Array<LegacyLedgerAccount> = []
     const currencies = [...new Set(input.map(item => item.currency))]
