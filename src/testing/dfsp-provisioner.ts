@@ -1,8 +1,8 @@
 import assert from "assert";
 import { randomUUID } from 'crypto';
-import LegacyCompatibleLedger from "../domain/ledger-v2/LegacyCompatibleLedger";
 import { logger } from '../shared/logger';
 import { Ledger } from "src/domain/ledger-v2/Ledger";
+import { IParticipantService } from "src/api/participants/HandlerV2";
 
 
 export interface DFSPProvisionerConfig {
@@ -25,6 +25,7 @@ export interface DFSPProvisionerConfig {
 
 export interface DFSPProvisionerDependencies {
   ledger: Ledger
+  participantService: IParticipantService
 }
 
 /**
@@ -32,9 +33,7 @@ export interface DFSPProvisionerDependencies {
  */
 export default class DFSPProvisioner {
 
-  constructor(private deps: DFSPProvisionerDependencies) {
-
-  }
+  constructor(private deps: DFSPProvisionerDependencies) { }
 
   public async run(config: DFSPProvisionerConfig): Promise<void> {
     assert(config.currencies.length > 0, 'DFSP should have at least 1 currency')
@@ -43,6 +42,7 @@ export default class DFSPProvisioner {
     const childLogger = logger.child({ dfspId: config.dfspId });
 
     try {
+      await this.deps.participantService.ensureExists(config.dfspId)
       const result = await this.deps.ledger.createDfsp(config)
       if (result.type === 'FAILURE') {
         throw result.error
@@ -71,6 +71,15 @@ export default class DFSPProvisioner {
         if (depositResult.type === 'ALREADY_EXISTS') {
           return
         }
+
+        // TODO(LD): we need to set this limit for the LegacyLedger because it has a side effect
+        // of enabling the account.
+        await this.deps.ledger.setNetDebitCap({
+          netDebitCapType: "AMOUNT",
+          dfspId: config.dfspId,
+          currency,
+          amount: startingDeposit
+        })
 
         childLogger.info(`deposited collateral of: ${currency} ${startingDeposit}`)
       }

@@ -179,6 +179,7 @@ describe('LegacyCompatibleLedger', () => {
       }
       const dfspProvisioner = new DFSPProvisioner({
         ledger: ledger,
+        participantService: require('../participant')
       })
       await dfspProvisioner.run(dfspAConfig)
       await dfspProvisioner.run(dfspBConfig)

@@ -375,25 +375,13 @@ export default class LegacyCompatibleLedger implements Ledger {
       if (participant) {
         // If any of the new currencies to be registered are already created, then return 'ALREADY_EXISTS'
         const existingCurrencies = participant.currencyList.map(c => c.currencyId)
-        if (existingCurrencies.length === 0) {
-          throw new Error('no currencies found in participantService.getByName()')
-        }
-
-        const currencyAlreadyRegistered = existingCurrencies.reduce((acc, curr) => {
-          if (acc) {
-            return acc
-          }
-          if (cmd.currencies.indexOf(curr) > -1) {
-            return true
-          }
-        }, false)
+        const currencyAlreadyRegistered = existingCurrencies.some(curr => cmd.currencies.includes(curr))
 
         if (currencyAlreadyRegistered) {
           return {
             type: 'ALREADY_EXISTS'
           }
         }
-        // All currencies are new, continue.
       }
 
       // Create participant and currency accounts directly.

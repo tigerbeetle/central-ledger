@@ -50,7 +50,7 @@ const getLedger = (request): Ledger => {
   return request.server.app.ledger
 }
 
-interface IParticipantService {
+export interface IParticipantService {
   ensureExists(name: string): Promise<void>
   addEndpoint(name: string, payload: { type: string, value: string }): Promise<void>
   addEndpoints(name: string, endpoints: Array<{ type: string, value: string }>): Promise<Array<any>>
