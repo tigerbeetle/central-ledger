@@ -471,7 +471,10 @@ export interface AnyQuery {
 
 }
 
-export interface LedgerDfsp {
+/**
+ * Legacy Internal Represenation of Dfsp
+ */
+export interface LegacyLedgerDfsp {
   name: string,
   // TODO(LD): rename to simply active
   isActive: boolean
@@ -479,8 +482,18 @@ export interface LedgerDfsp {
   accounts: Array<LegacyLedgerAccount>
 }
 
+/**
+ * TigerBeetle Accounting model compatible represenation of the Dfsp
+ */
+export interface LedgerDfsp {
+  name: string,
+  status: 'ENABLED' | 'DISABLED',
+  created: Date,
+  accounts: Array<LedgerAccount>
+}
+
 export interface GetAllDfspsResponse {
-  dfsps: Array<LedgerDfsp>
+  dfsps: Array<LegacyLedgerDfsp>
 }
 
 export interface GetDfspAccountsQuery {
@@ -641,10 +654,11 @@ export interface SettlementModel {
  * 
  * For the TigerBeetle implementation, we throw away information to make it backwards compatible.
  * 
- * Once everything is migrated to the TigerBeetle Ledger, we can update this interface to be 
- * double-entry compatible.
+ * Once everything is migrated to the TigerBeetle Ledger, we can deprecate this in favour of 
+ * LedgerAccount
  */
 export interface LegacyLedgerAccount {
+  // TODO(LD): should this be a number?
   id: bigint,
   ledgerAccountType: string,
   currency: string,
@@ -657,6 +671,34 @@ export interface LegacyLedgerAccount {
   // accounts cannot be modified? Or should it include the reopen date
   // if we closed and reopened an account?
   changedDate: Date
+}
+
+/**
+ * LedgerAccount with TigerBeetle Accounting Model
+ * 
+ * Outside of the boundaries of the Ledger, we map from a BigInt represenation -> currency base
+ */
+export interface LedgerAccount {
+  id: bigint,
+  ledgerAccountType: string,
+  currency: string,
+  status: 'ENABLED' | 'DISABLED',
+  /**
+   * (sum(credits_pending) - sum(debits_pending))/assetScale
+   */
+  netCreditsPending: number,
+  /**
+   * (sum(debits_pending) - sum(credits_pending))/assetScale
+   */
+  netDebitsPending: number,
+  /**
+   * (sum(credits_posted) - sum(debits_posted))/assetScale
+   */
+  netCreditsPosted: number,
+  /**
+   * (sum(debits_posted) - sum(credits_posted))/assetScale
+   */
+  netDebitsPosted: number,
 }
 
 /**

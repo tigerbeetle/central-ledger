@@ -14,10 +14,9 @@ import {
   GetAllDfspAccountsQuery,
   GetAllDfspsResponse,
   GetDfspAccountsQuery,
-  GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
-  LedgerDfsp,
+  LegacyLedgerDfsp,
   LegacyLimit,
   LookupTransferQuery,
   LookupTransferQueryResponse,
@@ -53,7 +52,7 @@ export interface Ledger {
    * Onboarding/Lifecycle Management Queries
    */
   getHubAccounts(query: AnyQuery): Promise<HubAccountResponse>
-  getDfsp(query: {dfspId: string}): Promise<QueryResult<LedgerDfsp>>
+  getDfsp(query: {dfspId: string}): Promise<QueryResult<LegacyLedgerDfsp>>
   getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>>
   getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse>
   getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse>

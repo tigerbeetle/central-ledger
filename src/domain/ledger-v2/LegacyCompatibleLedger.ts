@@ -29,7 +29,7 @@ import {
   GetHubAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
-  LedgerDfsp,
+  LegacyLedgerDfsp,
   LegacyLedgerAccount,
   LegacyLimit,
   LookupTransferQuery,
@@ -928,7 +928,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         return acc
       }, {})
 
-      const dfsps: Array<LedgerDfsp> = []
+      const dfsps: Array<LegacyLedgerDfsp> = []
       participants.forEach(participant => {
         // Filter out the Hub accounts
         if (participant.name === 'Hub') {
@@ -968,7 +968,7 @@ export default class LegacyCompatibleLedger implements Ledger {
   }
 
   // TODO: can we refactor all the mapping stuff to combine it with above?
-  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
+  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LegacyLedgerDfsp>> {
     try {
       const participant = await this.deps.lifecycle.participantService.getByName(query.dfspId)
       assert(participant, 'expected participant to be defined')
@@ -997,7 +997,7 @@ export default class LegacyCompatibleLedger implements Ledger {
         formattedAccounts.push(formattedAccount)
       })
 
-      const dfsp: LedgerDfsp = {
+      const dfsp: LegacyLedgerDfsp = {
         name: participant.name,
         isActive: participant.isActive === 1,
         created: new Date(participant.createdDate),

@@ -54,7 +54,7 @@ export default class TigerBeetleLedgerHelper {
    * If the Net Debit Cap account's net credits are beyond this number,
    * we consider the Net Debits to be uncapped.
    */
-  public static netDebitCapEventHorizon = BigInt(2**64)
+  public static netDebitCapEventHorizon = BigInt(2 ** 64)
 
   public static createAccountTemplate = {
     debits_pending: 0n,
@@ -204,6 +204,28 @@ export default class TigerBeetleLedgerHelper {
         reason: err.message
       }
     }
+  }
+
+  /**
+   * Convert from an TigerBeetle Ledger representation of an amount to a real amount.
+   */
+  public static toRealAmount(input: bigint, assetScale: number): number {
+    assert(assetScale >= -7)
+    assert(assetScale <= 8)
+    const valueDivisor = 10 ** assetScale
+
+    if (input === 0n) {
+      return 0
+    }
+
+    const realAmount = input / BigInt(valueDivisor)
+    if (realAmount > BigInt(Number.MAX_SAFE_INTEGER) ||
+      realAmount < BigInt(Number.MIN_SAFE_INTEGER)
+    ) {
+      throw new Error(`toRealAmount() failed: realAmount is outside of safe range.`)
+    }
+
+    return Number(input)
   }
 
 }

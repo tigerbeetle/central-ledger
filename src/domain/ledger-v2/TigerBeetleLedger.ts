@@ -32,7 +32,7 @@ import {
   GetDfspAccountsQuery,
   GetNetDebitCapQuery,
   HubAccountResponse,
-  LedgerDfsp,
+  LegacyLedgerDfsp,
   LegacyLedgerAccount,
   LegacyLimit,
   LookupTransferQuery,
@@ -47,6 +47,8 @@ import {
   WithdrawCommitResponse,
   WithdrawPrepareCommand,
   WithdrawPrepareResponse,
+  LedgerDfsp,
+  LedgerAccount,
 } from "./types";
 import { Help } from 'commander';
 import { TIMEOUT } from 'dns';
@@ -234,7 +236,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.deposit,
           ledger: ledgerOperation,
           code: AccountCode.Deposit,
-          flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
+          flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
         },
         // Unrestricted
         {
@@ -242,7 +244,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.unrestricted,
           ledger: ledgerOperation,
           code: AccountCode.Unrestricted,
-          flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
+          flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         },
         // Unrestricted_Lock
         {
@@ -250,7 +252,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.unrestrictedLock,
           ledger: ledgerOperation,
           code: AccountCode.Unrestricted_Lock,
-          flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
+          flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         },
         // Restricted
         {
@@ -258,7 +260,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.restricted,
           ledger: ledgerOperation,
           code: AccountCode.Restricted,
-          flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
+          flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         },
         // Reserved
         {
@@ -266,7 +268,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.reserved,
           ledger: ledgerOperation,
           code: AccountCode.Reserved,
-          flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
+          flags: AccountFlags.linked | AccountFlags.debits_must_not_exceed_credits,
         },
         // Committed_Outgoing
         {
@@ -274,7 +276,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.commitedOutgoing,
           ledger: ledgerOperation,
           code: AccountCode.Committed_Outgoing,
-          flags: AccountFlags.credits_must_not_exceed_debits,
+          flags: AccountFlags.debits_must_not_exceed_credits,
         },
       ]
 
@@ -549,10 +551,7 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.transferId)
 
     try {
-
-
       const netDebitCapInternal = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
-
       const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
       if (specAccounts.length === 0) {
         throw new Error(`no dfspId found: ${cmd.dfspId}`)
@@ -581,7 +580,7 @@ export default class TigerBeetleLedger implements Ledger {
           code: 1,
           flags: TransferFlags.linked
         },
-        // Temporarily lock the net debit cap.
+        // Temporarily lock up to the net debit cap.
         {
           ...Helper.createTransferTemplate,
           id: idLockTransfer,
@@ -590,7 +589,7 @@ export default class TigerBeetleLedger implements Ledger {
           amount: netDebitCapLockAmount,
           ledger: ledgerOperation,
           code: 1,
-          flags: TransferFlags.linked | TransferFlags.pending
+          flags: TransferFlags.linked | TransferFlags.pending | TransferFlags.balancing_credit
         },
         // Sweep whatever remains in Unrestricted to Restricted.
         {
@@ -613,9 +612,23 @@ export default class TigerBeetleLedger implements Ledger {
           amount: 0n,
           ledger: ledgerOperation,
           code: 1,
-          flags: TransferFlags.linked | TransferFlags.balancing_credit
+          flags: TransferFlags.void_pending_transfer
         }
       ]
+
+      const fatalErrors = (await this.deps.client.createTransfers(transfers)).reduce((acc, curr) => {
+        // if (curr.index === 0 && curr.result === CreateTransferError.ok) {
+        //   return acc
+        // }
+        acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
+        return acc
+      }, [])
+      if (fatalErrors.length > 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+        }
+      }
 
       return {
         type: 'SUCCESS'
@@ -747,7 +760,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LedgerDfsp>> {
+  public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LegacyLedgerDfsp>> {
     try {
       const specDfsp = await this.deps.specStore.queryDfsp(query.dfspId)
       const specAccounts = await this.deps.specStore.queryAccounts(query.dfspId)
@@ -770,7 +783,7 @@ export default class TigerBeetleLedger implements Ledger {
       const legacyLedgerAccounts = Object.values(internalLedgerAccountsPerCurrency)
         .flatMap(accounts => this._fromInternalAccountsToLegacyLedgerAccounts(accounts))
 
-      const ledgerDfsp: LedgerDfsp = {
+      const ledgerDfsp: LegacyLedgerDfsp = {
         name: query.dfspId,
         isActive: !(masterAccount.flags & AccountFlags.closed),
         created: new Date(Number(masterAccount.timestamp / NS_PER_MS)),
@@ -787,6 +800,52 @@ export default class TigerBeetleLedger implements Ledger {
         error
       }
     }
+  }
+
+  /**
+   * TigerBeetleLedger native impementation of getDfsp
+   */
+  public async getDfspV2(query: { dfspId: string }): Promise<QueryResult<LedgerDfsp>> {
+    try {
+      const specDfsp = await this.deps.specStore.queryDfsp(query.dfspId)
+      const specAccounts = await this.deps.specStore.queryAccounts(query.dfspId)
+      if (specAccounts.length === 0 || specDfsp.type === 'SpecDfspNone') {
+        return {
+          type: 'FAILURE',
+          error: new Error(`Dfsp not found for dfspId: ${query.dfspId}`)
+        }
+      }
+
+      const masterAccount = (await this._internalAccountsForSpecDfsps([specDfsp]))[0]
+      const internalLedgerAccounts = await this._internalAccountsForSpecAccounts(specAccounts)
+
+      // Group by currency and convert to legacy accounts
+      const internalLedgerAccountsPerCurrency = internalLedgerAccounts.reduce((acc, ila) => {
+        (acc[ila.currency] = acc[ila.currency] || []).push(ila);
+        return acc;
+      }, {} as Record<string, Array<InternalLedgerAccount>>);
+
+      const ledgerAccounts = Object.values(internalLedgerAccountsPerCurrency)
+        .flatMap(accounts => this._fromInternalAccountsToLedgerAccounts(accounts))
+
+      const ledgerDfsp: LedgerDfsp = {
+        name: query.dfspId,
+        status: (masterAccount.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
+        created: new Date(Number(masterAccount.timestamp / NS_PER_MS)),
+        accounts: ledgerAccounts
+      }
+
+      return {
+        type: 'SUCCESS',
+        result: ledgerDfsp
+      }
+    } catch (error) {
+      return {
+        type: 'FAILURE',
+        error
+      }
+    }
+
   }
 
   public async getAllDfsps(_query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>> {
@@ -827,7 +886,7 @@ export default class TigerBeetleLedger implements Ledger {
           isActive: !(masterAccount.flags & AccountFlags.closed),
           created: new Date(Number(masterAccount.timestamp / NS_PER_MS)),
           accounts: dfspLegacyAccounts
-        } as LedgerDfsp;
+        } as LegacyLedgerDfsp;
       })
 
       return {
@@ -1959,8 +2018,8 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   /**
-   * @description Map from an internal TigerBeetle Ledger representation of a LedgerAccount to a backwards compatible 
-   * representation
+   * @description Map from an internal TigerBeetle Ledger representation of a LedgerAccount to a
+   *   backwards compatible representation
    */
   private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>):
     Array<LegacyLedgerAccount> {
@@ -1969,8 +2028,9 @@ export default class TigerBeetleLedger implements Ledger {
     input.map(internalAccount => internalAccount.currency)
     assert.equal(currencies.length, 1, '_fromInternalAccountsToLegacyLedgerAccounts expects accounts of only 1 currency at a time.')
     const currency = currencies[0]
-    const assetScale = this._assetScaleForCurrency(currency)
-    const valueDivisor = 10 ** assetScale
+    const assetScale = this.currencyManager.getAssetScale(currency)
+    // const assetScale = this._assetScaleForCurrency(currency)
+    // const valueDivisor = 10 ** assetScale
 
     const accountUnrestricted: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Unrestricted)
     assert(accountUnrestricted, 'could not find unrestricted account')
@@ -1997,8 +2057,10 @@ export default class TigerBeetleLedger implements Ledger {
       ledgerAccountType: 'POSITION',
       currency,
       isActive: !(accountUnrestricted.flags & AccountFlags.closed),
-      value: convertBigIntToNumber(legacyPositionBalancePosted) / valueDivisor,
-      reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / valueDivisor,
+      value: Helper.toRealAmount(legacyPositionBalancePosted, assetScale),
+      reservedValue: Helper.toRealAmount(legacyPositionBalancePending, assetScale),
+      // value: convertBigIntToNumber(legacyPositionBalancePosted) / valueDivisor,
+      // reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / valueDivisor,
       // We don't have this in TigerBeetle, although we could use the created date
       changedDate: new Date(0)
     })
@@ -2008,13 +2070,38 @@ export default class TigerBeetleLedger implements Ledger {
       ledgerAccountType: 'SETTLEMENT',
       currency,
       isActive: !(accountDeposit.flags & AccountFlags.closed),
-      value: convertBigIntToNumber(legacySettlementBalancePosted) / valueDivisor,
-      reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / valueDivisor,
+      value: Helper.toRealAmount(legacySettlementBalancePosted, assetScale),
+      reservedValue: Helper.toRealAmount(legacySettlementBalancePending, assetScale),
+
+      // value: convertBigIntToNumber(legacySettlementBalancePosted) / valueDivisor,
+      // reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / valueDivisor,
       // We don't have this in TigerBeetle, although we could use the created date
       changedDate: new Date(0)
     })
 
     return accounts;
+  }
+
+  /**
+   * Maps from an internal TigerBeetle account to a LedgerAccount
+   */
+  private _fromInternalAccountsToLedgerAccounts(input: Array<InternalLedgerAccount>): Array<LedgerAccount> {
+    return input.map(acc => {
+      const assetScale = this.currencyManager.getAssetScale(acc.currency)
+      const ledgerAccount: LedgerAccount = {
+        id: acc.id,
+        ledgerAccountType: acc.code.toString(),
+        currency: acc.currency,
+        status: (acc.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
+        netCreditsPending: Helper.toRealAmount(acc.credits_pending - acc.debits_pending, assetScale),
+        netDebitsPending: Helper.toRealAmount(acc.debits_pending - acc.credits_pending, assetScale),
+        netCreditsPosted: Helper.toRealAmount(acc.credits_posted - acc.debits_posted, assetScale),
+        netDebitsPosted: Helper.toRealAmount(acc.debits_posted - acc.credits_posted, assetScale)
+      }
+
+      return ledgerAccount
+    })
+
   }
 
   private _assetScaleForCurrency(currency: string): number {
