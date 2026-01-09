@@ -1,4 +1,5 @@
 import { CurrencyLedgerConfig } from "src/shared/config"
+import Helper from "./TigerBeetleLedgerHelper"
 
 export class CurrencyManager {
   private currencyMap: Record<string, CurrencyLedgerConfig> = {}
@@ -50,6 +51,27 @@ export class CurrencyManager {
    */
   public getControlLedgerId(currency: string): number {
     return this.get(currency).controlLedgerId
+  }
+
+  /**
+   * Get currency from ledger ID (operation or control ledger)
+   * Returns undefined for fixed ledger IDs
+   * Throws error if ledger ID is not found and not a fixed ledger
+   */
+  public getCurrencyFromLedger(ledgerId: number): string | undefined {
+    // Fixed ledger IDs that don't have a currency
+    const fixedLedgerIds = Object.values(Helper.ledgerIds);
+    if (fixedLedgerIds.includes(ledgerId)) {
+      return undefined;
+    }
+
+    for (const [currency, config] of Object.entries(this.currencyMap)) {
+      if (config.ledgerOperation === ledgerId || config.ledgerControl === ledgerId) {
+        return currency;
+      }
+    }
+
+    throw new Error(`CurrencyManager.getCurrencyFromLedger() - no currency found for ledger ID: ${ledgerId}`);
   }
 
 }

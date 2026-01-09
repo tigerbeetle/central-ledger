@@ -14,7 +14,7 @@ import { DatabaseConfig, HarnessDatabase } from '../../testing/harness/harness-d
 import { HarnessTigerBeetle, TigerBeetleConfig } from '../../testing/harness/harness-tigerbeetle';
 import { TestUtils } from '../../testing/testutils';
 import { PersistedSpecStore } from './SpecStorePersisted';
-import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "./TigerBeetleLedger";
+import TigerBeetleLedger, { AccountCode, TigerBeetleLedgerDependencies } from "./TigerBeetleLedger";
 import { TransferBatcher } from './TransferBatcher';
 import { PrepareResultType } from './types';
 
@@ -40,7 +40,6 @@ describe('TigerBeetleLedger', () => {
         // migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
       });
       
-
       tbHarness = new HarnessTigerBeetle({
         // tigerbeetleBinaryPath: '../../.bin/tigerbeetle'
         tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
@@ -176,6 +175,79 @@ describe('TigerBeetleLedger', () => {
     transferBatcher.cleanup()
   });
 
+  describe('lifecycle', () => {
+    it('creates a dfsp, deposits funds, sets the limit and adjusts the limit', async () => {
+      const participantService = require('../participant');
+      const dfspId = 'dfsp_c';
+      const currency = 'USD';
+      const depositAmount = 10000;
+      const adjustedLimit = 6000;
+
+      // Act 1: Create participant and DFSP
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+
+      // Act 2: Deposit funds
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: depositAmount
+      }))
+
+      // Act 3: Query DFSP after deposit
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      TestUtils.printLedgerDfsps([ledgerDfsp])
+
+      // Assert 3: Unrestricted account net credits match deposit amount
+      const unrestrictedAfterDeposit = ledgerDfsp.accounts.find(
+        acc => acc.code === AccountCode.Unrestricted && acc.currency === currency
+      );
+      assert.ok(unrestrictedAfterDeposit, 'Expected to find Unrestricted account');
+      assert.strictEqual(unrestrictedAfterDeposit.netCreditsPosted, depositAmount);
+
+      // Act 4: Adjust the net debit cap to lower than deposit amount
+      TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
+        netDebitCapType: 'AMOUNT',
+        dfspId,
+        currency,
+        amount: adjustedLimit
+      }))
+
+      // Act 5: Query DFSP after limit adjustment
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      TestUtils.printLedgerDfsps([ledgerDfsp])
+
+      // Assert 5: Verify account balances after limit adjustment
+      const unrestrictedAfterAdjust = ledgerDfsp.accounts.find(
+        acc => acc.code === AccountCode.Unrestricted && acc.currency === currency
+      );
+      const restrictedAfterAdjust = ledgerDfsp.accounts.find(
+        acc => acc.code === AccountCode.Restricted && acc.currency === currency
+      );
+
+      assert.ok(unrestrictedAfterAdjust, 'Expected to find Unrestricted account');
+      assert.ok(restrictedAfterAdjust, 'Expected to find Restricted account');
+
+      // Unrestricted net credits must match the net debit cap
+      assert.strictEqual(
+        unrestrictedAfterAdjust.netCreditsPosted,
+        adjustedLimit,
+        'Unrestricted account net credits should match the net debit cap'
+      );
+
+      // Sum of Unrestricted and Restricted must match the original deposit
+      const totalCredits = unrestrictedAfterAdjust.netCreditsPosted + restrictedAfterAdjust.netCreditsPosted;
+      assert.strictEqual(
+        totalCredits,
+        depositAmount,
+        'Sum of Unrestricted and Restricted net credits should match the deposit amount'
+      );
+    })
+  })
 
   // TODO(LD): come back to these next week!
   describe.skip('timeout handling', () => {

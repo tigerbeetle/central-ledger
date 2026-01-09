@@ -407,23 +407,6 @@ export default class LegacyCompatibleLedger implements Ledger {
           Enum.Accounts.LedgerAccountType.SETTLEMENT
         );
         assert(settlementAccount)
-
-        // const limitPayload = {
-        //   limit: {
-        //     type: 'NET_DEBIT_CAP',
-        //     value: startingDeposit,
-        //     thresholdAlarmPercentage: 10
-        //   },
-        //   initialPosition: 0
-        // };
-
-        // // Call facade directly to bypass Kafka messaging
-        // await this.deps.lifecycle.participantFacade.addLimitAndInitialPosition(
-        //   positionAccount.participantCurrencyId,
-        //   settlementAccount.participantCurrencyId,
-        //   limitPayload,
-        //   true
-        // );
       }
 
       return {

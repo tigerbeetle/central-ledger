@@ -207,6 +207,24 @@ export default class TigerBeetleLedgerHelper {
   }
 
   /**
+   * Convert from a real positive number money amount to a TigerBeetle Ledger representation.
+   */
+  public static toTigerBeetleAmount(input: number, assetScale: number): bigint {
+    assert(input >= 0, `toTigerBeetleAmount expected 0 or positive number`)
+    assert(assetScale >= -7)
+    assert(assetScale <= 8)
+    const valueMultiplier = 10 ** assetScale
+
+    // we have to do this before converting to BigInt because input could be a decimal.
+    const tigerBeetleAmount = input * valueMultiplier
+    if (tigerBeetleAmount > Number.MAX_SAFE_INTEGER) {
+      throw new Error(`toTigerBeetleAmount() - lost precision`)
+    }
+
+    return BigInt(tigerBeetleAmount)
+  }
+
+  /**
    * Convert from an TigerBeetle Ledger representation of an amount to a real amount.
    */
   public static toRealAmount(input: bigint, assetScale: number): number {
@@ -225,7 +243,6 @@ export default class TigerBeetleLedgerHelper {
       throw new Error(`toRealAmount() failed: realAmount is outside of safe range.`)
     }
 
-    return Number(input)
+    return Number(realAmount)
   }
-
 }

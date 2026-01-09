@@ -76,6 +76,41 @@ export enum AccountCode {
   TIMEOUT = 9000,
 }
 
+export enum TransferCode {
+  Deposit = 10001,
+  Withdraw_Prepare = 20001,
+  Clearing_Reserve = 30001,
+  Clearing_Active_Check = 30002,
+  Clearing_Fulfil = 30003,
+  Clearing_Credit = 30004,
+  Clearing_Reverse = 30005,
+  Settlement_Deposit_Reduce = 40001,
+  Settlement_Deposit_Increase = 40002,
+  Net_Debit_Cap_Lock = 50001,
+  Net_Debit_Cap_Sweep_To_Restricted = 50002,
+  Net_Debit_Cap_Lock_Reset = 50003,
+  Net_Debit_Cap_Set_Limited = 50004,
+  Net_Debit_Cap_Set_Unlimited = 50005,
+  Net_Debit_Cap_Sweep_To_Unrestricted = 50006,
+}
+
+export const TransferCodeDescription = {
+  [TransferCode.Deposit]: 'Deposit funds into Unrestricted',
+  [TransferCode.Withdraw_Prepare]: 'Withdraw funds',
+  [TransferCode.Clearing_Reserve]: 'Reserve funds for Payee Participant.',
+  [TransferCode.Clearing_Active_Check]: 'Ensure both Participants are active.',
+  [TransferCode.Clearing_Fulfil]: 'Fulfil payment.',
+  [TransferCode.Clearing_Credit]: 'Make credit available for transfers',
+  [TransferCode.Clearing_Reverse]: 'Reverse reservation.',
+  [TransferCode.Settlement_Deposit_Reduce]: 'Reduce Deposit amount by sum of debits.',
+  [TransferCode.Settlement_Deposit_Increase]: 'Increase Deposit amount by sum of credits.',
+  [TransferCode.Net_Debit_Cap_Lock]: 'Temporarily lock up to the net debit cap amount.',
+  [TransferCode.Net_Debit_Cap_Sweep_To_Restricted]: 'Sweep whatever remains in Unrestricted to Restricted.',
+  [TransferCode.Net_Debit_Cap_Lock_Reset]: 'Reset the pending limit transfer.',
+  [TransferCode.Net_Debit_Cap_Set_Limited]: 'Set the new Net Debit Cap to a number.',
+  [TransferCode.Net_Debit_Cap_Set_Unlimited]: 'Set the new Net Debit Cap to unlimited.',
+  [TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted]: 'Sweep total balance from Restricted to Unrestricted',
+}
 
 /**
  * An internal representation of an Account, combined with Spec
@@ -560,7 +595,6 @@ export default class TigerBeetleLedger implements Ledger {
 
       const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
       const assetScale = this.currencyManager.getAssetScale(cmd.currency)
-      const amountInternal = BigInt(cmd.amount * assetScale)
 
       const idLockTransfer = id()
       let netDebitCapLockAmount = amount_max
@@ -575,9 +609,9 @@ export default class TigerBeetleLedger implements Ledger {
           id: id(),
           debit_account_id: spec.deposit,
           credit_account_id: spec.unrestricted,
-          amount: amountInternal,
+          amount: Helper.toTigerBeetleAmount(cmd.amount, assetScale),
           ledger: ledgerOperation,
-          code: 1,
+          code: TransferCode.Deposit,
           flags: TransferFlags.linked
         },
         // Temporarily lock up to the net debit cap.
@@ -588,7 +622,7 @@ export default class TigerBeetleLedger implements Ledger {
           credit_account_id: spec.unrestrictedLock,
           amount: netDebitCapLockAmount,
           ledger: ledgerOperation,
-          code: 1,
+          code: TransferCode.Net_Debit_Cap_Lock,
           flags: TransferFlags.linked | TransferFlags.pending | TransferFlags.balancing_credit
         },
         // Sweep whatever remains in Unrestricted to Restricted.
@@ -599,7 +633,7 @@ export default class TigerBeetleLedger implements Ledger {
           credit_account_id: spec.restricted,
           amount: amount_max,
           ledger: ledgerOperation,
-          code: 1,
+          code: TransferCode.Net_Debit_Cap_Sweep_To_Restricted,
           flags: TransferFlags.linked | TransferFlags.balancing_credit
         },
         // Reset the pending limit transfer.
@@ -611,7 +645,7 @@ export default class TigerBeetleLedger implements Ledger {
           credit_account_id: 0n,
           amount: 0n,
           ledger: ledgerOperation,
-          code: 1,
+          code: TransferCode.Net_Debit_Cap_Lock_Reset,
           flags: TransferFlags.void_pending_transfer
         }
       ]
@@ -661,14 +695,14 @@ export default class TigerBeetleLedger implements Ledger {
         assert(cmd.amount)
         assert(cmd.amount >= 0, 'expected amount to 0 or a positive integer')
         const assetScale = this.currencyManager.getAssetScale(cmd.currency)
-        amountNetDebitCap = BigInt(Math.floor(cmd.amount * assetScale))
-        code = 8
+        amountNetDebitCap = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
+        code = TransferCode.Net_Debit_Cap_Set_Limited
 
         break;
       }
       case 'UNLIMITED': {
         amountNetDebitCap = 0n
-        code = 9
+        code = TransferCode.Net_Debit_Cap_Set_Unlimited
       }
     }
     const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
@@ -679,7 +713,6 @@ export default class TigerBeetleLedger implements Ledger {
     const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
     const ledgerControl = this.currencyManager.getLedgerControl(cmd.currency)
 
-    // TODO(LD): transfers to actually move funds between accounts!
     const idLockTransfer = id()
     const transfers: Array<Transfer> = [
       // Set the new Net Debit Cap
@@ -701,7 +734,7 @@ export default class TigerBeetleLedger implements Ledger {
         credit_account_id: spec.unrestricted,
         amount: amount_max,
         ledger: ledgerOperation,
-        code: 10,
+        code: TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted,
         flags: TransferFlags.linked | TransferFlags.balancing_debit
       },
       // Move the new NDC amount out to a temporary account.
@@ -711,10 +744,13 @@ export default class TigerBeetleLedger implements Ledger {
         id: idLockTransfer,
         debit_account_id: spec.unrestricted,
         credit_account_id: spec.unrestrictedLock,
-        amount: cmd.netDebitCapType === 'AMOUNT' && amountNetDebitCap || amount_max,
+        // debugging this at the moent!
+        amount: cmd.netDebitCapType === 'AMOUNT' ? amountNetDebitCap : amount_max,
+        // amount: 1000n,
         ledger: ledgerOperation,
-        code: 10,
-        flags: TransferFlags.linked | TransferFlags.balancing_credit | TransferFlags.pending
+        code: TransferCode.Net_Debit_Cap_Lock,
+        flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.pending
+        // flags: TransferFlags.linked | TransferFlags.pending
       },
       // Sweep whatever remains in Unrestricted to Restricted.
       {
@@ -724,7 +760,7 @@ export default class TigerBeetleLedger implements Ledger {
         credit_account_id: spec.restricted,
         amount: amount_max,
         ledger: ledgerOperation,
-        code: 10,
+        code: TransferCode.Net_Debit_Cap_Sweep_To_Restricted,
         flags: TransferFlags.linked | TransferFlags.balancing_credit
       },
       // Void the pending limit lock transfer.
@@ -736,7 +772,7 @@ export default class TigerBeetleLedger implements Ledger {
         credit_account_id: 0n,
         amount: 0n,
         ledger: ledgerOperation,
-        code: 10,
+        code: TransferCode.Net_Debit_Cap_Lock_Reset,
         flags: TransferFlags.void_pending_transfer
       },
     ]
@@ -2088,15 +2124,20 @@ export default class TigerBeetleLedger implements Ledger {
   private _fromInternalAccountsToLedgerAccounts(input: Array<InternalLedgerAccount>): Array<LedgerAccount> {
     return input.map(acc => {
       const assetScale = this.currencyManager.getAssetScale(acc.currency)
+      const realCreditsPending = Helper.toRealAmount(acc.credits_pending, assetScale)
+      const realDebitsPending = Helper.toRealAmount(acc.debits_pending, assetScale)
+      const realCreditsPosted = Helper.toRealAmount(acc.credits_posted, assetScale)
+      const realDebitsPosted = Helper.toRealAmount(acc.debits_posted, assetScale)
+      
       const ledgerAccount: LedgerAccount = {
         id: acc.id,
-        ledgerAccountType: acc.code.toString(),
+        code: acc.code,
         currency: acc.currency,
         status: (acc.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
-        netCreditsPending: Helper.toRealAmount(acc.credits_pending - acc.debits_pending, assetScale),
-        netDebitsPending: Helper.toRealAmount(acc.debits_pending - acc.credits_pending, assetScale),
-        netCreditsPosted: Helper.toRealAmount(acc.credits_posted - acc.debits_posted, assetScale),
-        netDebitsPosted: Helper.toRealAmount(acc.debits_posted - acc.credits_posted, assetScale)
+        netCreditsPending: realCreditsPending - realDebitsPending,
+        netDebitsPending: realDebitsPending - realCreditsPending,
+        netCreditsPosted: realCreditsPosted - realDebitsPosted,
+        netDebitsPosted: realDebitsPosted - realCreditsPosted,
       }
 
       return ledgerAccount
@@ -2115,5 +2156,94 @@ export default class TigerBeetleLedger implements Ledger {
     assert(currencyConfig.assetScale >= 0, 'Expected assetScale to be greater or equal to than 0')
 
     return currencyConfig.assetScale
+  }
+
+  /**
+   * Get the last N transfers from TigerBeetle
+   * @param limit - Number of transfers to retrieve (default: 100)
+   * @param ledger - Optional ledger ID to filter by
+   * @returns Array of transfers with account mapping information
+   */
+  public async getRecentTransfers(limit: number = 100, ledger?: number): Promise<Array<Transfer & {
+    debitAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
+    creditAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
+    currency: string | undefined,
+    amountReal: number
+  }>> {
+    const queryFilter: QueryFilter = {
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      code: 0, // No filter by Code
+      ledger: ledger ?? 0, // No filter by Ledger unless specified
+      timestamp_min: 0n,
+      timestamp_max: 0n,
+      limit,
+      flags: QueryFilterFlags.reversed, // Sort by timestamp in reverse-chronological order
+    };
+
+    const transfers = await this.deps.client.queryTransfers(queryFilter);
+
+    // Get all unique account IDs from the transfers
+    const accountIds = new Set<bigint>();
+    for (const transfer of transfers) {
+      accountIds.add(transfer.debit_account_id);
+      accountIds.add(transfer.credit_account_id);
+    }
+
+    // Look up all accounts from TigerBeetle
+    const accounts = await this.deps.client.lookupAccounts(Array.from(accountIds));
+
+    // Build account ID to spec mapping
+    const accountIdToSpec = new Map<string, { dfspId: string, accountCode: AccountCode }>();
+    const allSpecs = await this.deps.specStore.queryAccountsAll();
+
+    for (const spec of allSpecs) {
+      accountIdToSpec.set(spec.deposit.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Deposit });
+      accountIdToSpec.set(spec.unrestricted.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Unrestricted });
+      accountIdToSpec.set(spec.unrestrictedLock.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Unrestricted_Lock });
+      accountIdToSpec.set(spec.restricted.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Restricted });
+      accountIdToSpec.set(spec.reserved.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Reserved });
+      accountIdToSpec.set(spec.commitedOutgoing.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Committed_Outgoing });
+      accountIdToSpec.set(spec.netDebitCap.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Net_Debit_Cap });
+      accountIdToSpec.set(spec.netDebitCapControl.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Net_Debit_Cap_Control });
+    }
+
+    // Enrich transfers with account information
+    return transfers.map(transfer => {
+      const debitSpec = accountIdToSpec.get(transfer.debit_account_id.toString());
+      const creditSpec = accountIdToSpec.get(transfer.credit_account_id.toString());
+
+      // Get currency from ledger ID
+      const currency = this.currencyManager.getCurrencyFromLedger(transfer.ledger);
+
+      // Convert amount to real number - use assetScale of 1 if no currency
+      const assetScale = currency ? this.currencyManager.getAssetScale(currency) : 1;
+      const amountReal = Helper.toRealAmount(transfer.amount, assetScale);
+
+      return {
+        ...transfer,
+        debitAccountInfo: debitSpec ? {
+          dfspId: debitSpec.dfspId,
+          accountName: AccountCode[debitSpec.accountCode],
+          accountCode: debitSpec.accountCode
+        } : {
+          dfspId: 'UNKNOWN',
+          accountName: 'UNKNOWN',
+          accountCode: AccountCode.Dev_Null
+        },
+        creditAccountInfo: creditSpec ? {
+          dfspId: creditSpec.dfspId,
+          accountName: AccountCode[creditSpec.accountCode],
+          accountCode: creditSpec.accountCode
+        } : {
+          dfspId: 'UNKNOWN',
+          accountName: 'UNKNOWN',
+          accountCode: AccountCode.Dev_Null
+        },
+        currency,
+        amountReal
+      };
+    });
   }
 }

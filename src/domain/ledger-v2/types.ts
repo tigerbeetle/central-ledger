@@ -1,4 +1,5 @@
 import { FSPIOPError } from '@mojaloop/central-services-error-handling';
+import { AccountCode } from './TigerBeetleLedger';
 
 
 
@@ -680,7 +681,7 @@ export interface LegacyLedgerAccount {
  */
 export interface LedgerAccount {
   id: bigint,
-  ledgerAccountType: string,
+  code: AccountCode,
   currency: string,
   status: 'ENABLED' | 'DISABLED',
   /**

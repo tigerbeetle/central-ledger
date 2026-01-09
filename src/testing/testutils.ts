@@ -1,9 +1,12 @@
 import { Enum } from '@mojaloop/central-services-shared';
 import assert from 'assert';
 import { createServer } from 'net';
-import { FusedFulfilHandlerInput } from 'src/handlers-v2/FusedFulfilHandler';
-import { FusedPrepareHandlerInput } from 'src/handlers-v2/FusedPrepareHandler';
-import { CommitTransferDto, CreateTransferDto } from 'src/handlers-v2/types';
+import { FusedFulfilHandlerInput } from '../handlers-v2/FusedFulfilHandler';
+import { FusedPrepareHandlerInput } from '../handlers-v2/FusedPrepareHandler';
+import { CommitTransferDto, CreateTransferDto } from '../handlers-v2/types';
+import { AccountCode, TransferCodeDescription } from '../domain/ledger-v2/TigerBeetleLedger';
+import { LedgerDfsp } from '../domain/ledger-v2/types';
+import { Transfer, TransferFlags } from 'tigerbeetle-node';
 
 const MojaloopLogger = require('@mojaloop/central-services-logger')
 const { ilpFactory, ILP_VERSIONS } = require('@mojaloop/sdk-standard-components').Ilp
@@ -265,6 +268,186 @@ export class TestUtils {
       body,
       code
     }
+  }
+
+  /**
+   * @function unwrapSuccess
+   * @description Unwraps a result type with SUCCESS/FAILURE variants, asserting success and returning the result
+   */
+  public static unwrapSuccess<T>(result: { type: string, result?: T, error?: any }): T {
+    assert.strictEqual(result.type, 'SUCCESS', `Expected SUCCESS but got ${result.type}${result.error ? ': ' + result.error.message : ''}`);
+    return result.result as T;
+  }
+
+  /**
+   * @function printLedgerDfsp
+   * @description Prints LedgerDfsp balance sheets in a formatted table
+   */
+  public static printLedgerDfsps(ledgerDfsps: LedgerDfsp[]): void {
+    const formatNumber = (num: number): string => {
+      return num.toLocaleString('en-US');
+    };
+
+    const isAssetAccount = (code: number): boolean => {
+      return Math.floor(code / 10000) === 1;
+    };
+
+    const isLiabilityAccount = (code: number): boolean => {
+      const firstDigit = Math.floor(code / 10000)
+      return firstDigit === 2 || firstDigit === 6
+    };
+
+    for (const ledgerDfsp of ledgerDfsps) {
+      console.log(`\n=== [${ledgerDfsp.name}] Balance Sheet ===`);
+      console.log(`Status: ${ledgerDfsp.status}\n`);
+
+      // Table headers (debits on left, credits on right per accounting convention)
+      const headers = ['Curr', 'Code', 'Account Name', 'Net Dr (Pend)', 'Net Dr (Post)', 'Net Cr (Pend)', 'Net Cr (Post)'];
+      const colWidths = [4, 5, 18, 14, 14, 14, 14];
+
+      const printRow = (values: string[], isHeader: boolean = false) => {
+        const row = values.map((val, i) => {
+          // Right-align numeric columns (index 3-6), left-align text columns
+          if (i >= 3 && !isHeader) {
+            return val.padStart(colWidths[i]);
+          }
+          return val.padEnd(colWidths[i]);
+        }).join(' | ');
+        console.log(row);
+      };
+
+      printRow(headers, true);
+      console.log('-'.repeat(colWidths.reduce((a, b) => a + b + 3, 0)));
+
+      // Sort accounts by currency then by code for consistent output
+      const sortedAccounts = [...ledgerDfsp.accounts].sort((a, b) => {
+        if (a.currency !== b.currency) return a.currency.localeCompare(b.currency);
+        return a.code - b.code;
+      });
+
+      for (const account of sortedAccounts) {
+        const accountName = AccountCode[account.code] || 'Unknown';
+        const isAsset = isAssetAccount(account.code);
+        const isLiability = isLiabilityAccount(account.code);
+
+        printRow([
+          account.currency,
+          account.code.toString(),
+          accountName,
+          // Assets: show debits, Liabilities: blank
+          isAsset ? formatNumber(account.netDebitsPending) : '',
+          isAsset ? formatNumber(account.netDebitsPosted) : '',
+          // Assets: blank, Liabilities: show credits
+          isLiability ? formatNumber(account.netCreditsPending) : '',
+          isLiability ? formatNumber(account.netCreditsPosted) : ''
+        ]);
+      }
+
+      console.log('\n');
+    }
+  }
+
+  /**
+   * @function printTransferHistory
+   * @description Prints TigerBeetle transfer history in a formatted table
+   */
+  public static printTransferHistory(transfers: Array<Transfer & {
+    debitAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
+    creditAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
+    currency: string | undefined,
+    amountReal: number
+  }>): void {
+    console.log('\n=== Transfer History ===\n');
+
+    const formatNumber = (num: number): string => {
+      return num.toLocaleString('en-US');
+    };
+
+    const formatFlags = (flags: number): string => {
+      const flagNames: string[] = [];
+      if (flags & TransferFlags.linked) flagNames.push('linked');
+      if (flags & TransferFlags.pending) flagNames.push('pending');
+      if (flags & TransferFlags.post_pending_transfer) flagNames.push('post_pending');
+      if (flags & TransferFlags.void_pending_transfer) flagNames.push('void_pending');
+      if (flags & TransferFlags.balancing_debit) flagNames.push('balancing_debit');
+      if (flags & TransferFlags.balancing_credit) flagNames.push('balancing_credit');
+      return flagNames.join(', ') || 'none';
+    };
+
+    const isAssetAccount = (code: number): boolean => {
+      return Math.floor(code / 10000) === 1;
+    };
+
+    const isLiabilityAccount = (code: number): boolean => {
+      const firstDigit = Math.floor(code / 10000);
+      return firstDigit === 2 || firstDigit === 6;
+    };
+
+    // Table headers
+    const headers = ['Account', 'Type', 'Description', 'Dr', 'Cr', 'Code', 'Flags'];
+    const colWidths = [28, 10, 50, 12, 12, 6, 40];
+
+    const printRow = (values: string[], isHeader: boolean = false) => {
+      const row = values.map((val, i) => {
+        // Right-align numeric columns (Dr, Cr, Code)
+        if ((i === 3 || i === 4 || i === 5) && !isHeader) {
+          return val.padStart(colWidths[i]);
+        }
+        return val.padEnd(colWidths[i]);
+      }).join(' | ');
+      console.log(row);
+    };
+
+    printRow(headers, true);
+    console.log('-'.repeat(colWidths.reduce((a, b) => a + b + 3, 0)));
+
+    for (const transfer of transfers) {
+      const description = TransferCodeDescription[transfer.code] || 'Unknown transfer code';
+      const flags = formatFlags(transfer.flags);
+
+      // Print debit account (if it's an asset)
+      const isDebitAsset = isAssetAccount(transfer.debitAccountInfo.accountCode);
+      if (isDebitAsset) {
+        printRow([
+          `${transfer.debitAccountInfo.dfspId}_${transfer.debitAccountInfo.accountName}`,
+          'Asset',
+          description,
+          formatNumber(transfer.amountReal),
+          '',
+          transfer.code.toString(),
+          flags
+        ]);
+      }
+
+      // Print credit account (if it's a liability)
+      const isCreditLiability = isLiabilityAccount(transfer.creditAccountInfo.accountCode);
+      if (isCreditLiability) {
+        printRow([
+          `${transfer.creditAccountInfo.dfspId}_${transfer.creditAccountInfo.accountName}`,
+          'Liability',
+          description,
+          '',
+          formatNumber(transfer.amountReal),
+          transfer.code.toString(),
+          flags
+        ]);
+      }
+
+      // For control accounts or other types, print both sides
+      if (!isDebitAsset && !isCreditLiability) {
+        printRow([
+          `${transfer.debitAccountInfo.dfspId}_${transfer.debitAccountInfo.accountName} → ${transfer.creditAccountInfo.dfspId}_${transfer.creditAccountInfo.accountName}`,
+          'Transfer',
+          description,
+          formatNumber(transfer.amountReal),
+          formatNumber(transfer.amountReal),
+          transfer.code.toString(),
+          flags
+        ]);
+      }
+    }
+
+    console.log('\n');
   }
 }
 
