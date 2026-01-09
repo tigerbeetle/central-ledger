@@ -88,7 +88,6 @@ export enum TransferCode {
   Settlement_Deposit_Increase = 40002,
   Net_Debit_Cap_Lock = 50001,
   Net_Debit_Cap_Sweep_To_Restricted = 50002,
-  Net_Debit_Cap_Lock_Reset = 50003,
   Net_Debit_Cap_Set_Limited = 50004,
   Net_Debit_Cap_Set_Unlimited = 50005,
   Net_Debit_Cap_Sweep_To_Unrestricted = 50006,
@@ -106,7 +105,6 @@ export const TransferCodeDescription = {
   [TransferCode.Settlement_Deposit_Increase]: 'Increase Deposit amount by sum of credits.',
   [TransferCode.Net_Debit_Cap_Lock]: 'Temporarily lock up to the net debit cap amount.',
   [TransferCode.Net_Debit_Cap_Sweep_To_Restricted]: 'Sweep whatever remains in Unrestricted to Restricted.',
-  [TransferCode.Net_Debit_Cap_Lock_Reset]: 'Reset the pending limit transfer.',
   [TransferCode.Net_Debit_Cap_Set_Limited]: 'Set the new Net Debit Cap to a number.',
   [TransferCode.Net_Debit_Cap_Set_Unlimited]: 'Set the new Net Debit Cap to unlimited.',
   [TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted]: 'Sweep total balance from Restricted to Unrestricted',
@@ -645,7 +643,7 @@ export default class TigerBeetleLedger implements Ledger {
           credit_account_id: 0n,
           amount: 0n,
           ledger: ledgerOperation,
-          code: TransferCode.Net_Debit_Cap_Lock_Reset,
+          code: TransferCode.Net_Debit_Cap_Lock,
           flags: TransferFlags.void_pending_transfer
         }
       ]
@@ -761,7 +759,7 @@ export default class TigerBeetleLedger implements Ledger {
         amount: amount_max,
         ledger: ledgerOperation,
         code: TransferCode.Net_Debit_Cap_Sweep_To_Restricted,
-        flags: TransferFlags.linked | TransferFlags.balancing_credit
+        flags: TransferFlags.linked | TransferFlags.balancing_debit
       },
       // Void the pending limit lock transfer.
       {
@@ -772,7 +770,7 @@ export default class TigerBeetleLedger implements Ledger {
         credit_account_id: 0n,
         amount: 0n,
         ledger: ledgerOperation,
-        code: TransferCode.Net_Debit_Cap_Lock_Reset,
+        code: TransferCode.Net_Debit_Cap_Lock,
         flags: TransferFlags.void_pending_transfer
       },
     ]
@@ -1114,14 +1112,14 @@ export default class TigerBeetleLedger implements Ledger {
     const code = transfers[0].code
 
     switch (code) {
-      case 9: {
+      case TransferCode.Net_Debit_Cap_Set_Unlimited: {
         assert(amount === 0n, 'Expected amount to be 0 for unlimited net debit cap transfer')
 
         return {
           type: 'UNLIMITED'
         }
       }
-      case 8: {
+      case TransferCode.Net_Debit_Cap_Set_Limited: {
         return {
           type: 'LIMITED',
           amount,
@@ -2168,7 +2166,8 @@ export default class TigerBeetleLedger implements Ledger {
     debitAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
     creditAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
     currency: string | undefined,
-    amountReal: number
+    amountReal: number,
+    ledgerName: string
   }>> {
     const queryFilter: QueryFilter = {
       user_data_128: 0n,
@@ -2183,6 +2182,7 @@ export default class TigerBeetleLedger implements Ledger {
     };
 
     const transfers = await this.deps.client.queryTransfers(queryFilter);
+    
 
     // Get all unique account IDs from the transfers
     const accountIds = new Set<bigint>();
@@ -2210,7 +2210,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     // Enrich transfers with account information
-    return transfers.map(transfer => {
+    const enrichedTransfers = transfers.map(transfer => {
       const debitSpec = accountIdToSpec.get(transfer.debit_account_id.toString());
       const creditSpec = accountIdToSpec.get(transfer.credit_account_id.toString());
 
@@ -2220,6 +2220,35 @@ export default class TigerBeetleLedger implements Ledger {
       // Convert amount to real number - use assetScale of 1 if no currency
       const assetScale = currency ? this.currencyManager.getAssetScale(currency) : 1;
       const amountReal = Helper.toRealAmount(transfer.amount, assetScale);
+
+      // Determine ledger name
+      let ledgerName: string;
+      switch (transfer.ledger) {
+        case Helper.ledgerIds.globalControl:
+          ledgerName = 'GLOBAL_CONTROL';
+          break;
+        case Helper.ledgerIds.timeoutHandler:
+          ledgerName = 'TIMEOUT_CONTROL';
+          break;
+        default: {
+          if (currency) {
+            const ledgerOperation = this.currencyManager.getLedgerOperation(currency);
+            const ledgerControl = this.currencyManager.getLedgerControl(currency);
+            switch (transfer.ledger) {
+              case ledgerOperation:
+                ledgerName = `${currency}_OPERATION`;
+                break;
+              case ledgerControl:
+                ledgerName = `${currency}_CONTROL`;
+                break;
+              default:
+                ledgerName = `UNKNOWN_${transfer.ledger}`;
+            }
+          } else {
+            ledgerName = `UNKNOWN_${transfer.ledger}`;
+          }
+        }
+      }
 
       return {
         ...transfer,
@@ -2242,8 +2271,12 @@ export default class TigerBeetleLedger implements Ledger {
           accountCode: AccountCode.Dev_Null
         },
         currency,
-        amountReal
+        amountReal,
+        ledgerName
       };
     });
+
+    // Reverse to show oldest first (we fetched newest first with reversed flag)
+    return enrichedTransfers.reverse();
   }
 }

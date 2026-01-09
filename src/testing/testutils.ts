@@ -7,6 +7,7 @@ import { CommitTransferDto, CreateTransferDto } from '../handlers-v2/types';
 import { AccountCode, TransferCodeDescription } from '../domain/ledger-v2/TigerBeetleLedger';
 import { LedgerDfsp } from '../domain/ledger-v2/types';
 import { Transfer, TransferFlags } from 'tigerbeetle-node';
+import Helper from '../domain/ledger-v2/TigerBeetleLedgerHelper';
 
 const MojaloopLogger = require('@mojaloop/central-services-logger')
 const { ilpFactory, ILP_VERSIONS } = require('@mojaloop/sdk-standard-components').Ilp
@@ -355,7 +356,8 @@ export class TestUtils {
     debitAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
     creditAccountInfo: { dfspId: string, accountName: string, accountCode: AccountCode },
     currency: string | undefined,
-    amountReal: number
+    amountReal: number,
+    ledgerName: string
   }>): void {
     console.log('\n=== Transfer History ===\n');
 
@@ -374,23 +376,18 @@ export class TestUtils {
       return flagNames.join(', ') || 'none';
     };
 
-    const isAssetAccount = (code: number): boolean => {
-      return Math.floor(code / 10000) === 1;
-    };
-
-    const isLiabilityAccount = (code: number): boolean => {
-      const firstDigit = Math.floor(code / 10000);
-      return firstDigit === 2 || firstDigit === 6;
+    const truncate = (str: string, maxLen: number): string => {
+      return str.length > maxLen ? str.substring(0, maxLen) : str;
     };
 
     // Table headers
-    const headers = ['Account', 'Type', 'Description', 'Dr', 'Cr', 'Code', 'Flags'];
-    const colWidths = [28, 10, 50, 12, 12, 6, 40];
+    const headers = ['Debit Account', 'Credit Account', 'Description', 'Amount', 'Ledger', 'Code', 'Flags'];
+    const colWidths = [22, 22, 48, 10, 14, 6, 40];
 
     const printRow = (values: string[], isHeader: boolean = false) => {
       const row = values.map((val, i) => {
-        // Right-align numeric columns (Dr, Cr, Code)
-        if ((i === 3 || i === 4 || i === 5) && !isHeader) {
+        // Right-align numeric columns (Amount, Code)
+        if ((i === 3 || i === 5) && !isHeader) {
           return val.padStart(colWidths[i]);
         }
         return val.padEnd(colWidths[i]);
@@ -402,49 +399,20 @@ export class TestUtils {
     console.log('-'.repeat(colWidths.reduce((a, b) => a + b + 3, 0)));
 
     for (const transfer of transfers) {
-      const description = TransferCodeDescription[transfer.code] || 'Unknown transfer code';
+      const description = truncate(TransferCodeDescription[transfer.code] || 'Unknown transfer code', 48);
       const flags = formatFlags(transfer.flags);
+      const debitAccount = `${transfer.debitAccountInfo.dfspId}_${transfer.debitAccountInfo.accountName}`;
+      const creditAccount = `${transfer.creditAccountInfo.dfspId}_${transfer.creditAccountInfo.accountName}`;
 
-      // Print debit account (if it's an asset)
-      const isDebitAsset = isAssetAccount(transfer.debitAccountInfo.accountCode);
-      if (isDebitAsset) {
-        printRow([
-          `${transfer.debitAccountInfo.dfspId}_${transfer.debitAccountInfo.accountName}`,
-          'Asset',
-          description,
-          formatNumber(transfer.amountReal),
-          '',
-          transfer.code.toString(),
-          flags
-        ]);
-      }
-
-      // Print credit account (if it's a liability)
-      const isCreditLiability = isLiabilityAccount(transfer.creditAccountInfo.accountCode);
-      if (isCreditLiability) {
-        printRow([
-          `${transfer.creditAccountInfo.dfspId}_${transfer.creditAccountInfo.accountName}`,
-          'Liability',
-          description,
-          '',
-          formatNumber(transfer.amountReal),
-          transfer.code.toString(),
-          flags
-        ]);
-      }
-
-      // For control accounts or other types, print both sides
-      if (!isDebitAsset && !isCreditLiability) {
-        printRow([
-          `${transfer.debitAccountInfo.dfspId}_${transfer.debitAccountInfo.accountName} → ${transfer.creditAccountInfo.dfspId}_${transfer.creditAccountInfo.accountName}`,
-          'Transfer',
-          description,
-          formatNumber(transfer.amountReal),
-          formatNumber(transfer.amountReal),
-          transfer.code.toString(),
-          flags
-        ]);
-      }
+      printRow([
+        truncate(debitAccount, 22),
+        truncate(creditAccount, 22),
+        description,
+        formatNumber(transfer.amountReal),
+        transfer.ledgerName,
+        transfer.code.toString(),
+        flags
+      ]);
     }
 
     console.log('\n');

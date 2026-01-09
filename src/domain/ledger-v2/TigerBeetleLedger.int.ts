@@ -17,6 +17,7 @@ import { PersistedSpecStore } from './SpecStorePersisted';
 import TigerBeetleLedger, { AccountCode, TigerBeetleLedgerDependencies } from "./TigerBeetleLedger";
 import { TransferBatcher } from './TransferBatcher';
 import { PrepareResultType } from './types';
+import path from 'node:path';
 
 describe('TigerBeetleLedger', () => {
   let ledger: TigerBeetleLedger
@@ -30,14 +31,17 @@ describe('TigerBeetleLedger', () => {
 
   before(async () => {
     try {
+      const projectRoot = path.join(__dirname, '../../..')
+      
       // Set up Docker MySQL container for integration testing
       dbHarness = new HarnessDatabase({
         databaseName: 'central_ledger_test',
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
         port: 3307,
-        migration: { type: 'knex' }
-        // migration: { type: 'sql', sqlFilePath: './central_ledger.checkpoint.sql' }
+        // migration: { type: 'knex' }
+        migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+        
       });
       
       tbHarness = new HarnessTigerBeetle({
@@ -231,6 +235,9 @@ describe('TigerBeetleLedger', () => {
 
       assert.ok(unrestrictedAfterAdjust, 'Expected to find Unrestricted account');
       assert.ok(restrictedAfterAdjust, 'Expected to find Restricted account');
+
+      const transfers = await ledger.getRecentTransfers(11)
+      TestUtils.printTransferHistory(transfers);
 
       // Unrestricted net credits must match the net debit cap
       assert.strictEqual(
