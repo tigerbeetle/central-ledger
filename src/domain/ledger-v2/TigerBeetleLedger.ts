@@ -815,7 +815,7 @@ export default class TigerBeetleLedger implements Ledger {
         errorsFatalUnknown.push(`transfer at idx: ${error.index} failed with error: ${CreateTransferError[error.result]}`)
       })
 
-      if (errorsFatalKnown.length >= 0) {
+      if (errorsFatalKnown.length > 0) {
         // Known error handling
         switch (errorsFatalKnown[0]) {
           case WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS: {
@@ -840,7 +840,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (errorsFatalUnknown.length > 0) {
         return {
           type: 'FAILURE',
-          error: new Error(`Withdrawal failed with error: ${errorsFatalUnknown.join(';')}`)
+          error: new Error(`Withdrawal failed with errors: ${errorsFatalUnknown.join(';')}`)
         }
       }
 
@@ -2355,15 +2355,24 @@ export default class TigerBeetleLedger implements Ledger {
       const realCreditsPosted = Helper.toRealAmount(acc.credits_posted, assetScale)
       const realDebitsPosted = Helper.toRealAmount(acc.debits_posted, assetScale)
 
+      const netCreditsPending = realCreditsPending - realDebitsPending
+      const netDebitsPending = realDebitsPending - realCreditsPending
+
       const ledgerAccount: LedgerAccount = {
         id: acc.id,
         code: acc.code,
         currency: acc.currency,
         status: (acc.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
-        netCreditsPending: realCreditsPending - realDebitsPending,
-        netDebitsPending: realDebitsPending - realCreditsPending,
-        netCreditsPosted: realCreditsPosted - realDebitsPosted,
-        netDebitsPosted: realDebitsPosted - realCreditsPosted,
+        
+        realCreditsPending: realCreditsPending,
+        realDebitsPending: realDebitsPending,
+        realCreditsPosted: realCreditsPosted,
+        realDebitsPosted: realDebitsPosted,
+        
+        netCreditsPending,
+        netDebitsPending,
+        netCreditsPosted: realCreditsPosted - realDebitsPosted + realCreditsPending - realDebitsPending,
+        netDebitsPosted: realDebitsPosted - realCreditsPosted + realDebitsPending - realCreditsPending
       }
 
       return ledgerAccount

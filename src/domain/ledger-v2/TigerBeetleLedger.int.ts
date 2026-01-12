@@ -371,12 +371,68 @@ describe('TigerBeetleLedger', () => {
       assert(depositResponseB.type === 'ALREADY_EXISTS')
     })
 
-    it.todo('prepares the withdrawal')
+    it.only('prepares the withdrawal', async () => {
+      // Arrange
+      const dfspId = 'dfsp_f'
+      const currency = 'USD'
+      const depositAmount = 10000
+      const netDebitCap = 5000
+      const withdrawAmount = 6000
+
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: depositAmount
+      }))
+      TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
+        netDebitCapType: 'AMOUNT',
+        dfspId,
+        currency,
+        amount: netDebitCap
+      }))
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      // unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+      //   USD,10200,0,10000,-,-;
+      //   USD,20100,-,-,0,5000;
+      //   USD,20101,-,-,0,0;
+      //   USD,20200,-,-,0,5000;
+      //   USD,20300,-,-,0,0;
+      //   USD,20400,-,-,0,0;
+      //   USD,60200,-,-,0,5000;`
+      // ))
+
+      // Act
+      const withdrawPrepareResult = await ledger.withdrawPrepare({
+        transferId: '982737894523487',
+        dfspId,
+        currency,
+        amount: withdrawAmount
+      })
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,6000,4000,-,-;
+        USD,20100,-,-,6000,4000;
+        USD,20101,-,-,0,0;
+        USD,20200,-,-,0,0;
+        USD,20300,-,-,0,0;
+        USD,20400,-,-,0,0;
+        USD,60200,-,-,0,5000;`
+      ))
+      assert(withdrawPrepareResult.type === 'SUCCESS', 'expected success result')
+    })
+
     it.todo('withdraws funds in 2 phases')
     it.todo('fails if there are not enough funds available')
     it.todo('fails in the prepare phase if the id has been reused')
     it.todo('aborts a withdrawal')
     it.todo('handles a withdrawal abort where the id is not found')
+    it.todo('fails to withdraw if the deposit account is disabled')
   })
 
   // TODO(LD): come back to these next week!

@@ -380,7 +380,7 @@ export class TestUtils {
       // allLines.push('');
 
       // Table headers (debits on left, credits on right per accounting convention)
-      const headers = ['Curr', 'Code', 'Account Name', 'Net Dr (Pend)', 'Net Dr (Post)', 'Net Cr (Pend)', 'Net Cr (Post)'];
+      const headers = ['Curr', 'Code', 'Account Name', '(Pending)', 'Available', '(Pending)', 'Available'];
       const colWidths = [4, 5, 18, 14, 14, 14, 14];
 
       const printRow = (values: string[], isHeader: boolean = false) => {
@@ -413,10 +413,10 @@ export class TestUtils {
           account.code.toString(),
           accountName,
           // Assets: show debits, Liabilities: blank
-          isAsset ? formatNumber(account.netDebitsPending) : '',
+          isAsset ? formatNumber(account.netCreditsPending) : '',
           isAsset ? formatNumber(account.netDebitsPosted) : '',
           // Assets: blank, Liabilities: show credits
-          isLiability ? formatNumber(account.netCreditsPending) : '',
+          isLiability ? formatNumber(account.netDebitsPending) : '',
           isLiability ? formatNumber(account.netCreditsPosted) : ''
         ]));
       }

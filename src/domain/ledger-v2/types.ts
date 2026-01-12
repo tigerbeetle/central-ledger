@@ -685,6 +685,27 @@ export interface LedgerAccount {
   code: AccountCode,
   currency: string,
   status: 'ENABLED' | 'DISABLED',
+
+  /**
+   * sum(credits_pending)/assetScale
+   */
+  realCreditsPending: number,
+
+  /**
+   * sum(debits_pending)/assetScale
+   */
+  realDebitsPending: number,
+
+  /**
+   * sum(credits_posted)/assetScale
+   */
+  realCreditsPosted: number,
+
+  /**
+   * sum(debits_posted)/assetScale
+   */
+  realDebitsPosted: number,
+
   /**
    * (sum(credits_pending) - sum(debits_pending))/assetScale
    */
@@ -698,7 +719,7 @@ export interface LedgerAccount {
    */
   netCreditsPosted: number,
   /**
-   * (sum(debits_posted) - sum(credits_posted))/assetScale
+   * (sum(debits_posted) - sum(credits_posted) + sum(debits_pending) - sum(credits_pending))/assetScale
    */
   netDebitsPosted: number,
 }
