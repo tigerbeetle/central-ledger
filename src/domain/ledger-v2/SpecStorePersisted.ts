@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SaveFundingSpecCommand, SaveSpecFundingResult, FundingAction } from "./SpecStore";
+import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SaveFundingSpecCommand, SaveSpecFundingResult, FundingAction, SaveSpecFundingResultExists } from "./SpecStore";
 import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
 import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
@@ -437,6 +437,16 @@ export class PersistedSpecStore implements SpecStore {
         }
       })
     } catch (err) {
+      // Check if this is a duplicate key error
+      if (err.code === 'ER_DUP_ENTRY' || err.errno === 1062) {
+        logger.info(`saveFundingSpec() - funding spec already exists`)
+        return spec.map(m => {
+          return {
+            type: 'EXISTS'
+          }
+        })
+      }
+
       logger.error(`saveFundingSpec() - failed with error: ${err.message}`)
       return spec.map(m => {
         return {

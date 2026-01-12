@@ -67,11 +67,15 @@ export interface SaveSpecFundingResultSuccess {
   type: 'SUCCESS'
 }
 
+export interface SaveSpecFundingResultExists {
+  type: 'EXISTS'
+}
+
 export interface SaveSpecFundingResultFailure {
   type: 'FAILURE'
 }
 
-export type SaveSpecFundingResult = SaveSpecFundingResultSuccess | SaveSpecFundingResultFailure
+export type SaveSpecFundingResult = SaveSpecFundingResultSuccess | SaveSpecFundingResultExists | SaveSpecFundingResultFailure
 
 /**
  * The specification which describes the master account for the DFSP

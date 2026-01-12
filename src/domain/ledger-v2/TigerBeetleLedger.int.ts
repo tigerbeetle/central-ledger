@@ -42,8 +42,8 @@ describe('TigerBeetleLedger', () => {
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
         port: 3307,
-        // migration: { type: 'knex' }
-        migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+        migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+        // migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
 
       });
 
@@ -609,12 +609,12 @@ describe('TigerBeetleLedger', () => {
 
     it('aborts a withdrawal', async () => {
       // Arrange
-      const dfspId = 'dfsp_g'
+      const dfspId = 'dfsp_k'
       const currency = 'USD'
       const depositAmount = 10000
       const netDebitCap = 5000
       const withdrawAmount = 6000
-      const withdrawalTransferId = '9845938745'
+      const withdrawalTransferId = randomUUID()
 
       await participantService.ensureExists(dfspId);
       TestUtils.unwrapSuccess(await ledger.createDfsp({
@@ -671,7 +671,7 @@ describe('TigerBeetleLedger', () => {
 
     it('handles a withdrawal abort where the id is not found', async () => {
       // Arrange
-      const dfspId = 'dfsp_j'
+      const dfspId = 'dfsp_l'
       const currency = 'USD'
       const depositAmount = 2500
       const withdrawalTransferId = randomUUID()

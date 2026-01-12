@@ -602,13 +602,24 @@ export default class TigerBeetleLedger implements Ledger {
       const assetScale = this.currencyManager.getAssetScale(cmd.currency)
 
       // Save the funding spec before writing to TigerBeetle (write last, read first)
-      await this.deps.specStore.saveFundingSpec([{
+      const saveFundingResult = await this.deps.specStore.saveFundingSpec([{
         transferId: cmd.transferId,
         dfspId: cmd.dfspId,
         currency: cmd.currency,
         action: 'DEPOSIT',
         reason: cmd.reason
       }])
+
+      // Ensure we got exactly one result
+      assert(saveFundingResult.length === 1, 'Expected exactly one result from saveFundingSpec')
+
+      // Handle the result of saving funding spec
+      if (saveFundingResult[0].type === 'FAILURE') {
+        return {
+          type: 'FAILURE',
+          error: new Error('Failed to save funding specification')
+        }
+      }
 
       const idLockTransfer = id()
       let netDebitCapLockAmount = amount_max
@@ -747,13 +758,24 @@ export default class TigerBeetleLedger implements Ledger {
       const withdrawAmountTigerBeetle = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
 
       // Save the funding spec before writing to TigerBeetle (write last, read first)
-      await this.deps.specStore.saveFundingSpec([{
+      const saveFundingResult = await this.deps.specStore.saveFundingSpec([{
         transferId: cmd.transferId,
         dfspId: cmd.dfspId,
         currency: cmd.currency,
         action: 'WITHDRAWAL',
         reason: cmd.reason
       }])
+
+      // Ensure we got exactly one result
+      assert(saveFundingResult.length === 1, 'Expected exactly one result from saveFundingSpec')
+
+      // Handle the result of saving funding spec
+      if (saveFundingResult[0].type === 'FAILURE') {
+        return {
+          type: 'FAILURE',
+          error: new Error('Failed to save funding specification')
+        }
+      }
 
       const idLockTransfer = id()
       const transfers: Array<Transfer> = [
