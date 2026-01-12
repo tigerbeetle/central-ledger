@@ -49,6 +49,8 @@ import {
   WithdrawPrepareResponse,
   LedgerDfsp,
   LedgerAccount,
+  WithdrawAbortCommand,
+  WithdrawAbortResponse,
 } from "./types";
 import { Help } from 'commander';
 import { TIMEOUT } from 'dns';
@@ -792,7 +794,8 @@ export default class TigerBeetleLedger implements Ledger {
         },
       ]
 
-      // we need an easy way to pull out the following:
+      // Map to the following known errors:
+      //
       // Deposit or Unrestricted account closed --> Closed account error
       // transfer #2 reused id                  --> Id reused error
       // transfer #2 debits exceeds credits     --> Insufficent funds
@@ -924,7 +927,7 @@ export default class TigerBeetleLedger implements Ledger {
 
         errorsFatal.push(`transfer at ${error.index} failed with error: ${CreateTransferError[error.result]}`)
       }
-      
+
       // unknown errors
       if (errorsFatal.length > 0) {
         return {
@@ -944,6 +947,64 @@ export default class TigerBeetleLedger implements Ledger {
       }
     }
   }
+
+  public async withdrawAbort(cmd: WithdrawAbortCommand): Promise<WithdrawAbortResponse> {
+    assert(cmd.transferId)
+
+    try {
+      const transfers: Array<Transfer> = [
+        // Abort the withdrawal
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          pending_id: Helper.fromMojaloopId(cmd.transferId),
+          debit_account_id: 0n,
+          credit_account_id: 0n,
+          amount: 0n,
+          ledger: 0,
+          code: TransferCode.Withdraw,
+          flags: TransferFlags.void_pending_transfer
+        },
+      ]
+
+      const createTransfersResult = await this.deps.client.createTransfers(transfers)
+      const errorsFatal = []
+      for (const error of createTransfersResult) {
+        if (error.result === CreateTransferError.ok) {
+          continue
+        }
+
+        if (error.index === 0) {
+          if (error.result === CreateTransferError.pending_transfer_not_found) {
+            return {
+              type: 'FAILURE',
+              error: new Error(`transferId: ${cmd.transferId} not found`)
+            }
+          }
+        }
+
+        errorsFatal.push(`transfer at ${error.index} failed with error: ${CreateTransferError[error.result]}`)
+      }
+
+      // unknown errors
+      if (errorsFatal.length > 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`withdrawAbort() failed with errors: ${errorsFatal.join(';')}`)
+        }
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  } 
 
   public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
     assert(cmd.currency)

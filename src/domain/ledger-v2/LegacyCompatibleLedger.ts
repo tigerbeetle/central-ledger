@@ -53,6 +53,8 @@ import {
   WithdrawCommitResponse,
   WithdrawPrepareCommand,
   WithdrawPrepareResponse,
+  WithdrawAbortCommand,
+  WithdrawAbortResponse,
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
@@ -735,6 +737,10 @@ export default class LegacyCompatibleLedger implements Ledger {
     } catch (err) {
       return Helper.commandResultFailure(err)
     }
+  }
+
+  withdrawAbort(cmd: WithdrawAbortCommand): Promise<WithdrawAbortResponse> {
+    throw new Error('Method not implemented.');
   }
 
   public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {

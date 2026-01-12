@@ -426,6 +426,23 @@ export interface WithdrawCommitResponseFailure {
 export type WithdrawCommitResponse = WithdrawCommitResponseSuccess
   | WithdrawCommitResponseFailure
 
+
+export interface WithdrawAbortCommand {
+  transferId: string
+}
+
+export interface WithdrawAbortResponseSuccess {
+  type: 'SUCCESS'
+}
+
+export interface WithdrawAbortResponseFailure {
+  type: 'FAILURE',
+  error: Error
+}
+
+export type WithdrawAbortResponse = WithdrawAbortResponseSuccess
+  | WithdrawAbortResponseFailure
+
 export interface EnableDfspAccountCommand {
   dfspId: string,
   accountId: number

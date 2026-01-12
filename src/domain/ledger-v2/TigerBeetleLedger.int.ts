@@ -557,7 +557,7 @@ describe('TigerBeetleLedger', () => {
       // Assert
       assert(duplicateWithdrawalResult.type === 'FAILURE')
       assert.strictEqual(
-        duplicateWithdrawalResult.error.message, 
+        duplicateWithdrawalResult.error.message,
         'Withdrawal failed - transferId has already been used.'
       )
     })
@@ -591,9 +591,97 @@ describe('TigerBeetleLedger', () => {
       assert.strictEqual(duplicateWithdrawalResult.error.message, `transferId: ${withdrawalTransferId} not found`)
     })
 
+    it('aborts a withdrawal', async () => {
+      // Arrange
+      const dfspId = 'dfsp_g'
+      const currency = 'USD'
+      const depositAmount = 10000
+      const netDebitCap = 5000
+      const withdrawAmount = 6000
+      const withdrawalTransferId = '9845938745'
 
-    it.todo('aborts a withdrawal')
-    it.todo('handles a withdrawal abort where the id is not found')
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: depositAmount
+      }))
+      TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
+        netDebitCapType: 'AMOUNT',
+        dfspId,
+        currency,
+        amount: netDebitCap
+      }))
+      TestUtils.unwrapSuccess(await ledger.withdrawPrepare({
+        transferId: withdrawalTransferId,
+        dfspId,
+        currency,
+        amount: withdrawAmount
+      }))
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,10000,6000,0,4000;
+        USD,20100,6000,5000,0,15000,4000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,5000,0,5000,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,5000,5000;`
+      ))
+
+      // Act
+      const withdrawCommitResult = await ledger.withdrawAbort({
+        transferId: withdrawalTransferId,
+      })
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,5000,0,15000,10000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,5000,0,5000,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,5000,5000;`
+      ))
+      assert(withdrawCommitResult.type === 'SUCCESS', 'expected success result')
+    })
+
+    it('handles a withdrawal abort where the id is not found', async () => {
+      // Arrange
+      const dfspId = 'dfsp_j'
+      const currency = 'USD'
+      const depositAmount = 2500
+      const withdrawalTransferId = randomUUID()
+
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: depositAmount
+      }))
+
+      // Act
+      const duplicateWithdrawalResult = await ledger.withdrawAbort({
+        transferId: withdrawalTransferId,
+      })
+
+      // Assert
+      assert(duplicateWithdrawalResult.type === 'FAILURE')
+      assert.strictEqual(duplicateWithdrawalResult.error.message, `transferId: ${withdrawalTransferId} not found`)
+    })
+
+
+    // TODO(LD): blocked by implementing this!
     it.todo('fails to withdraw if the deposit account is disabled')
   })
 

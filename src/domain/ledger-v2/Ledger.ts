@@ -23,6 +23,8 @@ import {
   PrepareResult,
   SetNetDebitCapCommand,
   SweepResult,
+  WithdrawAbortCommand,
+  WithdrawAbortResponse,
   WithdrawCommitCommand,
   WithdrawCommitResponse,
   WithdrawPrepareCommand,
@@ -46,6 +48,7 @@ export interface Ledger {
   deposit(cmd: DepositCommand): Promise<DepositResponse>;
   withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse>;
   withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse>;
+  withdrawAbort(cmd: WithdrawAbortCommand): Promise<WithdrawAbortResponse>;
   setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>>;
 
   /**
