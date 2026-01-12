@@ -287,13 +287,13 @@ export class TestUtils {
    *
    * @param input
    *
-   * USD,10200,0,20000,-,-;
-   * USD,20100,-,-,0,20000;
-   * USD,20101,-,-,0,0;
-   * USD,20200,-,-,0,0;
-   * USD,20300,-,-,0,0;
-   * USD,20400,-,-,0,0;
-   * USD,60200,-,-,0,6000;
+   * USD,10200,0,10000,6000,0,4000;
+   * USD,20100,6000,5000,0,15000,4000;
+   * USD,20101,0,0,0,0,0;
+   * USD,20200,0,5000,0,5000,0;
+   * USD,20300,0,0,0,0,0;
+   * USD,20400,0,0,0,0,0;
+   * USD,60200,0,0,0,5000,5000;
    *
    */
   public static ledgerDfspsSnapshotString(input: string): string {
@@ -308,8 +308,10 @@ export class TestUtils {
     const lines: string[] = [];
 
     // Headers
-    const headers = ['Curr', 'Code', 'Account Name', 'Net Dr (Pend)', 'Net Dr (Post)', 'Net Cr (Pend)', 'Net Cr (Post)'];
-    const colWidths = [4, 5, 18, 14, 14, 14, 14];
+    const headers = [
+      'Curr', 'Code', 'Account Name',
+      `Dr (pending)`, `Dr (posted)`, `Cr (pending)`, `Cr (posted)`, `Available`];
+    const colWidths = [4, 5, 18, 12, 12, 12, 12, 10];
 
     const printRow = (values: string[], isHeader: boolean = false) => {
       const row = values.map((val, i) => {
@@ -332,11 +334,11 @@ export class TestUtils {
       // Remove trailing semicolon and split by comma
       const parts = line.replace(/;$/, '').split(',').map(p => p.trim());
 
-      if (parts.length !== 6) {
+      if (parts.length !== 7) {
         continue; // Skip malformed lines
       }
 
-      const [currency, codeStr, netDrPend, netDrPost, netCrPend, netCrPost] = parts;
+      const [currency, codeStr, drPending, drPosted, crPending, crPosted, available] = parts;
       const code = parseInt(codeStr, 10);
       const accountName = AccountCode[code] || 'Unknown';
 
@@ -344,10 +346,11 @@ export class TestUtils {
         currency,
         codeStr,
         accountName,
-        formatNumber(netDrPend),
-        formatNumber(netDrPost),
-        formatNumber(netCrPend),
-        formatNumber(netCrPost)
+        formatNumber(drPending),
+        formatNumber(drPosted),
+        formatNumber(crPending),
+        formatNumber(crPosted),
+        formatNumber(available)
       ]));
     }
 
@@ -375,13 +378,10 @@ export class TestUtils {
     const allLines: string[] = [];
 
     for (const ledgerDfsp of ledgerDfsps) {
-      // allLines.push(`=== [${ledgerDfsp.name}] Balance Sheet ===`);
-      // allLines.push(`Status: ${ledgerDfsp.status}`);
-      // allLines.push('');
-
-      // Table headers (debits on left, credits on right per accounting convention)
-      const headers = ['Curr', 'Code', 'Account Name', '(Pending)', 'Available', '(Pending)', 'Available'];
-      const colWidths = [4, 5, 18, 14, 14, 14, 14];
+      const headers = [
+        'Curr', 'Code', 'Account Name',
+        `Dr (pending)`, `Dr (posted)`, `Cr (pending)`, `Cr (posted)`, `Available`];
+      const colWidths = [4, 5, 18, 12, 12, 12, 12, 10];
 
       const printRow = (values: string[], isHeader: boolean = false) => {
         const row = values.map((val, i) => {
@@ -408,16 +408,21 @@ export class TestUtils {
         const isAsset = isAssetAccount(account.code);
         const isLiability = isLiabilityAccount(account.code);
 
+        // Asset Balance = Net Debits - Net Credits - Pending Credits
+        // Liability Balance = Net Credits - Net Debits - Pending Debits
+        const availableBalance = isAsset ?
+          formatNumber(account.realDebitsPosted - account.realCreditsPosted - account.realCreditsPending) :
+          formatNumber(account.realCreditsPosted - account.realDebitsPosted - account.realDebitsPending)
+
         allLines.push(printRow([
           account.currency,
           account.code.toString(),
           accountName,
-          // Assets: show debits, Liabilities: blank
-          isAsset ? formatNumber(account.netCreditsPending) : '',
-          isAsset ? formatNumber(account.netDebitsPosted) : '',
-          // Assets: blank, Liabilities: show credits
-          isLiability ? formatNumber(account.netDebitsPending) : '',
-          isLiability ? formatNumber(account.netCreditsPosted) : ''
+          formatNumber(account.realDebitsPending),
+          formatNumber(account.realDebitsPosted),
+          formatNumber(account.realCreditsPending),
+          formatNumber(account.realCreditsPosted),
+          availableBalance
         ]));
       }
     }

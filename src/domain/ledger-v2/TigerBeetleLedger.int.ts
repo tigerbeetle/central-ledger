@@ -35,7 +35,7 @@ describe('TigerBeetleLedger', () => {
   before(async () => {
     try {
       const projectRoot = path.join(__dirname, '../../..')
-      
+
       // Set up Docker MySQL container for integration testing
       dbHarness = new HarnessDatabase({
         databaseName: 'central_ledger_test',
@@ -44,9 +44,9 @@ describe('TigerBeetleLedger', () => {
         port: 3307,
         // migration: { type: 'knex' }
         migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
-        
+
       });
-      
+
       tbHarness = new HarnessTigerBeetle({
         // tigerbeetleBinaryPath: '../../.bin/tigerbeetle'
         tigerbeetleBinaryPath: '/Users/lewisdaly/tb/tigerloop/.bin/tigerbeetle'
@@ -207,13 +207,13 @@ describe('TigerBeetleLedger', () => {
       // Assert
       let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-        USD,10200,0,10000,-,-;
-        USD,20100,-,-,0,10000;
-        USD,20101,-,-,0,0;
-        USD,20200,-,-,0,0;
-        USD,20300,-,-,0,0;
-        USD,20400,-,-,0,0;
-        USD,60200,-,-,0,0;`
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,0,0,10000,10000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,0,0;`
       ))
 
       // Act: Adjust the net debit cap to lower than deposit amount
@@ -227,13 +227,13 @@ describe('TigerBeetleLedger', () => {
       // Assert
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-        USD,10200,0,10000,-,-;
-        USD,20100,-,-,0,6000;
-        USD,20101,-,-,0,0;
-        USD,20200,-,-,0,4000;
-        USD,20300,-,-,0,0;
-        USD,20400,-,-,0,0;
-        USD,60200,-,-,0,6000;`
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,4000,0,10000,6000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,4000,4000;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,6000,6000;`
       ))
 
       // Act: Now adjust NDC to be greater than deposit amount
@@ -246,15 +246,15 @@ describe('TigerBeetleLedger', () => {
       // Assert: Query DFSP after limit adjustment
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-        USD,10200,0,10000,-,-;
-        USD,20100,-,-,0,10000;
-        USD,20101,-,-,0,0;
-        USD,20200,-,-,0,0;
-        USD,20300,-,-,0,0;
-        USD,20400,-,-,0,0;
-        USD,60200,-,-,0,6000;`
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,4000,0,14000,10000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,4000,0,4000,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,6000,6000;`
       ))
-
+      
       // Act: Now deposit more funds
       TestUtils.unwrapSuccess(await ledger.deposit({
         dfspId,
@@ -266,13 +266,13 @@ describe('TigerBeetleLedger', () => {
       // Assert: Query DFSP after limit adjustment
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-        USD,10200,0,20000,-,-;
-        USD,20100,-,-,0,20000;
-        USD,20101,-,-,0,0;
-        USD,20200,-,-,0,0;
-        USD,20300,-,-,0,0;
-        USD,20400,-,-,0,0;
-        USD,60200,-,-,0,6000;`
+        USD,10200,0,20000,0,0,20000;
+        USD,20100,0,4000,0,24000,20000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,4000,0,4000,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,6000,6000;`
       ))
     })
 
@@ -305,15 +305,15 @@ describe('TigerBeetleLedger', () => {
       }))
 
       // Assert
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));      
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-        USD,10200,0,11000,-,-;
-        USD,20100,-,-,0,10000;
-        USD,20101,-,-,0,0;
-        USD,20200,-,-,0,1000;
-        USD,20300,-,-,0,0;
-        USD,20400,-,-,0,0;
-        USD,60200,-,-,0,10000;`
+        USD,10200,0,11000,0,0,11000;
+        USD,20100,0,1000,0,11000,10000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,1000,1000;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,10000,10000;`
       ))
 
       // Act: Deposit another 2,000
@@ -327,13 +327,13 @@ describe('TigerBeetleLedger', () => {
       // Assert
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-        USD,10200,0,13000,-,-;
-        USD,20100,-,-,0,10000;
-        USD,20101,-,-,0,0;
-        USD,20200,-,-,0,3000;
-        USD,20300,-,-,0,0;
-        USD,20400,-,-,0,0;
-        USD,60200,-,-,0,10000;`
+        USD,10200,0,13000,0,0,13000;
+        USD,20100,0,4000,0,14000,10000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,1000,0,4000,3000;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,10000,10000;`
       ))
     })
 
@@ -371,7 +371,7 @@ describe('TigerBeetleLedger', () => {
       assert(depositResponseB.type === 'ALREADY_EXISTS')
     })
 
-    it.only('prepares the withdrawal', async () => {
+    it('prepares the withdrawal', async () => {
       // Arrange
       const dfspId = 'dfsp_f'
       const currency = 'USD'
@@ -397,15 +397,15 @@ describe('TigerBeetleLedger', () => {
         amount: netDebitCap
       }))
       let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
-      // unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-      //   USD,10200,0,10000,-,-;
-      //   USD,20100,-,-,0,5000;
-      //   USD,20101,-,-,0,0;
-      //   USD,20200,-,-,0,5000;
-      //   USD,20300,-,-,0,0;
-      //   USD,20400,-,-,0,0;
-      //   USD,60200,-,-,0,5000;`
-      // ))
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,5000,0,10000,5000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,5000,5000;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,5000,5000;`
+      ))
 
       // Act
       const withdrawPrepareResult = await ledger.withdrawPrepare({
@@ -416,13 +416,13 @@ describe('TigerBeetleLedger', () => {
       })
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
-        USD,10200,6000,4000,-,-;
-        USD,20100,-,-,6000,4000;
-        USD,20101,-,-,0,0;
-        USD,20200,-,-,0,0;
-        USD,20300,-,-,0,0;
-        USD,20400,-,-,0,0;
-        USD,60200,-,-,0,5000;`
+        USD,10200,0,10000,6000,0,4000;
+        USD,20100,6000,5000,0,15000,4000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,5000,0,5000,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;
+        USD,60200,0,0,0,5000,5000;`
       ))
       assert(withdrawPrepareResult.type === 'SUCCESS', 'expected success result')
     })
@@ -443,7 +443,7 @@ describe('TigerBeetleLedger', () => {
       const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
 
       // Arrange
-       const payload: CreateTransferDto = {
+      const payload: CreateTransferDto = {
         transferId,
         payerFsp: 'dfsp_a',
         payeeFsp: 'dfsp_b',
@@ -476,7 +476,7 @@ describe('TigerBeetleLedger', () => {
       const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
 
       // Arrange
-       const payload: CreateTransferDto = {
+      const payload: CreateTransferDto = {
         transferId,
         payerFsp: 'dfsp_a',
         payeeFsp: 'dfsp_b',

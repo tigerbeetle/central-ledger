@@ -705,23 +705,6 @@ export interface LedgerAccount {
    * sum(debits_posted)/assetScale
    */
   realDebitsPosted: number,
-
-  /**
-   * (sum(credits_pending) - sum(debits_pending))/assetScale
-   */
-  netCreditsPending: number,
-  /**
-   * (sum(debits_pending) - sum(credits_pending))/assetScale
-   */
-  netDebitsPending: number,
-  /**
-   * (sum(credits_posted) - sum(debits_posted))/assetScale
-   */
-  netCreditsPosted: number,
-  /**
-   * (sum(debits_posted) - sum(credits_posted) + sum(debits_pending) - sum(credits_pending))/assetScale
-   */
-  netDebitsPosted: number,
 }
 
 /**

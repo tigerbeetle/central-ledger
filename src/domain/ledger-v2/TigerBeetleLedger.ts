@@ -2368,11 +2368,6 @@ export default class TigerBeetleLedger implements Ledger {
         realDebitsPending: realDebitsPending,
         realCreditsPosted: realCreditsPosted,
         realDebitsPosted: realDebitsPosted,
-        
-        netCreditsPending,
-        netDebitsPending,
-        netCreditsPosted: realCreditsPosted - realDebitsPosted + realCreditsPending - realDebitsPending,
-        netDebitsPosted: realDebitsPosted - realCreditsPosted + realDebitsPending - realCreditsPending
       }
 
       return ledgerAccount
