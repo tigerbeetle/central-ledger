@@ -668,14 +668,27 @@ export default class TigerBeetleLedger implements Ledger {
           return []
         }
 
-        if (curr.index === 0 &&
-          CreateTransferError.exists_with_different_flags <= curr.result
-          && curr.result <= CreateTransferError.exists
-        ) {
-          exists = true
-          return []
+        if (curr.index === 0) {
+          switch (curr.result) {
+            case CreateTransferError.exists_with_different_flags:
+            case CreateTransferError.exists_with_different_pending_id:
+            case CreateTransferError.exists_with_different_timeout:
+            case CreateTransferError.exists_with_different_debit_account_id:
+            case CreateTransferError.exists_with_different_credit_account_id:
+            case CreateTransferError.exists_with_different_amount:
+            case CreateTransferError.exists_with_different_user_data_128:
+            case CreateTransferError.exists_with_different_user_data_64:
+            case CreateTransferError.exists_with_different_user_data_32:
+            case CreateTransferError.exists_with_different_ledger:
+            case CreateTransferError.exists_with_different_code:
+            case CreateTransferError.exists: {
+              exists = true;
+              return []
+            }
+            default: { }
+          }
         }
-
+        
         acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
         return acc
       }, [])
@@ -798,17 +811,31 @@ export default class TigerBeetleLedger implements Ledger {
         }
 
         if (error.index === 1) {
-          if (error.result >= CreateTransferError.exists_with_different_flags &&
-            error.result <= CreateTransferError.id_already_failed) {
-            errorsFatalKnown.push(WithdrawPrepareErrorsKnown.TRANSFER_ID_REUSED)
-            return
-          }
-
-          if (error.result === CreateTransferError.exceeds_credits ||
-            error.result === CreateTransferError.exceeds_debits
-          ) {
-            errorsFatalKnown.push(WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS)
-            return
+          switch (error.result) {
+            case CreateTransferError.ok: {
+              return
+            }
+            case CreateTransferError.exists_with_different_flags:
+            case CreateTransferError.exists_with_different_pending_id:
+            case CreateTransferError.exists_with_different_timeout:
+            case CreateTransferError.exists_with_different_debit_account_id:
+            case CreateTransferError.exists_with_different_credit_account_id:
+            case CreateTransferError.exists_with_different_amount:
+            case CreateTransferError.exists_with_different_user_data_128:
+            case CreateTransferError.exists_with_different_user_data_64:
+            case CreateTransferError.exists_with_different_user_data_32:
+            case CreateTransferError.exists_with_different_ledger:
+            case CreateTransferError.exists_with_different_code:
+            case CreateTransferError.exists:
+            case CreateTransferError.id_already_failed: {
+              errorsFatalKnown.push(WithdrawPrepareErrorsKnown.TRANSFER_ID_REUSED)
+              break;
+            }
+            case CreateTransferError.exceeds_credits:
+            case CreateTransferError.exceeds_debits: {
+              errorsFatalKnown.push(WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS)
+              break;
+            }
           }
         }
 
@@ -859,16 +886,6 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.transferId)
 
     try {
-      // const specAccountResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
-      // if (specAccountResult.type === 'SpecAccountNone') {
-      //   throw new Error(`no dfspId found: ${cmd.dfspId}`)
-      // }
-      // const spec = specAccountResult
-      // const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
-      // const netDebitCap = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
-      // const assetScale = this.currencyManager.getAssetScale(cmd.currency)
-      // const withdrawAmountTigerBeetle = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
-      // const idLockTransfer = id()
       const transfers: Array<Transfer> = [
         // Commit the withdrawal
         {
@@ -877,7 +894,7 @@ export default class TigerBeetleLedger implements Ledger {
           pending_id: Helper.fromMojaloopId(cmd.transferId),
           debit_account_id: 0n,
           credit_account_id: 0n,
-          amount: 0n,
+          amount: amount_max,
           ledger: 0,
           code: TransferCode.Withdraw,
           flags: TransferFlags.post_pending_transfer
