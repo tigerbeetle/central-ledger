@@ -370,6 +370,13 @@ describe('TigerBeetleLedger', () => {
 
       assert(depositResponseB.type === 'ALREADY_EXISTS')
     })
+
+    it.todo('prepares the withdrawal')
+    it.todo('withdraws funds in 2 phases')
+    it.todo('fails if there are not enough funds available')
+    it.todo('fails in the prepare phase if the id has been reused')
+    it.todo('aborts a withdrawal')
+    it.todo('handles a withdrawal abort where the id is not found')
   })
 
   // TODO(LD): come back to these next week!

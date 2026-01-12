@@ -78,7 +78,7 @@ export enum AccountCode {
 
 export enum TransferCode {
   Deposit = 10001,
-  Withdraw_Prepare = 20001,
+  Withdraw = 20001,
   Clearing_Reserve = 30001,
   Clearing_Active_Check = 30002,
   Clearing_Fulfil = 30003,
@@ -95,7 +95,7 @@ export enum TransferCode {
 
 export const TransferCodeDescription = {
   [TransferCode.Deposit]: 'Deposit funds into Unrestricted',
-  [TransferCode.Withdraw_Prepare]: 'Withdraw funds',
+  [TransferCode.Withdraw]: 'Withdraw funds',
   [TransferCode.Clearing_Reserve]: 'Reserve funds for Payee Participant.',
   [TransferCode.Clearing_Active_Check]: 'Ensure both Participants are active.',
   [TransferCode.Clearing_Fulfil]: 'Fulfil payment.',
@@ -108,6 +108,12 @@ export const TransferCodeDescription = {
   [TransferCode.Net_Debit_Cap_Set_Limited]: 'Set the new Net Debit Cap to a number.',
   [TransferCode.Net_Debit_Cap_Set_Unlimited]: 'Set the new Net Debit Cap to unlimited.',
   [TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted]: 'Sweep total balance from Restricted to Unrestricted',
+}
+
+enum WithdrawPrepareErrorsKnown {
+  ACCOUNT_CLOSED,
+  INSUFFICIENT_FUNDS,
+  TRANSFER_ID_REUSED,
 }
 
 /**
@@ -662,13 +668,13 @@ export default class TigerBeetleLedger implements Ledger {
           return []
         }
 
-        if (curr.index === 0 && 
-          CreateTransferError.exists_with_different_flags <= curr.result 
+        if (curr.index === 0 &&
+          CreateTransferError.exists_with_different_flags <= curr.result
           && curr.result <= CreateTransferError.exists
-          ) {
+        ) {
           exists = true
           return []
-        } 
+        }
 
         acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
         return acc
@@ -698,11 +704,212 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async withdrawPrepare(cmd: WithdrawPrepareCommand): Promise<WithdrawPrepareResponse> {
-    throw new Error('not implemented')
+    assert(cmd.transferId)
+    assert(cmd.currency)
+    assert(cmd.dfspId)
+    assert(cmd.amount)
+
+    try {
+      const specAccountResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
+      if (specAccountResult.type === 'SpecAccountNone') {
+        throw new Error(`no dfspId found: ${cmd.dfspId}`)
+      }
+      const spec = specAccountResult
+      const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
+      const netDebitCap = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
+      const assetScale = this.currencyManager.getAssetScale(cmd.currency)
+      const withdrawAmountTigerBeetle = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
+      const idLockTransfer = id()
+      const transfers: Array<Transfer> = [
+        // Sweep total balance from Restricted to Unrestricted
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: spec.restricted,
+          credit_account_id: spec.unrestricted,
+          amount: amount_max,
+          ledger: ledgerOperation,
+          code: TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
+        },
+        // Prepare the withdrawal
+        {
+          ...Helper.createTransferTemplate,
+          id: Helper.fromMojaloopId(cmd.transferId),
+          debit_account_id: spec.unrestricted,
+          credit_account_id: spec.deposit,
+          amount: withdrawAmountTigerBeetle,
+          ledger: ledgerOperation,
+          code: TransferCode.Withdraw,
+          flags: TransferFlags.linked | TransferFlags.pending
+        },
+        // Temporarily lock up to the net debit cap amount.
+        {
+          ...Helper.createTransferTemplate,
+          id: idLockTransfer,
+          debit_account_id: spec.unrestricted,
+          credit_account_id: spec.unrestrictedLock,
+          amount: netDebitCap.type === 'LIMITED' ? netDebitCap.amount : amount_max,
+          ledger: ledgerOperation,
+          code: TransferCode.Net_Debit_Cap_Lock,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.pending
+        },
+        // Sweep whatever remains in Unrestricted to Restricted.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: spec.unrestricted,
+          credit_account_id: spec.restricted,
+          amount: amount_max,
+          ledger: ledgerOperation,
+          code: TransferCode.Net_Debit_Cap_Sweep_To_Restricted,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
+        },
+        // Void the pending limit lock transfer.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          pending_id: idLockTransfer,
+          debit_account_id: 0n,
+          credit_account_id: 0n,
+          amount: 0n,
+          ledger: ledgerOperation,
+          code: TransferCode.Net_Debit_Cap_Lock,
+          flags: TransferFlags.void_pending_transfer
+        },
+      ]
+
+      // we need an easy way to pull out the following:
+      // Deposit or Unrestricted account closed --> Closed account error
+      // transfer #2 reused id                  --> Id reused error
+      // transfer #2 debits exceeds credits     --> Insufficent funds
+      const createTransfersResults = await this.deps.client.createTransfers(transfers)
+      const errorsFatalKnown: Array<WithdrawPrepareErrorsKnown> = []
+      const errorsFatalUnknown = []
+
+      createTransfersResults.forEach(error => {
+        if (error.index === 0) {
+          if (error.result === CreateTransferError.debit_account_already_closed ||
+            error.result === CreateTransferError.credit_account_already_closed
+          ) {
+            errorsFatalKnown.push(WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED)
+            return
+          }
+        }
+
+        if (error.index === 1) {
+          if (error.result >= CreateTransferError.exists_with_different_flags &&
+            error.result <= CreateTransferError.id_already_failed) {
+            errorsFatalKnown.push(WithdrawPrepareErrorsKnown.TRANSFER_ID_REUSED)
+            return
+          }
+
+          if (error.result === CreateTransferError.exceeds_credits ||
+            error.result === CreateTransferError.exceeds_debits
+          ) {
+            errorsFatalKnown.push(WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS)
+            return
+          }
+        }
+
+        errorsFatalUnknown.push(`transfer at idx: ${error.index} failed with error: ${CreateTransferError[error.result]}`)
+      })
+
+      if (errorsFatalKnown.length >= 0) {
+        // Known error handling
+        switch (errorsFatalKnown[0]) {
+          case WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS: {
+            return {
+              type: 'INSUFFICIENT_FUNDS',
+              // TODO(LD): remove these if possible!
+              requestedAmount: -1,
+              availableBalance: -1,
+            }
+          }
+          case WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED:
+          case WithdrawPrepareErrorsKnown.TRANSFER_ID_REUSED:
+          default: {
+            return {
+              type: 'FAILURE',
+              error: new Error(`Withdrawal failed with error: ${errorsFatalKnown}`)
+            }
+          }
+        }
+      }
+
+      if (errorsFatalUnknown.length > 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`Withdrawal failed with error: ${errorsFatalUnknown.join(';')}`)
+        }
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
   public async withdrawCommit(cmd: WithdrawCommitCommand): Promise<WithdrawCommitResponse> {
-    throw new Error('not implemented')
+    assert(cmd.transferId)
+
+    try {
+      // const specAccountResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
+      // if (specAccountResult.type === 'SpecAccountNone') {
+      //   throw new Error(`no dfspId found: ${cmd.dfspId}`)
+      // }
+      // const spec = specAccountResult
+      // const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
+      // const netDebitCap = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
+      // const assetScale = this.currencyManager.getAssetScale(cmd.currency)
+      // const withdrawAmountTigerBeetle = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
+      // const idLockTransfer = id()
+      const transfers: Array<Transfer> = [
+        // Commit the withdrawal
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          pending_id: Helper.fromMojaloopId(cmd.transferId),
+          debit_account_id: 0n,
+          credit_account_id: 0n,
+          amount: 0n,
+          ledger: 0,
+          code: TransferCode.Withdraw,
+          flags: TransferFlags.post_pending_transfer
+        },
+      ]
+
+      const createTransfersResult = await this.deps.client.createTransfers(transfers)
+      const errorsFatal = []
+      for (const error of createTransfersResult) {
+        if (error.result === CreateTransferError.ok) {
+          continue
+        }
+
+        errorsFatal.push(`transfer at ${error.index} failed with error: ${CreateTransferError[error.result]}`)
+      }
+      if (errorsFatal.length > 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`${errorsFatal.join(';')}`)
+        }
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
   public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
@@ -710,7 +917,6 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.dfspId)
 
     let amountNetDebitCap: bigint
-    // 8 for limited, 9 for unlimited
     let code: number
     switch (cmd.netDebitCapType) {
       case 'AMOUNT': {
@@ -2163,19 +2369,6 @@ export default class TigerBeetleLedger implements Ledger {
       return ledgerAccount
     })
 
-  }
-
-  private _assetScaleForCurrency(currency: string): number {
-    const matchingCurrencyConfigs = this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS
-      .filter(c => c.currency === currency)
-    assert(matchingCurrencyConfigs.length > 0, `_assetScaleForCurrency - could not find currency: ${currency}`)
-    assert(matchingCurrencyConfigs.length < 2, `_assetScaleForCurrency - found more than 1 entry for currency: ${currency}`)
-
-    const currencyConfig = matchingCurrencyConfigs[0]
-    assert(typeof currencyConfig.assetScale, 'number')
-    assert(currencyConfig.assetScale >= 0, 'Expected assetScale to be greater or equal to than 0')
-
-    return currencyConfig.assetScale
   }
 
   /**

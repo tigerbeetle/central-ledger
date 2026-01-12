@@ -396,6 +396,7 @@ export interface WithdrawPrepareResponseSuccess {
 
 export interface WithdrawPrepareResponseInsufficientFunds {
   type: 'INSUFFICIENT_FUNDS',
+  // TODO(LD): can we remove this? It's rather hard to get to in TigerBeetle
   availableBalance: number,
   requestedAmount: number
 }
