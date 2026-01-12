@@ -64,6 +64,7 @@ export default class DFSPProvisioner {
           dfspId: config.dfspId,
           currency,
           amount: startingDeposit,
+          reason: 'Initial provisioning deposit'
         })
         if (depositResult.type === 'FAILURE') {
           throw depositResult.error

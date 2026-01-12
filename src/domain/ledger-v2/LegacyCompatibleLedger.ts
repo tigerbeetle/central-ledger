@@ -497,6 +497,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.dfspId)
     assert(cmd.currency)
     assert(cmd.transferId)
+    assert(cmd.reason)
 
     try {
       const enums = this.deps.lifecycle.enums
@@ -555,7 +556,7 @@ export default class LegacyCompatibleLedger implements Ledger {
       // Prepare payload for validation
       const payload = {
         action: Enum.Events.Event.Action.RECORD_FUNDS_IN,
-        reason: 'Deposit',
+        reason: cmd.reason,
         externalReference: `deposit-${cmd.dfspId}`,
         amount: {
           amount: cmd.amount.toString(),
@@ -599,6 +600,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     assert(cmd.dfspId)
     assert(cmd.currency)
     assert(cmd.transferId)
+    assert(cmd.reason)
 
     try {
       const enums = this.deps.lifecycle.enums
@@ -657,7 +659,7 @@ export default class LegacyCompatibleLedger implements Ledger {
       // Prepare payload for validation
       const payload = {
         action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_PREPARE_RESERVE,
-        reason: 'Withdrawal',
+        reason: cmd.reason,
         externalReference: `withdrawal-${cmd.dfspId}`,
         amount: {
           amount: cmd.amount.toString(),

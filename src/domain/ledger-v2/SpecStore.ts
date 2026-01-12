@@ -23,8 +23,7 @@ export interface SpecAccountNone {
 }
 
 /**
- * The specification which defines the TigerBeetle Transfer Metadata for a Mojaloop
- *   Transfer
+ * The specification which defines the TigerBeetle Transfer Metadata for a Mojaloop Transfer
  */
 export interface SpecTransfer {
   type: 'SpecTransfer'
@@ -42,6 +41,37 @@ export interface SpecTransferNone {
   id: string
 }
 
+/**
+ * The specification which defines the TigerBeetle Transfer Metadata for an Admin Funding operation
+ * (deposit/withdrawal)
+ */
+export interface SpecFunding {
+  type: 'SpecFunding'
+  transferId: string,
+  dfspId: string,
+  currency: string,
+  action: FundingAction,
+  reason: string,
+}
+
+export interface SpecFundingNone {
+  type: 'SpecFundingNone'
+  transferId: string
+}
+
+export type FundingAction = 'DEPOSIT' | 'WITHDRAWAL'
+
+export type SaveFundingSpecCommand = Omit<SpecFunding, 'type'>
+
+export interface SaveSpecFundingResultSuccess {
+  type: 'SUCCESS'
+}
+
+export interface SaveSpecFundingResultFailure {
+  type: 'FAILURE'
+}
+
+export type SaveSpecFundingResult = SaveSpecFundingResultSuccess | SaveSpecFundingResultFailure
 
 /**
  * The specification which describes the master account for the DFSP
@@ -125,4 +155,16 @@ export interface SpecStore {
   //  * Update existing transfers, attaching the fulfilment
   //  */
   // updateTransferSpecFulfilment(transfersToUpdate: Array<{id: string, fulfilment: string}>): Promise<Array<SaveTransferSpecResult>>
+
+
+  /**
+   * Looks up the funding spec for a given set of transfer IDs. Always returns the fundings
+   * in the order they are given.
+   */
+  lookupFundingSpec(transferIds: Array<string>): Promise<Array<SpecFunding | SpecFundingNone>>
+
+  /**
+   * Saves the funding spec to the spec store
+   */
+  saveFundingSpec(spec: Array<SaveFundingSpecCommand>): Promise<Array<SaveSpecFundingResult>>
 }

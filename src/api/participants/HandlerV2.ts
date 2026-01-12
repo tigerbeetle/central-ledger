@@ -343,7 +343,8 @@ export default class ParticipantAPIHandlerV2 {
         currency: request.payload.currency,
         // Implicitly deposit funds here. In the new Ledger, you cannot have a limit without a
         // position
-        amount: request.payload.limit.value
+        amount: request.payload.limit.value,
+        reason: 'Initial position with limit'
       }
       const depositResult = await ledger.deposit(depositCmd)
       if (depositResult.type === 'FAILURE') {
@@ -674,6 +675,7 @@ export default class ParticipantAPIHandlerV2 {
           assert(amount, 'amount is required')
           assert(amount.amount, 'amount.amount is required')
           assert(amount.currency, 'amount.currency is required')
+          assert(request.payload.reason, 'reason is required')
           const transferId = request.payload.transferId
 
           const depositCmd = {
@@ -681,6 +683,7 @@ export default class ParticipantAPIHandlerV2 {
             dfspId: name,
             currency: amount.currency,
             amount: new MLNumber(amount.amount).toNumber(),
+            reason: request.payload.reason
           }
 
           const result = await ledger.deposit(depositCmd)
@@ -706,6 +709,7 @@ export default class ParticipantAPIHandlerV2 {
           assert(amount, 'amount is required')
           assert(amount.amount, 'amount.amount is required')
           assert(amount.currency, 'amount.currency is required')
+          assert(request.payload.reason, 'reason is required')
 
           const transferId = request.payload.transferId
 
@@ -714,6 +718,7 @@ export default class ParticipantAPIHandlerV2 {
             dfspId: name,
             currency: amount.currency,
             amount: new MLNumber(amount.amount).toNumber(),
+            reason: request.payload.reason
           }
 
           const result = await ledger.withdrawPrepare(withdrawPrepareCmd)

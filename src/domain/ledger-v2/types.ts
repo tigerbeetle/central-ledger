@@ -357,13 +357,11 @@ export type CreateDfspResponse = CreateDfspResponseSuccess
 
 
 export interface DepositCommand {
-  // TODO: should this be named idempotenceId? Or depositId?
   transferId: string,
   dfspId: string,
-
-  // TODO: make this a Mojaloop number to make things easier?
   currency: string,
-  amount: number
+  amount: number,
+  reason: string
 }
 
 export interface DepositResponseSuccess {
@@ -387,7 +385,8 @@ export interface WithdrawPrepareCommand {
   transferId: string,
   dfspId: string,
   currency: string,
-  amount: number
+  amount: number,
+  reason: string
 }
 
 export interface WithdrawPrepareResponseSuccess {

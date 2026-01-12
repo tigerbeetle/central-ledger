@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone } from "./SpecStore";
+import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SaveFundingSpecCommand, SaveSpecFundingResult, FundingAction } from "./SpecStore";
 import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
 import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
@@ -37,9 +37,18 @@ interface SpecRecordDfsp {
   accountId: bigint
 }
 
+interface SpecRecordFunding {
+  transferId: string
+  dfspId: string
+  currency: string
+  action: FundingAction
+  reason: string
+}
+
 const TABLE_ACCOUNT = 'tigerBeetleSpecAccount'
 const TABLE_TRANSFER = 'tigerBeetleSpecTransfer'
 const TABLE_DFSP = 'tigerBeetleSpecDfsp'
+const TABLE_FUNDING = 'tigerBeetleSpecFunding'
 
 function hydrateSpecAccount(result: any): SpecAccount {
   const record = result as SpecRecordAccount;
@@ -354,6 +363,81 @@ export class PersistedSpecStore implements SpecStore {
       })
     } catch (err) {
       logger.error(`saveTransferSpec() - failed with error: ${err.message}`)
+      return spec.map(m => {
+        return {
+          type: 'FAILURE'
+        }
+      })
+    }
+  }
+
+  async lookupFundingSpec(transferIds: Array<string>): Promise<Array<SpecFunding | SpecFundingNone>> {
+    assert(transferIds)
+
+    const queryResult = await this.db.from(TABLE_FUNDING)
+      .whereIn('transferId', transferIds)
+
+    // maintain order of results, even when we find nulls
+    const resultSet: Record<string, SpecRecordFunding> = queryResult.reduce((acc, curr) => {
+      const record = curr as SpecRecordFunding
+      assert(record.transferId)
+      assert(record.dfspId)
+      assert(record.currency)
+      assert(record.action)
+      assert(record.reason)
+
+      acc[record.transferId] = record
+      return acc
+    }, {})
+
+    const results: Array<SpecFunding | SpecFundingNone> = []
+    transferIds.forEach(transferId => {
+      if (!resultSet[transferId]) {
+        results.push({
+          type: 'SpecFundingNone',
+          transferId
+        })
+        return
+      }
+
+      const record = resultSet[transferId]
+      results.push({
+        type: 'SpecFunding',
+        transferId: record.transferId,
+        dfspId: record.dfspId,
+        currency: record.currency,
+        action: record.action,
+        reason: record.reason
+      })
+    })
+
+    return results
+  }
+
+  async saveFundingSpec(spec: Array<SaveFundingSpecCommand>): Promise<Array<SaveSpecFundingResult>> {
+    try {
+      const records: Array<SpecRecordFunding> = spec.map(m => {
+        const record: SpecRecordFunding = {
+          transferId: m.transferId,
+          dfspId: m.dfspId,
+          currency: m.currency,
+          action: m.action,
+          reason: m.reason
+        }
+
+        return record
+      })
+
+      await this.db.from(TABLE_FUNDING)
+        .insert(records)
+
+      return spec.map(m => {
+        return {
+          type: 'SUCCESS'
+        }
+      })
+    } catch (err) {
+      logger.error(`saveFundingSpec() - failed with error: ${err.message}`)
       return spec.map(m => {
         return {
           type: 'FAILURE'

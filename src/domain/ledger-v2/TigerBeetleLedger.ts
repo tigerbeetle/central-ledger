@@ -588,6 +588,7 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.currency)
     assert(cmd.dfspId)
     assert(cmd.transferId)
+    assert(cmd.reason)
 
     try {
       const netDebitCapInternal = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
@@ -599,6 +600,15 @@ export default class TigerBeetleLedger implements Ledger {
 
       const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
       const assetScale = this.currencyManager.getAssetScale(cmd.currency)
+
+      // Save the funding spec before writing to TigerBeetle (write last, read first)
+      await this.deps.specStore.saveFundingSpec([{
+        transferId: cmd.transferId,
+        dfspId: cmd.dfspId,
+        currency: cmd.currency,
+        action: 'DEPOSIT',
+        reason: cmd.reason
+      }])
 
       const idLockTransfer = id()
       let netDebitCapLockAmount = amount_max
@@ -723,6 +733,7 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.currency)
     assert(cmd.dfspId)
     assert(cmd.amount)
+    assert(cmd.reason)
 
     try {
       const specAccountResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
@@ -734,6 +745,16 @@ export default class TigerBeetleLedger implements Ledger {
       const netDebitCap = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
       const assetScale = this.currencyManager.getAssetScale(cmd.currency)
       const withdrawAmountTigerBeetle = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
+
+      // Save the funding spec before writing to TigerBeetle (write last, read first)
+      await this.deps.specStore.saveFundingSpec([{
+        transferId: cmd.transferId,
+        dfspId: cmd.dfspId,
+        currency: cmd.currency,
+        action: 'WITHDRAWAL',
+        reason: cmd.reason
+      }])
+
       const idLockTransfer = id()
       const transfers: Array<Transfer> = [
         // Sweep total balance from Restricted to Unrestricted

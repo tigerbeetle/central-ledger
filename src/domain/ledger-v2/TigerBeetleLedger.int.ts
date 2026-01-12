@@ -201,7 +201,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
 
       // Assert
@@ -260,7 +261,8 @@ describe('TigerBeetleLedger', () => {
         dfspId,
         currency,
         transferId: randomUUID(),
-        amount: 10000
+        amount: 10000,
+        reason: 'Additional deposit'
       }))
 
       // Assert: Query DFSP after limit adjustment
@@ -301,7 +303,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: 11000
+        amount: 11000,
+        reason: 'Test deposit'
       }))
 
       // Assert
@@ -321,7 +324,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: 2000
+        amount: 2000,
+        reason: 'Additional deposit'
       }))
 
       // Assert
@@ -356,7 +360,8 @@ describe('TigerBeetleLedger', () => {
         transferId,
         dfspId,
         currency,
-        amount: 11000
+        amount: 11000,
+        reason: 'First deposit'
       }))
 
 
@@ -365,7 +370,8 @@ describe('TigerBeetleLedger', () => {
         transferId,
         dfspId,
         currency,
-        amount: 11000
+        amount: 11000,
+        reason: 'First deposit'
       })
 
       assert(depositResponseB.type === 'ALREADY_EXISTS')
@@ -389,7 +395,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
         netDebitCapType: 'AMOUNT',
@@ -413,7 +420,8 @@ describe('TigerBeetleLedger', () => {
         transferId: withdrawalTransferId,
         dfspId,
         currency,
-        amount: withdrawAmount
+        amount: withdrawAmount,
+        reason: 'Test withdrawal'
       })
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
@@ -446,7 +454,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
         netDebitCapType: 'AMOUNT',
@@ -458,7 +467,8 @@ describe('TigerBeetleLedger', () => {
         transferId: withdrawalTransferId,
         dfspId,
         currency,
-        amount: withdrawAmount
+        amount: withdrawAmount,
+        reason: 'Test withdrawal'
       }))
       let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
@@ -505,7 +515,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
 
       // Act
@@ -513,7 +524,8 @@ describe('TigerBeetleLedger', () => {
         transferId: withdrawalTransferId,
         dfspId,
         currency,
-        amount: withdrawAmount
+        amount: withdrawAmount,
+        reason: 'Test withdrawal'
       })
 
       // Assert
@@ -537,13 +549,15 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
       await ledger.withdrawPrepare({
         transferId: withdrawalTransferId,
         dfspId,
         currency,
-        amount: withdrawAmount
+        amount: withdrawAmount,
+        reason: 'First withdrawal'
       })
 
       // Act
@@ -551,7 +565,8 @@ describe('TigerBeetleLedger', () => {
         transferId: withdrawalTransferId,
         dfspId,
         currency,
-        amount: 100
+        amount: 100,
+        reason: 'Duplicate withdrawal'
       })
 
       // Assert
@@ -578,7 +593,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
 
       // Act
@@ -609,7 +625,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
         netDebitCapType: 'AMOUNT',
@@ -621,7 +638,8 @@ describe('TigerBeetleLedger', () => {
         transferId: withdrawalTransferId,
         dfspId,
         currency,
-        amount: withdrawAmount
+        amount: withdrawAmount,
+        reason: 'Test withdrawal'
       }))
       let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
@@ -667,7 +685,8 @@ describe('TigerBeetleLedger', () => {
         transferId: randomUUID(),
         dfspId,
         currency,
-        amount: depositAmount
+        amount: depositAmount,
+        reason: 'Initial deposit'
       }))
 
       // Act
