@@ -1,5 +1,7 @@
 import assert from "assert"
 import { Ignore } from "glob"
+import { LedgerDfsp } from "src/domain/ledger-v2/types"
+import { TestUtils } from "./testutils"
 
 const BG_YELLOW = '\x1b[43m'
 const BLACK = '\x1b[30m'
@@ -86,9 +88,9 @@ enum SpecialToken {
 /**
  * Search the line for special tokens.
  */
-const matchSpecialToken = (line: string): { 
+const matchSpecialToken = (line: string): {
   token: SpecialToken,
-  index: number 
+  index: number
 } => {
 
   const matchers: Array<[string, SpecialToken]> = [
@@ -122,6 +124,11 @@ const matchSpecialToken = (line: string): {
     token: SpecialToken.NONE,
     index: 0
   }
+}
+
+export function checkSnapshotLedgerDfsp(ledgerDfsp: LedgerDfsp, shortString: string): SnapshotResult<string> {
+  const snapshotString = TestUtils.ledgerDfspsSnapshotString(shortString)
+  return checkSnapshotString(TestUtils.formatLedgerDfsps([ledgerDfsp]), snapshotString)
 }
 
 export function checkSnapshotString(actual: string, snapshot: string): SnapshotResult<string> {

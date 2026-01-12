@@ -936,6 +936,10 @@ describe('api/participants/handler', () => {
         },
       ]))
     })
+
+    it.todo('08 depositing with a reused transferId fails')
+
+    it.todo('09 aborts a withdrawal')
   })
 
   describe('Positions', () => {

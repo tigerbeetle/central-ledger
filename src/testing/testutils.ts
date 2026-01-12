@@ -280,11 +280,85 @@ export class TestUtils {
     return result.result as T;
   }
 
+
   /**
-   * @function printLedgerDfsp
-   * @description Prints LedgerDfsp balance sheets in a formatted table
+   * Take an easily writeable, shorthand string that represents an array of ledger accounts, and
+   * convert it into a snapshot.
+   *
+   * @param input
+   *
+   * USD,10200,0,20000,-,-;
+   * USD,20100,-,-,0,20000;
+   * USD,20101,-,-,0,0;
+   * USD,20200,-,-,0,0;
+   * USD,20300,-,-,0,0;
+   * USD,20400,-,-,0,0;
+   * USD,60200,-,-,0,6000;
+   *
    */
-  public static printLedgerDfsps(ledgerDfsps: LedgerDfsp[]): void {
+  public static ledgerDfspsSnapshotString(input: string): string {
+    const formatNumber = (value: string): string => {
+      if (value === '-') {
+        return '';
+      }
+      const num = parseInt(value, 10);
+      return num.toLocaleString('en-US');
+    };
+
+    const lines: string[] = [];
+
+    // Headers
+    const headers = ['Curr', 'Code', 'Account Name', 'Net Dr (Pend)', 'Net Dr (Post)', 'Net Cr (Pend)', 'Net Cr (Post)'];
+    const colWidths = [4, 5, 18, 14, 14, 14, 14];
+
+    const printRow = (values: string[], isHeader: boolean = false) => {
+      const row = values.map((val, i) => {
+        // Right-align numeric columns (index 3-6), left-align text columns
+        if (i >= 3 && !isHeader) {
+          return val.padStart(colWidths[i]);
+        }
+        return val.padEnd(colWidths[i]);
+      }).join(' | ');
+      return row;
+    };
+
+    lines.push(printRow(headers, true));
+    lines.push('-'.repeat(colWidths.reduce((a, b) => a + b + 3, 0)));
+
+    // Parse input lines
+    const inputLines = input.trim().split('\n').filter(line => line.trim().length > 0);
+
+    for (const line of inputLines) {
+      // Remove trailing semicolon and split by comma
+      const parts = line.replace(/;$/, '').split(',').map(p => p.trim());
+
+      if (parts.length !== 6) {
+        continue; // Skip malformed lines
+      }
+
+      const [currency, codeStr, netDrPend, netDrPost, netCrPend, netCrPost] = parts;
+      const code = parseInt(codeStr, 10);
+      const accountName = AccountCode[code] || 'Unknown';
+
+      lines.push(printRow([
+        currency,
+        codeStr,
+        accountName,
+        formatNumber(netDrPend),
+        formatNumber(netDrPost),
+        formatNumber(netCrPend),
+        formatNumber(netCrPost)
+      ]));
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
+   * @function formatLedgerDfsps
+   * @description Formats LedgerDfsp balance sheets as a string for snapshot testing
+   */
+  public static formatLedgerDfsps(ledgerDfsps: LedgerDfsp[]): string {
     const formatNumber = (num: number): string => {
       return num.toLocaleString('en-US');
     };
@@ -298,9 +372,12 @@ export class TestUtils {
       return firstDigit === 2 || firstDigit === 6
     };
 
+    const allLines: string[] = [];
+
     for (const ledgerDfsp of ledgerDfsps) {
-      console.log(`\n=== [${ledgerDfsp.name}] Balance Sheet ===`);
-      console.log(`Status: ${ledgerDfsp.status}\n`);
+      // allLines.push(`=== [${ledgerDfsp.name}] Balance Sheet ===`);
+      // allLines.push(`Status: ${ledgerDfsp.status}`);
+      // allLines.push('');
 
       // Table headers (debits on left, credits on right per accounting convention)
       const headers = ['Curr', 'Code', 'Account Name', 'Net Dr (Pend)', 'Net Dr (Post)', 'Net Cr (Pend)', 'Net Cr (Post)'];
@@ -314,11 +391,11 @@ export class TestUtils {
           }
           return val.padEnd(colWidths[i]);
         }).join(' | ');
-        console.log(row);
+        return row;
       };
 
-      printRow(headers, true);
-      console.log('-'.repeat(colWidths.reduce((a, b) => a + b + 3, 0)));
+      allLines.push(printRow(headers, true));
+      allLines.push('-'.repeat(colWidths.reduce((a, b) => a + b + 3, 0)));
 
       // Sort accounts by currency then by code for consistent output
       const sortedAccounts = [...ledgerDfsp.accounts].sort((a, b) => {
@@ -331,7 +408,7 @@ export class TestUtils {
         const isAsset = isAssetAccount(account.code);
         const isLiability = isLiabilityAccount(account.code);
 
-        printRow([
+        allLines.push(printRow([
           account.currency,
           account.code.toString(),
           accountName,
@@ -341,11 +418,24 @@ export class TestUtils {
           // Assets: blank, Liabilities: show credits
           isLiability ? formatNumber(account.netCreditsPending) : '',
           isLiability ? formatNumber(account.netCreditsPosted) : ''
-        ]);
+        ]));
       }
-
-      console.log('\n');
     }
+
+    return allLines.join('\n');
+  }
+
+  /**
+   * @function printLedgerDfsps
+   * @description Prints LedgerDfsp balance sheets to console
+   */
+  public static printLedgerDfsps(ledgerDfsps: LedgerDfsp[]): void {
+    ledgerDfsps.forEach(ledgerDfsp => {
+      console.log(`=== [${ledgerDfsp.name}] Balance Sheet ===`);
+      console.log(`Status: ${ledgerDfsp.status}\n`);
+      console.log(TestUtils.formatLedgerDfsps([ledgerDfsp]));
+      console.log('\n')
+    })
   }
 
   /**

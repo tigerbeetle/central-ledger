@@ -575,8 +575,6 @@ export default class TigerBeetleLedger implements Ledger {
     throw new Error('not implemented')
   }
 
-  // TODO(LD): Come back to the design on this one. I'm a little unsure about how to handle the
-  // mismatch between single entry accounting in the original ledger, and double entry here.
   public async deposit(cmd: DepositCommand): Promise<DepositResponse> {
     assert(cmd.amount)
     assert(cmd.currency)
@@ -603,14 +601,24 @@ export default class TigerBeetleLedger implements Ledger {
         // Deposit funds into Unrestricted
         {
           ...Helper.createTransferTemplate,
-          // TODO: need to derive this id from the command.
-          id: id(),
+          id: Helper.fromMojaloopId(cmd.transferId),
           debit_account_id: spec.deposit,
           credit_account_id: spec.unrestricted,
           amount: Helper.toTigerBeetleAmount(cmd.amount, assetScale),
           ledger: ledgerOperation,
           code: TransferCode.Deposit,
           flags: TransferFlags.linked
+        },
+        // Sweep total balance from Restricted to Unrestricted
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: spec.restricted,
+          credit_account_id: spec.unrestricted,
+          amount: amount_max,
+          ledger: ledgerOperation,
+          code: TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
         },
         // Temporarily lock up to the net debit cap.
         {
@@ -621,7 +629,7 @@ export default class TigerBeetleLedger implements Ledger {
           amount: netDebitCapLockAmount,
           ledger: ledgerOperation,
           code: TransferCode.Net_Debit_Cap_Lock,
-          flags: TransferFlags.linked | TransferFlags.pending | TransferFlags.balancing_credit
+          flags: TransferFlags.linked | TransferFlags.pending | TransferFlags.balancing_debit
         },
         // Sweep whatever remains in Unrestricted to Restricted.
         {
@@ -632,7 +640,7 @@ export default class TigerBeetleLedger implements Ledger {
           amount: amount_max,
           ledger: ledgerOperation,
           code: TransferCode.Net_Debit_Cap_Sweep_To_Restricted,
-          flags: TransferFlags.linked | TransferFlags.balancing_credit
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
         },
         // Reset the pending limit transfer.
         {
@@ -648,10 +656,20 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ]
 
+      let exists = false
       const fatalErrors = (await this.deps.client.createTransfers(transfers)).reduce((acc, curr) => {
-        // if (curr.index === 0 && curr.result === CreateTransferError.ok) {
-        //   return acc
-        // }
+        if (exists) {
+          return []
+        }
+
+        if (curr.index === 0 && 
+          CreateTransferError.exists_with_different_flags <= curr.result 
+          && curr.result <= CreateTransferError.exists
+          ) {
+          exists = true
+          return []
+        } 
+
         acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
         return acc
       }, [])
@@ -659,6 +677,12 @@ export default class TigerBeetleLedger implements Ledger {
         return {
           type: 'FAILURE',
           error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+        }
+      }
+
+      if (exists) {
+        return {
+          type: 'ALREADY_EXISTS'
         }
       }
 
@@ -742,9 +766,7 @@ export default class TigerBeetleLedger implements Ledger {
         id: idLockTransfer,
         debit_account_id: spec.unrestricted,
         credit_account_id: spec.unrestrictedLock,
-        // debugging this at the moent!
         amount: cmd.netDebitCapType === 'AMOUNT' ? amountNetDebitCap : amount_max,
-        // amount: 1000n,
         ledger: ledgerOperation,
         code: TransferCode.Net_Debit_Cap_Lock,
         flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.pending
@@ -2126,7 +2148,7 @@ export default class TigerBeetleLedger implements Ledger {
       const realDebitsPending = Helper.toRealAmount(acc.debits_pending, assetScale)
       const realCreditsPosted = Helper.toRealAmount(acc.credits_posted, assetScale)
       const realDebitsPosted = Helper.toRealAmount(acc.debits_posted, assetScale)
-      
+
       const ledgerAccount: LedgerAccount = {
         id: acc.id,
         code: acc.code,
@@ -2182,7 +2204,7 @@ export default class TigerBeetleLedger implements Ledger {
     };
 
     const transfers = await this.deps.client.queryTransfers(queryFilter);
-    
+
 
     // Get all unique account IDs from the transfers
     const accountIds = new Set<bigint>();

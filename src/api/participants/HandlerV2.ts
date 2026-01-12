@@ -744,6 +744,9 @@ export default class ParticipantAPIHandlerV2 {
           return h.response().code(202)
         }
         case 'recordFundsOutAbort': {
+
+          // TODO(LD): implement me :) 
+          
           throw new Error('not implemented!!!')
         }
         default: {

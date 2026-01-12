@@ -18,6 +18,9 @@ import TigerBeetleLedger, { AccountCode, TigerBeetleLedgerDependencies } from ".
 import { TransferBatcher } from './TransferBatcher';
 import { PrepareResultType } from './types';
 import path from 'node:path';
+import { checkSnapshotLedgerDfsp, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
+
+const participantService = require('../participant');
 
 describe('TigerBeetleLedger', () => {
   let ledger: TigerBeetleLedger
@@ -181,20 +184,19 @@ describe('TigerBeetleLedger', () => {
 
   describe('lifecycle', () => {
     it('creates a dfsp, deposits funds, sets the limit and adjusts the limit', async () => {
-      const participantService = require('../participant');
       const dfspId = 'dfsp_c';
       const currency = 'USD';
       const depositAmount = 10000;
       const adjustedLimit = 6000;
 
-      // Act 1: Create participant and DFSP
+      // Arrange: Create participant and DFSP
       await participantService.ensureExists(dfspId);
       TestUtils.unwrapSuccess(await ledger.createDfsp({
         dfspId,
         currencies: [currency]
       }))
 
-      // Act 2: Deposit funds
+      // Act: Deposit funds
       TestUtils.unwrapSuccess(await ledger.deposit({
         transferId: randomUUID(),
         dfspId,
@@ -202,18 +204,19 @@ describe('TigerBeetleLedger', () => {
         amount: depositAmount
       }))
 
-      // Act 3: Query DFSP after deposit
+      // Assert
       let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
-      TestUtils.printLedgerDfsps([ledgerDfsp])
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,10000,-,-;
+        USD,20100,-,-,0,10000;
+        USD,20101,-,-,0,0;
+        USD,20200,-,-,0,0;
+        USD,20300,-,-,0,0;
+        USD,20400,-,-,0,0;
+        USD,60200,-,-,0,0;`
+      ))
 
-      // Assert 3: Unrestricted account net credits match deposit amount
-      const unrestrictedAfterDeposit = ledgerDfsp.accounts.find(
-        acc => acc.code === AccountCode.Unrestricted && acc.currency === currency
-      );
-      assert.ok(unrestrictedAfterDeposit, 'Expected to find Unrestricted account');
-      assert.strictEqual(unrestrictedAfterDeposit.netCreditsPosted, depositAmount);
-
-      // Act 4: Adjust the net debit cap to lower than deposit amount
+      // Act: Adjust the net debit cap to lower than deposit amount
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
         netDebitCapType: 'AMOUNT',
         dfspId,
@@ -221,38 +224,151 @@ describe('TigerBeetleLedger', () => {
         amount: adjustedLimit
       }))
 
-      // Act 5: Query DFSP after limit adjustment
+      // Assert
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
-      TestUtils.printLedgerDfsps([ledgerDfsp])
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,10000,-,-;
+        USD,20100,-,-,0,6000;
+        USD,20101,-,-,0,0;
+        USD,20200,-,-,0,4000;
+        USD,20300,-,-,0,0;
+        USD,20400,-,-,0,0;
+        USD,60200,-,-,0,6000;`
+      ))
 
-      // Assert 5: Verify account balances after limit adjustment
-      const unrestrictedAfterAdjust = ledgerDfsp.accounts.find(
-        acc => acc.code === AccountCode.Unrestricted && acc.currency === currency
-      );
-      const restrictedAfterAdjust = ledgerDfsp.accounts.find(
-        acc => acc.code === AccountCode.Restricted && acc.currency === currency
-      );
+      // Act: Now adjust NDC to be greater than deposit amount
+      TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
+        netDebitCapType: 'UNLIMITED',
+        dfspId,
+        currency,
+      }))
 
-      assert.ok(unrestrictedAfterAdjust, 'Expected to find Unrestricted account');
-      assert.ok(restrictedAfterAdjust, 'Expected to find Restricted account');
+      // Assert: Query DFSP after limit adjustment
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,10000,-,-;
+        USD,20100,-,-,0,10000;
+        USD,20101,-,-,0,0;
+        USD,20200,-,-,0,0;
+        USD,20300,-,-,0,0;
+        USD,20400,-,-,0,0;
+        USD,60200,-,-,0,6000;`
+      ))
 
-      const transfers = await ledger.getRecentTransfers(11)
-      TestUtils.printTransferHistory(transfers);
+      // Act: Now deposit more funds
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        dfspId,
+        currency,
+        transferId: randomUUID(),
+        amount: 10000
+      }))
 
-      // Unrestricted net credits must match the net debit cap
-      assert.strictEqual(
-        unrestrictedAfterAdjust.netCreditsPosted,
-        adjustedLimit,
-        'Unrestricted account net credits should match the net debit cap'
-      );
+      // Assert: Query DFSP after limit adjustment
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,20000,-,-;
+        USD,20100,-,-,0,20000;
+        USD,20101,-,-,0,0;
+        USD,20200,-,-,0,0;
+        USD,20300,-,-,0,0;
+        USD,20400,-,-,0,0;
+        USD,60200,-,-,0,6000;`
+      ))
+    })
 
-      // Sum of Unrestricted and Restricted must match the original deposit
-      const totalCredits = unrestrictedAfterAdjust.netCreditsPosted + restrictedAfterAdjust.netCreditsPosted;
-      assert.strictEqual(
-        totalCredits,
-        depositAmount,
-        'Sum of Unrestricted and Restricted net credits should match the deposit amount'
-      );
+    it('applies the net debit cap on the entire deposit amount', async () => {
+      // Set net debit cap to 10k, deposit 11k
+      // Then deposit another 2k, unrestricted should be 10k, restricted should be 3k
+      const dfspId = 'dfsp_d';
+      const currency = 'USD';
+
+      // Arrange: Create participant and DFSP
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+
+      TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
+        netDebitCapType: 'AMOUNT',
+        dfspId,
+        currency,
+        amount: 10000
+      }))
+
+      // Act: Deposit funds
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: 11000
+      }))
+
+      // Assert
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));      
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,11000,-,-;
+        USD,20100,-,-,0,10000;
+        USD,20101,-,-,0,0;
+        USD,20200,-,-,0,1000;
+        USD,20300,-,-,0,0;
+        USD,20400,-,-,0,0;
+        USD,60200,-,-,0,10000;`
+      ))
+
+      // Act: Deposit another 2,000
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: 2000
+      }))
+
+      // Assert
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
+        USD,10200,0,13000,-,-;
+        USD,20100,-,-,0,10000;
+        USD,20101,-,-,0,0;
+        USD,20200,-,-,0,3000;
+        USD,20300,-,-,0,0;
+        USD,20400,-,-,0,0;
+        USD,60200,-,-,0,10000;`
+      ))
+    })
+
+    it('deposit is idempotent', async () => {
+      // Set net debit cap to 10k, deposit 11k
+      // Then deposit another 2k, unrestricted should be 10k, restricted should be 3k
+      const dfspId = 'dfsp_e';
+      const currency = 'USD';
+      const transferId = '123456'
+
+      // Arrange: Create participant and DFSP
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+
+      // Deposit funds
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId,
+        dfspId,
+        currency,
+        amount: 11000
+      }))
+
+
+      // Act
+      const depositResponseB = await ledger.deposit({
+        transferId,
+        dfspId,
+        currency,
+        amount: 11000
+      })
+
+      assert(depositResponseB.type === 'ALREADY_EXISTS')
     })
   })
 
