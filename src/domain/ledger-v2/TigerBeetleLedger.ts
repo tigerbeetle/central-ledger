@@ -688,7 +688,7 @@ export default class TigerBeetleLedger implements Ledger {
             default: { }
           }
         }
-        
+
         acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
         return acc
       }, [])
@@ -853,12 +853,17 @@ export default class TigerBeetleLedger implements Ledger {
               availableBalance: -1,
             }
           }
-          case WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED:
+          case WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED: {
+            return {
+              type: 'FAILURE',
+              error: new Error(`Withdrawal failed as one or more accounts is closed.`)
+            }
+          }
           case WithdrawPrepareErrorsKnown.TRANSFER_ID_REUSED:
           default: {
             return {
               type: 'FAILURE',
-              error: new Error(`Withdrawal failed with error: ${errorsFatalKnown}`)
+              error: new Error(`Withdrawal failed - transferId has already been used.`)
             }
           }
         }
@@ -908,12 +913,23 @@ export default class TigerBeetleLedger implements Ledger {
           continue
         }
 
+        if (error.index === 0) {
+          if (error.result === CreateTransferError.pending_transfer_not_found) {
+            return {
+              type: 'FAILURE',
+              error: new Error(`transferId: ${cmd.transferId} not found`)
+            }
+          }
+        }
+
         errorsFatal.push(`transfer at ${error.index} failed with error: ${CreateTransferError[error.result]}`)
       }
+      
+      // unknown errors
       if (errorsFatal.length > 0) {
         return {
           type: 'FAILURE',
-          error: new Error(`${errorsFatal.join(';')}`)
+          error: new Error(`withdrawCommit() failed with errors: ${errorsFatal.join(';')}`)
         }
       }
 

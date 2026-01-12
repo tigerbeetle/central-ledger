@@ -378,6 +378,7 @@ describe('TigerBeetleLedger', () => {
       const depositAmount = 10000
       const netDebitCap = 5000
       const withdrawAmount = 6000
+      const withdrawalTransferId = '230482309234234'
 
       await participantService.ensureExists(dfspId);
       TestUtils.unwrapSuccess(await ledger.createDfsp({
@@ -409,7 +410,7 @@ describe('TigerBeetleLedger', () => {
 
       // Act
       const withdrawPrepareResult = await ledger.withdrawPrepare({
-        transferId: '982737894523487',
+        transferId: withdrawalTransferId,
         dfspId,
         currency,
         amount: withdrawAmount
@@ -434,6 +435,7 @@ describe('TigerBeetleLedger', () => {
       const depositAmount = 10000
       const netDebitCap = 5000
       const withdrawAmount = 6000
+      const withdrawalTransferId = '2345872398928374'
 
       await participantService.ensureExists(dfspId);
       TestUtils.unwrapSuccess(await ledger.createDfsp({
@@ -453,7 +455,7 @@ describe('TigerBeetleLedger', () => {
         amount: netDebitCap
       }))
       TestUtils.unwrapSuccess(await ledger.withdrawPrepare({
-        transferId: '982737894523487',
+        transferId: withdrawalTransferId,
         dfspId,
         currency,
         amount: withdrawAmount
@@ -471,7 +473,7 @@ describe('TigerBeetleLedger', () => {
 
       // Act
       const withdrawCommitResult = await ledger.withdrawCommit({
-        transferId: '982737894523487'
+        transferId: withdrawalTransferId,
       })
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
@@ -486,12 +488,13 @@ describe('TigerBeetleLedger', () => {
       assert(withdrawCommitResult.type === 'SUCCESS', 'expected success result')
     })
 
-    it.only('fails if there are not enough funds available', async () => {
+    it('withdraw fails if there are not enough funds available', async () => {
       // Arrange
-      const dfspId = 'dfsp_g'
+      const dfspId = 'dfsp_h'
       const currency = 'USD'
       const depositAmount = 2500
       const withdrawAmount = 3000
+      const withdrawalTransferId = '23984723984723'
 
       await participantService.ensureExists(dfspId);
       TestUtils.unwrapSuccess(await ledger.createDfsp({
@@ -507,7 +510,7 @@ describe('TigerBeetleLedger', () => {
 
       // Act
       const result = await ledger.withdrawPrepare({
-        transferId: '982737894523487',
+        transferId: withdrawalTransferId,
         dfspId,
         currency,
         amount: withdrawAmount
@@ -519,7 +522,7 @@ describe('TigerBeetleLedger', () => {
 
     it('fails in the prepare phase if the id has been reused', async () => {
       // Arrange
-      const dfspId = 'dfsp_g'
+      const dfspId = 'dfsp_i'
       const currency = 'USD'
       const depositAmount = 2500
       const withdrawAmount = 3000
@@ -553,8 +556,41 @@ describe('TigerBeetleLedger', () => {
 
       // Assert
       assert(duplicateWithdrawalResult.type === 'FAILURE')
-      assert.strictEqual(duplicateWithdrawalResult.error.message, 'FAILURE')
+      assert.strictEqual(
+        duplicateWithdrawalResult.error.message, 
+        'Withdrawal failed - transferId has already been used.'
+      )
     })
+
+    it('handles a withdrawCommit() where the id is not found', async () => {
+      // Arrange
+      const dfspId = 'dfsp_j'
+      const currency = 'USD'
+      const depositAmount = 2500
+      const withdrawalTransferId = randomUUID()
+
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: depositAmount
+      }))
+
+      // Act
+      const duplicateWithdrawalResult = await ledger.withdrawCommit({
+        transferId: withdrawalTransferId,
+      })
+
+      // Assert
+      assert(duplicateWithdrawalResult.type === 'FAILURE')
+      assert.strictEqual(duplicateWithdrawalResult.error.message, `transferId: ${withdrawalTransferId} not found`)
+    })
+
 
     it.todo('aborts a withdrawal')
     it.todo('handles a withdrawal abort where the id is not found')
