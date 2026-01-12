@@ -1070,11 +1070,11 @@ export default class TigerBeetleLedger implements Ledger {
         code = TransferCode.Net_Debit_Cap_Set_Unlimited
       }
     }
-    const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
-    if (specAccounts.length === 0) {
-      throw new Error(`no dfspId found: ${cmd.dfspId}`)
+    const specAccountResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
+    if (specAccountResult.type === 'SpecAccountNone') {
+      throw new Error(`no dfspId + currency found: ${cmd.dfspId} + ${cmd.currency}`)
     }
-    const spec = specAccounts[0]
+    const spec = specAccountResult
     const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
     const ledgerControl = this.currencyManager.getLedgerControl(cmd.currency)
 
@@ -1305,99 +1305,50 @@ export default class TigerBeetleLedger implements Ledger {
   /**
    * @method getDfspAccounts
    * @description Lookup the accounts for a Dfsp + Currency
-   * 
-   * TODO: revisit in light of other get dfsp calls, we can probably simplify and 
-   * map all in one place
    */
   public async getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse> {
-    throw new Error('refactor me!')
+    try {
+      // Get all the spec accounts
+      const specDfsp = await this.deps.specStore.queryDfsp(query.dfspId)
+      const allSpecAccounts = await this.deps.specStore.queryAccounts(query.dfspId)
 
-    // const ids = await this.deps.specStore.getDfspAccountSpec(query.dfspId, query.currency)
-    // if (ids.type === 'DfspAccountSpecNone') {
-    //   return {
-    //     type: 'FAILURE',
-    //     error: ErrorHandler.Factory.createFSPIOPError(
-    //       ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-    //       `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
-    //           dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
-    //     )
-    //   }
-    // }
-    // const tbAccountIds = [
-    //   ids.liquidity,
-    //   // TODO: is this equivalent to POSITION?
-    //   ids.clearing,
-    //   ids.collateral,
-    //   // TODO: is this equivalent to SETTLEMENT?
-    //   ids.settlementMultilateral
-    // ]
-    // const tbAccounts = await this.deps.client.lookupAccounts(tbAccountIds)
-    // if (tbAccounts.length !== tbAccountIds.length) {
-    //   return {
-    //     type: 'FAILURE',
-    //     error: ErrorHandler.Factory.createFSPIOPError(
-    //       ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
-    //       `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
-    //           dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
-    //     )
-    //   }
-    // }
+      // Filter accounts by currency
+      const specAccounts = allSpecAccounts.filter(acc => acc.currency === query.currency)
 
-    // // TODO(LD): We need to spend more time here figuring out how to adapt from newer double entry
-    // // accounts map on to the legacy accounts
-    // const accounts: Array<LegacyLedgerAccount> = []
-    // let clearingAccount: Account
-    // let collateralAccount: Account
-    // tbAccounts.forEach(tbAccount => {
-    //   if (tbAccount.id === ids.clearing) {
-    //     clearingAccount = tbAccount
-    //   }
-    //   if (tbAccount.id === ids.collateral) {
-    //     collateralAccount = tbAccount
-    //   }
-    // })
-    // assert(clearingAccount)
-    // assert(collateralAccount)
+      if (specAccounts.length === 0 || specDfsp.type === 'SpecDfspNone') {
+        return {
+          type: 'FAILURE',
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            `Accounts not found for dfspId: ${query.dfspId}, currency: ${query.currency}`
+          )
+        }
+      }
 
-    // // Legacy Settlement Balance: How much Dfsp has available to settle.
-    // // Was a negative number in the legacy API once the dfsp had deposited funds.
-    // const legacySettlementBalancePosted = (collateralAccount.debits_posted - collateralAccount.credits_posted) * BigInt(-1)
-    // const legacySettlementBalancePending = (collateralAccount.debits_pending - collateralAccount.credits_pending) * BigInt(-1)
+      // Get the TigerBeetle Accounts
+      const internalLedgerAccounts = await this._internalAccountsForSpecAccounts(specAccounts)
 
-    // // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
-    // const clearingBalancePosted = clearingAccount.credits_posted - clearingAccount.debits_posted
-    // const clearingBalancePending = clearingAccount.credits_pending - clearingAccount.debits_pending
-    // const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
-    // const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
-
-    // accounts.push({
-    //   id: ids.clearing,
-    //   ledgerAccountType: 'POSITION',
-    //   currency: query.currency,
-    //   isActive: !(clearingAccount.flags & AccountFlags.closed),
-    //   value: convertBigIntToNumber(legacyPositionBalancePosted) / 100,
-    //   reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / 100,
-    //   // We don't have this in TigerBeetle, although we could use the created date
-    //   changedDate: new Date(0)
-    // })
-
-    // accounts.push({
-    //   id: ids.collateral,
-    //   ledgerAccountType: 'SETTLEMENT',
-    //   currency: query.currency,
-    //   isActive: !(collateralAccount.flags & AccountFlags.closed),
-    //   value: convertBigIntToNumber(legacySettlementBalancePosted) / 100,
-    //   reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / 100,
-    //   // We don't have this in TigerBeetle, although we could use the created date
-    //   changedDate: new Date(0)
-    // })
-
-    // return {
-    //   type: 'SUCCESS',
-    //   accounts,
-    // }
+      // Map to legacy view
+      const legacyLedgerAccounts = this._fromInternalAccountsToLegacyLedgerAccounts(internalLedgerAccounts)
+      return {
+        type: 'SUCCESS',
+        accounts: legacyLedgerAccounts
+      }
+    } catch (error) {
+      return {
+        type: 'FAILURE',
+        error: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          `Failed to get accounts: ${error.message}`
+        )
+      }
+    }
   }
 
+  /**
+   * @method getAllDfspAccounts
+   * @description Lookup the accounts for a Dfsp, across all currencies
+   */
   public async getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse> {
     // TODO(LD): Implement this method for TigerBeetle
     // This would require getting account spec for all currencies for the DFSP

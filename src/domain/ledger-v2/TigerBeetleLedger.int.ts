@@ -18,7 +18,7 @@ import TigerBeetleLedger, { AccountCode, TigerBeetleLedgerDependencies } from ".
 import { TransferBatcher } from './TransferBatcher';
 import { PrepareResultType } from './types';
 import path from 'node:path';
-import { checkSnapshotLedgerDfsp, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
+import { checkSnapshotLedgerDfsp, unwrapSnapshot } from '../../testing/snapshot';
 
 const participantService = require('../participant');
 
@@ -42,8 +42,8 @@ describe('TigerBeetleLedger', () => {
         mysqlImage: 'mysql:8.0',
         memorySize: '256m',
         port: 3307,
-        migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
-        // migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+        // migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
+        migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
 
       });
 
@@ -386,7 +386,7 @@ describe('TigerBeetleLedger', () => {
       const withdrawAmount = 6000
       const withdrawalTransferId = '230482309234234'
 
-      await participantService.ensureExists(dfspId);
+      await participantService.ensureExists(dfspId); 
       TestUtils.unwrapSuccess(await ledger.createDfsp({
         dfspId,
         currencies: [currency]

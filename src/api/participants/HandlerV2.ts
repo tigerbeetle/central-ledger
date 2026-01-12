@@ -749,10 +749,16 @@ export default class ParticipantAPIHandlerV2 {
           return h.response().code(202)
         }
         case 'recordFundsOutAbort': {
+          const transferId = request.params.transferId
+          const withdrawAbortCmd = {
+            transferId
+          }
+          const result = await ledger.withdrawAbort(withdrawAbortCmd)
 
-          // TODO(LD): implement me :) 
-          
-          throw new Error('not implemented!!!')
+          if (result.type === 'FAILURE') {
+            throw result.error
+          }
+          return h.response().code(202)
         }
         default: {
           throw new Error(`recordFunds() - unhandled action: ${action}`)

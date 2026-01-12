@@ -937,9 +937,139 @@ describe('api/participants/handler', () => {
       ]))
     })
 
-    it.todo('08 depositing with a reused transferId fails')
+    it('08 depositing with a reused transferId fails', async () => {
+      // Arrange
+      assert(settlementAccountId, 'value expected from previous `it` block')
 
-    it.todo('09 aborts a withdrawal')
+      const transferId = randomUUID()
+      const request = {
+        payload: {
+          transferId,
+          externalReference: "duplicate-test",
+          action: "recordFundsIn",
+          reason: "test deposit",
+          amount: {
+            currency: 'USD',
+            amount: '10000.00'
+          }
+        },
+        params: {
+          name: 'dfsp_u',
+          id: Number.parseInt(settlementAccountId),
+          transferId: transferId,
+        },
+        server: { app: { ledger } }
+      }
+
+      // Act - First deposit should succeed
+      const {
+        code: code1,
+        body: body1
+      } = await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.recordFunds(request, h)
+      )
+      assert.equal(code1, 202)
+      assert.equal(body1, undefined)
+
+      // Get balance after first deposit
+      const accountsAfterFirst = await getDFSPAccounts('dfsp_u')
+      const settlementAfterFirst = accountsAfterFirst.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0]
+
+      // Act - Second deposit with same transferId should fail (or be idempotent)
+      const {
+        code: code2,
+        body: body2
+      } = await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.recordFunds(request, h)
+      )
+
+      // Assert - Second call should also return 202 (idempotent behavior)
+      assert.equal(code2, 202)
+
+      // Get balance after second deposit
+      const accountsAfterSecond = await getDFSPAccounts('dfsp_u')
+      const settlementAfterSecond = accountsAfterSecond.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0]
+
+      // Balance should not change (idempotent - deposit only applied once)
+      assert.equal(settlementAfterFirst.value, settlementAfterSecond.value,
+        'Balance should not change when depositing with duplicate transferId')
+    })
+
+    it('09 aborts a withdrawal', async () => {
+      // Arrange
+      assert(settlementAccountId, 'value expected from previous `it` block')
+
+      const transferId = randomUUID()
+
+      // Get initial balance
+      const initialAccounts = await getDFSPAccounts('dfsp_u')
+      const initialSettlement = initialAccounts.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0]
+
+      const requestWithdraw = {
+        payload: {
+          transferId,
+          externalReference: "abort-test",
+          action: "recordFundsOutPrepareReserve",
+          reason: "withdrawal to be aborted",
+          amount: {
+            currency: 'USD',
+            amount: '25000.00'
+          }
+        },
+        params: {
+          name: 'dfsp_u',
+          id: settlementAccountId,
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      // Act - Prepare withdrawal
+      const responseWithdraw = await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.recordFunds(requestWithdraw, h)
+      )
+      assert.equal(responseWithdraw.code, 202)
+
+      // Check balance after prepare
+      const accountsAfterPrepare = await getDFSPAccounts('dfsp_u')
+      const settlementAfterPrepare = accountsAfterPrepare.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0]
+
+      // Balance should have decreased by the withdrawal amount
+      assert.equal(settlementAfterPrepare.value, initialSettlement.value + 25000)
+
+      // Act - Abort the withdrawal
+      const requestAbort = {
+        payload: {
+          action: "recordFundsOutAbort",
+          reason: "aborting withdrawal",
+        },
+        params: {
+          name: 'dfsp_u',
+          id: settlementAccountId,
+          transferId
+        },
+        server: {
+          app: {
+            ledger
+          }
+        }
+      }
+
+      const responseAbort = await TestUtils.unwrapHapiResponse(h =>
+        participantHandler.recordFunds(requestAbort, h)
+      )
+      assert.equal(responseAbort.code, 202)
+
+      // Assert - Balance should be restored to initial value
+      const accountsAfterAbort = await getDFSPAccounts('dfsp_u')
+      const settlementAfterAbort = accountsAfterAbort.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0]
+
+      assert.equal(settlementAfterAbort.value, initialSettlement.value,
+        'Balance should be restored after aborting withdrawal')
+    })
   })
 
   describe('Positions', () => {
