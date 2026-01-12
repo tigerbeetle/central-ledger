@@ -699,6 +699,44 @@ describe('TigerBeetleLedger', () => {
       assert.strictEqual(duplicateWithdrawalResult.error.message, `transferId: ${withdrawalTransferId} not found`)
     })
 
+    it.only('disables the Deposit account', async () => {
+      // Arrange
+      const dfspId = 'dfsp_m'
+      const currency = 'USD'
+
+      await participantService.ensureExists(dfspId);
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId,
+        currencies: [currency]
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId,
+        currency,
+        amount: 2500,
+        reason: 'Initial deposit'
+      }))
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      const depositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
+      assert(depositAccount, 'deposit account not found')
+
+      // Act
+      const closeAccountResult = await ledger.disableDfspAccount({
+        dfspId,
+        accountId: Number(depositAccount.id)
+      })
+
+      // Assert
+      assert(closeAccountResult.type === 'SUCCESS')
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      const updatedDepositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
+      assert.strictEqual(updatedDepositAccount.status, 'DISABLED')
+    })
+
+    it.todo('fails to disable an account for a dfsp that does not exist')
+    it.todo('fails to disable a valid account that is not a Deposit or Unrestricted account')
+    it.todo('has no effect if the account is already closed')
+
 
     // TODO(LD): blocked by implementing this!
     it.todo('fails to withdraw if the deposit account is disabled')

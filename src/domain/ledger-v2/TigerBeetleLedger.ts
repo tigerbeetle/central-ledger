@@ -52,8 +52,6 @@ import {
   WithdrawAbortCommand,
   WithdrawAbortResponse,
 } from "./types";
-import { Help } from 'commander';
-import { TIMEOUT } from 'dns';
 
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
@@ -93,6 +91,7 @@ export enum TransferCode {
   Net_Debit_Cap_Set_Limited = 50004,
   Net_Debit_Cap_Set_Unlimited = 50005,
   Net_Debit_Cap_Sweep_To_Unrestricted = 50006,
+  Close_Account = 50007,
 }
 
 export const TransferCodeDescription = {
@@ -110,6 +109,7 @@ export const TransferCodeDescription = {
   [TransferCode.Net_Debit_Cap_Set_Limited]: 'Set the new Net Debit Cap to a number.',
   [TransferCode.Net_Debit_Cap_Set_Unlimited]: 'Set the new Net Debit Cap to unlimited.',
   [TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted]: 'Sweep total balance from Restricted to Unrestricted',
+  [TransferCode.Close_Account]: 'Close account.',
 }
 
 enum WithdrawPrepareErrorsKnown {
@@ -576,11 +576,168 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
-    throw new Error('not implemented')
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(cmd.accountId)
+    const accountId = BigInt(cmd.accountId)
+
+     try {
+      logger.debug(`enableDfspAccount() - disabling dfsp: ${cmd.dfspId} accountId: ${cmd.accountId}`)
+
+      // Only the Deposit and Unrestricted Accounts can be enabled/disabled
+      const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
+      if (specAccounts.length === 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`enableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
+        }
+      }
+
+      // Match the accountId to a specific spec, so we can pull out currency
+      let spec: SpecAccount
+      let accountToClose: AccountCode.Deposit | AccountCode.Unrestricted
+      specAccounts.forEach(specAccount => {
+        if (specAccount.deposit === accountId) {
+          spec = specAccount
+          accountToClose = AccountCode.Deposit
+          return
+        }
+        if (specAccount.unrestricted === accountId) {
+          spec = specAccount
+          accountToClose = AccountCode.Unrestricted
+          return
+        }
+      })
+      if (!spec) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`enableDfspAccount() - account id not found, or is not Deposit or Unrestricted.`)
+        }
+      }
+
+      const ledgerOperation = this.currencyManager.getLedgerOperation(spec.currency)
+
+      // TODO: perform a getAccountTransfers, filter for TransferCode.Close_Account, and find the
+      // latest entry
+
+      // use that entry to get the id of the pending transfer, and then do 
+
+
+
+      // Create a closing transfer to mark this Account as deactivated
+      const closingTransfer: Transfer = {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.unrestrictedLock,
+        credit_account_id: accountToClose === AccountCode.Deposit ? spec.deposit : spec.unrestricted,
+        amount: 0n,
+        ledger: ledgerOperation,
+        code: TransferCode.Close_Account,
+        flags: TransferFlags.closing_credit | TransferFlags.pending,
+      }
+      const transferErrors = await this.deps.client.createTransfers([closingTransfer])
+      const fatalErrors = transferErrors.reduce((acc, curr) => {
+        acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
+        return acc
+      }, [])
+
+      if (fatalErrors.length > 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+        }
+      }
+
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
   public async disableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
-    throw new Error('not implemented')
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(cmd.accountId)
+    const accountId = BigInt(cmd.accountId)
+
+    try {
+      logger.debug(`disableDfspAccount() - disabling dfsp: ${cmd.dfspId} accountId: ${cmd.accountId}`)
+
+      // Only the Deposit and Unrestricted Accounts can be enabled/disabled
+      const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
+      if (specAccounts.length === 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`disableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
+        }
+      }
+
+      // Match the accountId to a specific spec, so we can pull out currency
+      let spec: SpecAccount
+      let accountToClose: AccountCode.Deposit | AccountCode.Unrestricted
+      specAccounts.forEach(specAccount => {
+        if (specAccount.deposit === accountId) {
+          spec = specAccount
+          accountToClose = AccountCode.Deposit
+          return
+        }
+        if (specAccount.unrestricted === accountId) {
+          spec = specAccount
+          accountToClose = AccountCode.Unrestricted
+          return
+        }
+      })
+      if (!spec) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`disableDfspAccount() - account id not found, or is not Deposit or Unrestricted.`)
+        }
+      }
+
+      const ledgerOperation = this.currencyManager.getLedgerOperation(spec.currency)
+
+      // Create a closing transfer to mark this Account as deactivated
+      const closingTransfer: Transfer = {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.unrestrictedLock,
+        credit_account_id: accountToClose === AccountCode.Deposit ? spec.deposit : spec.unrestricted,
+        amount: 0n,
+        ledger: ledgerOperation,
+        code: TransferCode.Close_Account,
+        flags: TransferFlags.closing_credit | TransferFlags.pending,
+      }
+      const transferErrors = await this.deps.client.createTransfers([closingTransfer])
+      const fatalErrors = transferErrors.reduce((acc, curr) => {
+        acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
+        return acc
+      }, [])
+
+      if (fatalErrors.length > 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+        }
+      }
+
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
   public async deposit(cmd: DepositCommand): Promise<DepositResponse> {
@@ -591,7 +748,7 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.reason)
 
     try {
-      const netDebitCapInternal = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
+      const netDebitCapInternal = await this._getNetDebitCapInternal(cmd.currency, cmd.dfspId)
       const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
       if (specAccounts.length === 0) {
         throw new Error(`no dfspId found: ${cmd.dfspId}`)
@@ -753,7 +910,7 @@ export default class TigerBeetleLedger implements Ledger {
       }
       const spec = specAccountResult
       const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
-      const netDebitCap = await this._getNetDebitCapInteral(cmd.currency, cmd.dfspId)
+      const netDebitCap = await this._getNetDebitCapInternal(cmd.currency, cmd.dfspId)
       const assetScale = this.currencyManager.getAssetScale(cmd.currency)
       const withdrawAmountTigerBeetle = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
 
@@ -1047,7 +1204,7 @@ export default class TigerBeetleLedger implements Ledger {
         error: err
       }
     }
-  } 
+  }
 
   public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
     assert(cmd.currency)
@@ -1402,7 +1559,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  private async _getNetDebitCapInteral(currency: string, dfspId: string): Promise<InternalNetDebitCap> {
+  private async _getNetDebitCapInternal(currency: string, dfspId: string): Promise<InternalNetDebitCap> {
     const ids = await this.deps.specStore.getAccountSpec(dfspId, currency)
     assert(ids.type === 'SpecAccount', `Could not find spec for dfsp + currency: ${dfspId}, ${currency}`)
 
@@ -1421,7 +1578,7 @@ export default class TigerBeetleLedger implements Ledger {
       flags: AccountFilterFlags.credits | AccountFilterFlags.reversed,
     })
     if (transfers.length === 0) {
-      throw new Error(`no _getNetDebitCapInteral() no net debit cap transfers found for account: ${ids.netDebitCap}`)
+      throw new Error(`no _getNetDebitCapInternal() no net debit cap transfers found for account: ${ids.netDebitCap}`)
     }
     assert(transfers.length === 1, 'Expected to find only 1 transfer')
     const amount = transfers[0].amount
@@ -1464,7 +1621,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     try {
-      const internalNetDebitCap = await this._getNetDebitCapInteral(query.currency, query.dfspId)
+      const internalNetDebitCap = await this._getNetDebitCapInternal(query.currency, query.dfspId)
 
       if (internalNetDebitCap.type === 'UNLIMITED') {
         return {
@@ -2451,7 +2608,7 @@ export default class TigerBeetleLedger implements Ledger {
         code: acc.code,
         currency: acc.currency,
         status: (acc.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
-        
+
         realCreditsPending: realCreditsPending,
         realDebitsPending: realDebitsPending,
         realCreditsPosted: realCreditsPosted,
