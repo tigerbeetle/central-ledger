@@ -1,13 +1,8 @@
 import assert from 'assert';
 import { randomUUID } from 'crypto';
 import { after, before, describe, it } from 'node:test';
-import path from 'path';
 import { Ledger } from '../../domain/ledger-v2/Ledger';
-import Db from '../../lib/db';
-import { makeConfig } from '../../shared/config/resolver';
-import { logger } from '../../shared/logger';
-import { initializeCache } from '../../shared/setup-new';
-import { HarnessApi, HarnessApiConfig } from '../../testing/harness/harness-api';
+import { IntegrationHarness } from '../../testing/harness/harness';
 import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 import { TestUtils } from '../../testing/testutils';
 import * as snapshots from './__snapshots__/handler.int.snapshots';
@@ -24,79 +19,21 @@ type GetAccountResponseDTO = {
 }
 
 describe('api/participants/handler', () => {
-  let harnessApi: HarnessApi
-  let ledger: Ledger
-  let participantHandler: ParticipantAPIHandlerV2 = new ParticipantAPIHandlerV2()
+  let harness: IntegrationHarness;
+  let ledger: Ledger;
+  let participantHandler: ParticipantAPIHandlerV2 = new ParticipantAPIHandlerV2();
 
   before(async () => {
-    try {
-      const projectRoot = path.join(__dirname, '../../..')
+    harness = await IntegrationHarness.create({
+      hubCurrencies: ['USD', 'KES']
+    });
 
-      const applicationConfig = makeConfig()
-      // TODO: figure out a nicer way to override these sorts of config options
-      applicationConfig.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS = [
-        {
-          currency: 'USD',
-          assetScale: 4,
-          clearingLedgerId: 12,
-          settlementLedgerId: 13,
-          controlLedgerId: 14,
-
-          ledgerOperation: 1001,
-          ledgerControl: 2001,
-          accountIdSettlementBalance: 123098124n
-        },
-        {
-          currency: 'KES',
-          assetScale: 4,
-          clearingLedgerId: 22,
-          settlementLedgerId: 23,
-          controlLedgerId: 24,
-          ledgerOperation: 1002,
-          ledgerControl: 2002,
-          accountIdSettlementBalance: 9253488424n
-        },
-      ]
-      const config: HarnessApiConfig = {
-        databaseConfig: {
-          databaseName: 'central_ledger_test',
-          mysqlImage: 'mysql:8.0',
-          memorySize: '256m',
-          port: 3307,
-          migration: { type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
-          // migration: { type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql') }
-        },
-        tigerBeetleConfig: {
-          tigerbeetleBinaryPath: path.join(projectRoot, '../../', '.bin/tigerbeetle')
-        },
-        messageBusConfig: {
-          port: 9092,
-          internalPort: 9192
-        },
-        applicationConfig
-      }
-      // TODO(LD): Hopefully we can remove this at some point
-      const participantService = require('../../domain/participant');
-      harnessApi = new HarnessApi(config, Db, participantService);
-
-      const harnessApiResult = await harnessApi.start()
-
-      // Annoying global that needs to be initialized for database calls to work.
-      await initializeCache()
-      ledger = harnessApiResult.ledger
-
-    } catch (err) {
-      logger.error(`before() - failed with error: ${err.message}`)
-      if (err.stack) {
-        logger.error(err.stack)
-      }
-      await harnessApi.teardown()
-    }
-  })
+    ledger = harness.getResources().ledger;
+  });
 
   after(async () => {
-    await harnessApi.teardown()
-  })
+    await harness.teardown();
+  });
 
   // Note: 
   // TigerBeetleLedger has no notion of 'Hub Accounts', so it's not possible to add new hub accounts

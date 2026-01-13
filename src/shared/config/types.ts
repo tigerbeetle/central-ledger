@@ -1,3 +1,4 @@
+export type LedgerType = 'TIGERBEETLE' | 'LEGACY';
 
 interface KafkaTopicTemplate {
   TEMPLATE: string,

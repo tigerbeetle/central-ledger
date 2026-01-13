@@ -1351,6 +1351,100 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
+  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
+    assert(query.currency)
+    assert(query.dfspId)
+
+    const ids = await this.deps.specStore.getAccountSpec(query.dfspId, query.currency)
+    if (ids.type === 'SpecAccountNone') {
+      return {
+        type: 'FAILURE',
+        error: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
+            `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
+              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
+        )
+      }
+    }
+
+    try {
+      const internalNetDebitCap = await this._getNetDebitCapInternal(query.currency, query.dfspId)
+
+      if (internalNetDebitCap.type === 'UNLIMITED') {
+        return {
+          type: 'FAILURE',
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
+          )
+        }
+      }
+
+      const assetScale = this.currencyManager.getAssetScale(query.currency)
+      const value = Number(internalNetDebitCap.amount / BigInt(assetScale))
+      const limit: LegacyLimit = {
+        type: "NET_DEBIT_CAP",
+        value,
+        alarmPercentage: 10
+      }
+
+      return {
+        type: 'SUCCESS',
+        result: limit
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  private async _getNetDebitCapInternal(currency: string, dfspId: string): Promise<InternalNetDebitCap> {
+    const ids = await this.deps.specStore.getAccountSpec(dfspId, currency)
+    assert(ids.type === 'SpecAccount', `Could not find spec for dfsp + currency: ${dfspId}, ${currency}`)
+
+    // Net Debit Cap is defined as the amount of the last transfer in the account
+    // + code. If the transfer code === 8, then we consider the amount, if it is 9, then
+    // we consider the net debit cap to be unlimited.
+    const transfers = await this.deps.client.getAccountTransfers({
+      account_id: ids.netDebitCap,
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      code: 0,
+      timestamp_min: 0n,
+      timestamp_max: 0n,
+      limit: 1,
+      flags: AccountFilterFlags.credits | AccountFilterFlags.reversed,
+    })
+    if (transfers.length === 0) {
+      throw new Error(`no _getNetDebitCapInternal() no net debit cap transfers found for account: ${ids.netDebitCap}`)
+    }
+    assert(transfers.length === 1, 'Expected to find only 1 transfer')
+    const amount = transfers[0].amount
+    const code = transfers[0].code
+
+    switch (code) {
+      case TransferCode.Net_Debit_Cap_Set_Unlimited: {
+        assert(amount === 0n, 'Expected amount to be 0 for unlimited net debit cap transfer')
+
+        return {
+          type: 'UNLIMITED'
+        }
+      }
+      case TransferCode.Net_Debit_Cap_Set_Limited: {
+        return {
+          type: 'LIMITED',
+          amount,
+        }
+      }
+      default: {
+        throw new Error(`unexpected code: ${code} for net debit cap transfer.`)
+      }
+    }
+  }
+
   public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LegacyLedgerDfsp>> {
     try {
       const specDfsp = await this.deps.specStore.queryDfsp(query.dfspId)
@@ -1594,99 +1688,9 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  private async _getNetDebitCapInternal(currency: string, dfspId: string): Promise<InternalNetDebitCap> {
-    const ids = await this.deps.specStore.getAccountSpec(dfspId, currency)
-    assert(ids.type === 'SpecAccount', `Could not find spec for dfsp + currency: ${dfspId}, ${currency}`)
 
-    // Net Debit Cap is defined as the amount of the last transfer in the account
-    // + code. If the transfer code === 8, then we consider the amount, if it is 9, then
-    // we consider the net debit cap to be unlimited.
-    const transfers = await this.deps.client.getAccountTransfers({
-      account_id: ids.netDebitCap,
-      user_data_128: 0n,
-      user_data_64: 0n,
-      user_data_32: 0,
-      code: 0,
-      timestamp_min: 0n,
-      timestamp_max: 0n,
-      limit: 1,
-      flags: AccountFilterFlags.credits | AccountFilterFlags.reversed,
-    })
-    if (transfers.length === 0) {
-      throw new Error(`no _getNetDebitCapInternal() no net debit cap transfers found for account: ${ids.netDebitCap}`)
-    }
-    assert(transfers.length === 1, 'Expected to find only 1 transfer')
-    const amount = transfers[0].amount
-    const code = transfers[0].code
 
-    switch (code) {
-      case TransferCode.Net_Debit_Cap_Set_Unlimited: {
-        assert(amount === 0n, 'Expected amount to be 0 for unlimited net debit cap transfer')
 
-        return {
-          type: 'UNLIMITED'
-        }
-      }
-      case TransferCode.Net_Debit_Cap_Set_Limited: {
-        return {
-          type: 'LIMITED',
-          amount,
-        }
-      }
-      default: {
-        throw new Error(`unexpected code: ${code} for net debit cap transfer.`)
-      }
-    }
-  }
-
-  public async getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>> {
-    assert(query.currency)
-    assert(query.dfspId)
-
-    const ids = await this.deps.specStore.getAccountSpec(query.dfspId, query.currency)
-    if (ids.type === 'SpecAccountNone') {
-      return {
-        type: 'FAILURE',
-        error: ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
-            `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
-              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
-        )
-      }
-    }
-
-    try {
-      const internalNetDebitCap = await this._getNetDebitCapInternal(query.currency, query.dfspId)
-
-      if (internalNetDebitCap.type === 'UNLIMITED') {
-        return {
-          type: 'FAILURE',
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-            `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
-          )
-        }
-      }
-
-      const assetScale = this.currencyManager.getAssetScale(query.currency)
-      const value = Number(internalNetDebitCap.amount / BigInt(assetScale))
-      const limit: LegacyLimit = {
-        type: "NET_DEBIT_CAP",
-        value,
-        alarmPercentage: 10
-      }
-
-      return {
-        type: 'SUCCESS',
-        result: limit
-      }
-    } catch (err) {
-      return {
-        type: 'FAILURE',
-        error: err
-      }
-    }
-  }
 
   /**
    * Clearing Methods
