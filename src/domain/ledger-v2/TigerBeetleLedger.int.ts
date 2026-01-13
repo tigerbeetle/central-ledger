@@ -472,7 +472,7 @@ describe('TigerBeetleLedger', () => {
       assert.strictEqual(duplicateWithdrawalResult.error.message, `transferId: ${withdrawalTransferId} not found`)
     })
 
-    it('disables the Deposit account', async () => {
+    it('fails to disable the Deposit account', async () => {
       // Arrange
       const dfspId = 'dfsp_m'
       const currency = 'USD'
@@ -489,10 +489,10 @@ describe('TigerBeetleLedger', () => {
       })
 
       // Assert
-      assert(disableAccountResult.type === 'SUCCESS')
+      assert(disableAccountResult.type === 'FAILURE')
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
       const updatedDepositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
-      assert.strictEqual(updatedDepositAccount.status, 'DISABLED')
+      assert.strictEqual(updatedDepositAccount.status, 'ENABLED')
     })
 
     it('fails to disable an account for a dfsp that does not exist', async () => {
@@ -539,24 +539,24 @@ describe('TigerBeetleLedger', () => {
 
       await setupDfsp(dfspId, 2500)
       let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
-      const depositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
-      assert(depositAccount, 'deposit account not found')
+      const unrestricted = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
+      assert(unrestricted, 'deposit account not found')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
         dfspId,
-        accountId: Number(depositAccount.id)
+        accountId: Number(unrestricted.id)
       }))
 
       // Act
       const disableAccountResult = await ledger.disableDfspAccount({
         dfspId,
-        accountId: Number(depositAccount.id)
+        accountId: Number(unrestricted.id)
       })
 
       // Assert
       assert(disableAccountResult.type === 'SUCCESS')
       ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
-      const updatedDepositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
-      assert.strictEqual(updatedDepositAccount.status, 'DISABLED')
+      const updatedUnrestricted = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
+      assert.strictEqual(updatedUnrestricted.status, 'DISABLED')
     })
 
     it('enabling an already enabled account is a noop', async () => {
@@ -640,7 +640,7 @@ describe('TigerBeetleLedger', () => {
       assert.strictEqual(updatedUnrestrictedAccount.status, 'ENABLED')
     })
 
-    it('fails to withdraw if the deposit account is disabled', async () => {
+    it('fails to withdraw if the unrestricted account is disabled', async () => {
       // Arrange
       const dfspId = 'dfsp_s'
       const currency = 'USD'
@@ -650,11 +650,11 @@ describe('TigerBeetleLedger', () => {
 
       await setupDfsp(dfspId, depositAmount)
       let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
-      const depositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
-      assert(depositAccount, 'deposit account not found')
+      const unrestricted = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
+      assert(unrestricted, 'unrestricted account not found')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
         dfspId,
-        accountId: Number(depositAccount.id)
+        accountId: Number(unrestricted.id)
       }))
 
       // Act

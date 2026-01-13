@@ -697,10 +697,9 @@ export default class ParticipantAPIHandlerV2 {
           }
 
           if (result.type === 'ALREADY_EXISTS') {
-            throw ErrorHandler.Factory.createFSPIOPError(
-              ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
-              'Transfer with this ID already exists'
-            )
+            // Just log the warning, the previous implementation did this check async, so we never
+            // returned an error
+            Logger.warn('recordFunds() failed silently with ALREADY_EXISTS error')
           }
           return h.response().code(202)
         }

@@ -729,6 +729,12 @@ export default class LegacyLedger implements Ledger {
 
       return Helper.emptyCommandResultSuccess()
     } catch (err) {
+      // Check for duplicate transferId error
+      if (err.code === 'ER_DUP_ENTRY' && err.message?.includes('transferDuplicateCheck.PRIMARY')) {
+        return {
+          type: 'ALREADY_EXISTS'
+        }
+      }
       return Helper.commandResultFailure(err)
     }
   }
@@ -871,8 +877,31 @@ export default class LegacyLedger implements Ledger {
     }
   }
 
-  withdrawAbort(cmd: WithdrawAbortCommand): Promise<WithdrawAbortResponse> {
-    throw new Error('Method not implemented.');
+  public async withdrawAbort(cmd: WithdrawAbortCommand): Promise<WithdrawAbortResponse> {
+    assert(cmd.transferId)
+
+    try {
+      const enums = this.deps.lifecycle.enums
+
+      const payload = {
+        transferId: cmd.transferId,
+        action: Enum.Events.Event.Action.RECORD_FUNDS_OUT_ABORT
+      } as any;
+
+      const now = new Date()
+      const transactionTimestamp = Time.getUTCString(now)
+
+      // Call admin handler directly (bypassing Kafka)
+      await this.deps.lifecycle.adminHandler.changeStatusOfRecordFundsOut(
+        payload,
+        cmd.transferId,
+        transactionTimestamp,
+        enums
+      );
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
   }
 
   public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {

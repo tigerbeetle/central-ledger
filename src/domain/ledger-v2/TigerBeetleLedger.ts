@@ -743,12 +743,10 @@ export default class TigerBeetleLedger implements Ledger {
 
     try {
       const netDebitCapInternal = await this._getNetDebitCapInternal(cmd.currency, cmd.dfspId)
-      const specAccounts = await this.deps.specStore.queryAccounts(cmd.dfspId)
-      if (specAccounts.length === 0) {
+      const spec = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
+      if (spec.type === 'SpecAccountNone' ) {
         throw new Error(`no dfspId found: ${cmd.dfspId}`)
       }
-      const spec = specAccounts[0]
-
       const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
       const assetScale = this.currencyManager.getAssetScale(cmd.currency)
 
@@ -1599,15 +1597,57 @@ export default class TigerBeetleLedger implements Ledger {
    * @description Lookup the accounts for a Dfsp, across all currencies
    */
   public async getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse> {
-    // TODO(LD): Implement this method for TigerBeetle
-    // This would require getting account spec for all currencies for the DFSP
-    // and then looking up all accounts
-    return {
-      type: 'FAILURE',
-      error: ErrorHandler.Factory.createFSPIOPError(
-        ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
-        'getAllDfspAccounts not yet implemented for TigerBeetleLedger'
-      )
+    try {
+      // Get all the spec accounts for the DFSP (across all currencies)
+      const specDfsp = await this.deps.specStore.queryDfsp(query.dfspId)
+      const specAccounts = await this.deps.specStore.queryAccounts(query.dfspId)
+
+      if (specAccounts.length === 0 || specDfsp.type === 'SpecDfspNone') {
+        return {
+          type: 'FAILURE',
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
+            `Accounts not found for dfspId: ${query.dfspId}`
+          )
+        }
+      }
+
+      // Group spec accounts by currency
+      const accountsByCurrency = specAccounts.reduce((acc, specAccount) => {
+        if (!acc[specAccount.currency]) {
+          acc[specAccount.currency] = []
+        }
+        acc[specAccount.currency].push(specAccount)
+        return acc
+      }, {} as Record<string, Array<SpecAccount>>)
+
+      // Process each currency separately and flatten results
+      const allLegacyLedgerAccounts: Array<LegacyLedgerAccount> = []
+
+      for (const currency of Object.keys(accountsByCurrency)) {
+        const currencySpecAccounts = accountsByCurrency[currency]
+
+        // Get the TigerBeetle Accounts for this currency
+        const internalLedgerAccounts = await this._internalAccountsForSpecAccounts(currencySpecAccounts)
+
+        // Map to legacy view (only handles one currency at a time)
+        const legacyLedgerAccounts = this._fromInternalAccountsToLegacyLedgerAccounts(internalLedgerAccounts)
+
+        allLegacyLedgerAccounts.push(...legacyLedgerAccounts)
+      }
+
+      return {
+        type: 'SUCCESS',
+        accounts: allLegacyLedgerAccounts
+      }
+    } catch (error) {
+      return {
+        type: 'FAILURE',
+        error: ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          `Failed to get all accounts: ${error.message}`
+        )
+      }
     }
   }
 
@@ -1765,8 +1805,6 @@ export default class TigerBeetleLedger implements Ledger {
     assert.equal(currencies.length, 1, '_fromInternalAccountsToLegacyLedgerAccounts expects accounts of only 1 currency at a time.')
     const currency = currencies[0]
     const assetScale = this.currencyManager.getAssetScale(currency)
-    // const assetScale = this._assetScaleForCurrency(currency)
-    // const valueDivisor = 10 ** assetScale
 
     const accountUnrestricted: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Unrestricted)
     assert(accountUnrestricted, 'could not find unrestricted account')

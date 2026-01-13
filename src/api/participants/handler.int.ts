@@ -26,7 +26,7 @@ describe('api/participants/handler', () => {
 
   before(async () => {
     harness = await IntegrationHarness.create({
-      ledgerType: 'LEGACY',
+      // ledgerType: 'LEGACY',
       hubCurrencies: ['USD', 'KES']
     });
 
@@ -859,7 +859,7 @@ describe('api/participants/handler', () => {
       ]))
     })
 
-    it.skip('08 depositing with a reused transferId fails', async () => {
+    it('08 depositing with a reused transferId fails', async () => {
       // Arrange
       assert(settlementAccountId, 'value expected from previous `it` block')
 
@@ -882,8 +882,7 @@ describe('api/participants/handler', () => {
         },
         server: { app: { ledger } }
       }
-
-      // Act - First deposit should succeed
+      
       const {
         code: code1,
         body: body1
@@ -897,7 +896,7 @@ describe('api/participants/handler', () => {
       const accountsAfterFirst = await getDFSPAccounts('dfsp_u')
       const settlementAfterFirst = accountsAfterFirst.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0]
 
-      // Act - Second deposit with same transferId should fail (or be idempotent)
+      // Act
       const {
         code: code2,
         body: body2
@@ -905,19 +904,17 @@ describe('api/participants/handler', () => {
         participantHandler.recordFunds(request, h)
       )
 
-      // Assert - Second call should also return 202 (idempotent behavior)
+      // Assert 
       assert.equal(code2, 202)
 
       // Get balance after second deposit
       const accountsAfterSecond = await getDFSPAccounts('dfsp_u')
       const settlementAfterSecond = accountsAfterSecond.filter(acc => acc.ledgerAccountType === 'SETTLEMENT')[0]
-
-      // Balance should not change (idempotent - deposit only applied once)
       assert.equal(settlementAfterFirst.value, settlementAfterSecond.value,
         'Balance should not change when depositing with duplicate transferId')
     })
 
-    it.skip('09 aborts a withdrawal', async () => {
+    it('09 aborts a withdrawal', async () => {
       // Arrange
       assert(settlementAccountId, 'value expected from previous `it` block')
       const transferId = randomUUID()
@@ -994,7 +991,6 @@ describe('api/participants/handler', () => {
   })
 
   describe('Positions', () => {
-
     // shortcuts
     const createDfspForCurrency = async (dfspId: string, currency: string): Promise<void> => {
       const request = {
