@@ -43,12 +43,12 @@ import { logger } from '../../shared/logger';
 import Provisioner, { ProvisionerDependencies, ProvisioningConfig } from '../../shared/provisioner';
 import DFSPProvisioner, { DFSPProvisionerConfig } from '../../testing/dfsp-provisioner';
 import { MojaloopMockQuoteILPResponse, TestUtils } from '../../testing/testutils';
-import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from './LegacyCompatibleLedger';
+import LegacyLedger, { LegacyLedgerDependencies } from './LegacyLedger';
 import { PrepareResultType } from './types';
 import { DatabaseConfig, HarnessDatabase } from '../../testing/harness/harness-database';
 
-describe('LegacyCompatibleLedger', () => {
-  let ledger: LegacyCompatibleLedger;
+describe('LegacyLedger', () => {
+  let ledger: LegacyLedger;
   let config: ApplicationConfig;
   let harness: HarnessDatabase;
   let dbConfig: DatabaseConfig;
@@ -117,7 +117,7 @@ describe('LegacyCompatibleLedger', () => {
         db: Db
       });
 
-      const deps: LegacyCompatibleLedgerDependencies = {
+      const deps: LegacyLedgerDependencies = {
         config,
         knex: Db.getKnex(),
         lifecycle: {
@@ -155,7 +155,7 @@ describe('LegacyCompatibleLedger', () => {
         }
       };
 
-      ledger = new LegacyCompatibleLedger(deps);
+      ledger = new LegacyLedger(deps);
 
       // Provision the switch
       const provisionConfig: ProvisioningConfig = {

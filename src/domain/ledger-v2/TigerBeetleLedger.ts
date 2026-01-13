@@ -56,9 +56,6 @@ import {
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
 
-
-// TODO(LD): rename DfspAccountType?
-// TODO: should we just move this to Helper.accountCodes? Or rename to be AccountCode
 export enum AccountCode {
   Settlement_Balance = 10100,
   Deposit = 10200,
@@ -72,7 +69,7 @@ export enum AccountCode {
   Net_Debit_Cap_Control = 60201,
   Dev_Null = 60300,
 
-  // Remove me
+  // TODO(LD): remove me! 
   TIMEOUT = 9000,
 }
 
@@ -112,6 +109,9 @@ export const TransferCodeDescription = {
   [TransferCode.Close_Account]: 'Close account.',
 }
 
+/**
+ * Handled errors for withdraw funds
+ */
 enum WithdrawPrepareErrorsKnown {
   ACCOUNT_CLOSED,
   INSUFFICIENT_FUNDS,
@@ -124,19 +124,16 @@ enum WithdrawPrepareErrorsKnown {
 interface InternalLedgerAccount extends Account {
   dfspId: string,
   currency: string,
-  // Technically we don't need this since it lives on the account.code, but as a number
+  // Technically we don't need this since it lives on the account.code, but as a number,
+  // but typing this specifically makes life easier.
   accountCode: AccountCode
 }
 
+/**
+ * Internal representation of the Dfsp/Participant Master account
+ */
 interface InternalMasterAccount extends Account {
   dfspId: string,
-}
-
-export interface TigerBeetleLedgerDependencies {
-  config: ApplicationConfig
-  client: Client
-  specStore: SpecStore
-  transferBatcher: TransferBatcher
 }
 
 type InternalNetDebitCap = {
@@ -146,6 +143,13 @@ type InternalNetDebitCap = {
   type: 'UNLIMITED'
 }
 
+export interface TigerBeetleLedgerDependencies {
+  config: ApplicationConfig
+  client: Client
+  specStore: SpecStore
+  transferBatcher: TransferBatcher
+}
+
 export default class TigerBeetleLedger implements Ledger {
   private currencyManager: CurrencyManager
 
@@ -153,9 +157,9 @@ export default class TigerBeetleLedger implements Ledger {
     this.currencyManager = new CurrencyManager(this.deps.config.EXPERIMENTAL.TIGERBEETLE.CURRENCY_LEDGERS)
   }
 
-  /**
-   * Onboarding/Lifecycle Management
-   */
+  // ============================================================================
+  // Lifecycle Methods
+  // ============================================================================
 
   /**
    * @method createHubAccount
@@ -373,56 +377,6 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  private async _closeDfspMasterAccount(masterAccountId: bigint): Promise<DeactivateDfspResponse> {
-    // Create a closing transfer to mark this Dfsp as deactivated
-    const closingTransfer: Transfer = {
-      ...Helper.createTransferTemplate,
-      id: id(),
-      debit_account_id: Helper.accountIds.devNull,
-      credit_account_id: masterAccountId,
-      amount: 0n,
-      ledger: Helper.ledgerIds.globalControl,
-      code: 100,
-      flags: TransferFlags.closing_credit | TransferFlags.pending,
-    }
-    const transferErrors = await this.deps.client.createTransfers([closingTransfer])
-    if (transferErrors.length === 0) {
-      return {
-        type: DeactivateDfspResponseType.SUCCESS
-      }
-    }
-
-    for (const err of transferErrors) {
-      if (err.result === CreateTransferError.debit_account_not_found) {
-        return {
-          type: DeactivateDfspResponseType.CREATE_ACCOUNT
-        }
-      }
-
-      if (err.result === CreateTransferError.ok) {
-        return {
-          type: DeactivateDfspResponseType.SUCCESS
-        }
-      }
-
-      if (err.result === CreateTransferError.credit_account_already_closed) {
-        return {
-          type: DeactivateDfspResponseType.ALREADY_CLOSED
-        }
-      }
-
-      return {
-        type: DeactivateDfspResponseType.FAILED,
-        error: new Error(`_closeDfspMasterAccount failed with unexpected error: ${CreateTransferError[err.result]}`)
-      }
-    }
-    transferErrors.forEach((err, idx) => {
-      if (err.result === CreateTransferError.debit_account_not_found) {
-        return
-      }
-    })
-  }
-
   public async disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
     assert(cmd)
     assert(cmd.dfspId)
@@ -573,6 +527,56 @@ export default class TigerBeetleLedger implements Ledger {
           error: new Error(`enableDfsp failed to void closing transfer with error: ${CreateTransferError[result.result]}`)
         }
     }
+  }
+
+  private async _closeDfspMasterAccount(masterAccountId: bigint): Promise<DeactivateDfspResponse> {
+    // Create a closing transfer to mark this Dfsp as deactivated
+    const closingTransfer: Transfer = {
+      ...Helper.createTransferTemplate,
+      id: id(),
+      debit_account_id: Helper.accountIds.devNull,
+      credit_account_id: masterAccountId,
+      amount: 0n,
+      ledger: Helper.ledgerIds.globalControl,
+      code: 100,
+      flags: TransferFlags.closing_credit | TransferFlags.pending,
+    }
+    const transferErrors = await this.deps.client.createTransfers([closingTransfer])
+    if (transferErrors.length === 0) {
+      return {
+        type: DeactivateDfspResponseType.SUCCESS
+      }
+    }
+
+    for (const err of transferErrors) {
+      if (err.result === CreateTransferError.debit_account_not_found) {
+        return {
+          type: DeactivateDfspResponseType.CREATE_ACCOUNT
+        }
+      }
+
+      if (err.result === CreateTransferError.ok) {
+        return {
+          type: DeactivateDfspResponseType.SUCCESS
+        }
+      }
+
+      if (err.result === CreateTransferError.credit_account_already_closed) {
+        return {
+          type: DeactivateDfspResponseType.ALREADY_CLOSED
+        }
+      }
+
+      return {
+        type: DeactivateDfspResponseType.FAILED,
+        error: new Error(`_closeDfspMasterAccount failed with unexpected error: ${CreateTransferError[err.result]}`)
+      }
+    }
+    transferErrors.forEach((err, idx) => {
+      if (err.result === CreateTransferError.debit_account_not_found) {
+        return
+      }
+    })
   }
 
   public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
@@ -1688,15 +1692,209 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
+  /**
+   * Lookup the SpecDfsp for this dfspId or create a new one
+   */
+  private async _getOrCreateSpecDfsp(dfspId: string): Promise<bigint> {
+    const result = await this.deps.specStore.queryDfsp(dfspId)
+    if (result.type === 'SpecDfsp') {
+      return result.accountId
+    }
 
+    const accountId = Helper.idSmall()
+    await this.deps.specStore.associateDfsp(dfspId, accountId)
+    return accountId
+  }
 
+  private async _internalAccountsForSpecDfsps(specDfsps: Array<SpecDfsp>): Promise<Array<InternalMasterAccount>> {
+    const dfspIdMap: Record<string, null> = {}
+    const accountKeys: Array<string> = []
 
+    const accountIds = specDfsps.map(spec => spec.accountId)
+    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
+    if (accountResult.type === 'FAILURE') {
+      logger.error(`_internalAccountsForSpecDfsps() - failed with error: ${accountResult.error.message}`)
+      throw accountResult.error
+    }
+
+    return accountResult.result.map((account, idx) => {
+      const spec = specDfsps[idx]
+      assert(spec)
+
+      return {
+        ...account,
+        dfspId: spec.dfspId
+      }
+    })
+  }
+
+  private async _internalAccountsForSpecAccounts(specAccounts: Array<SpecAccount>): Promise<Array<InternalLedgerAccount>> {
+    // flat map
+    const buildKey = (dfspId: string, currency: string, code: AccountCode) => `${dfspId};${currency};${code}`
+    const dfspIdMap: Record<string, null> = {}
+    const accountKeys: Array<string> = []
+    const accountIds: Array<bigint> = []
+
+    specAccounts.forEach(specAccount => {
+      dfspIdMap[specAccount.dfspId] = null
+      // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
+      const keys = [
+        // buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Dfsp),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Deposit),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Unrestricted),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Unrestricted_Lock),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Restricted),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Reserved),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Committed_Outgoing),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Net_Debit_Cap),
+      ]
+      const ids = [
+        specAccount.deposit,
+        specAccount.unrestricted,
+        specAccount.unrestrictedLock,
+        specAccount.restricted,
+        specAccount.reserved,
+        specAccount.commitedOutgoing,
+        specAccount.netDebitCap,
+      ]
+
+      accountKeys.push(...keys)
+      accountIds.push(...ids)
+    })
+    const dfspIds = Object.keys(dfspIdMap)
+    logger.debug(`_internalAccountsForSpecAccounts() - found: ${dfspIds.length} unique dfsps.`)
+
+    assert(accountIds.length < 8000, 'Exceeded maximum number of accounts.')
+
+    // Look up TigerBeetle Accounts
+    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
+    if (accountResult.type === 'FAILURE') {
+      logger.error(`_internalAccountsForSpecAccounts() - failed with error: ${accountResult.error.message}`)
+      throw accountResult.error
+    }
+
+    const internalLedgerAccounts: Array<InternalLedgerAccount> = []
+    for (let idx = 0; idx < accountResult.result.length; idx++) {
+      const key = accountKeys[idx]
+      const [dfspId, currency, accountCodeStr] = key.split(';')
+      assert(dfspId)
+      assert(currency)
+      assert(accountCodeStr)
+      const accountCode = parseInt(accountCodeStr) as AccountCode
+      const tigerbeetleAccount = accountResult.result[idx]
+
+      internalLedgerAccounts.push({
+        dfspId,
+        currency,
+        accountCode,
+        ...tigerbeetleAccount
+      })
+    }
+
+    return internalLedgerAccounts
+  }
 
   /**
-   * Clearing Methods
+   * @description Map from an internal TigerBeetle Ledger representation of a LedgerAccount to a
+   *   backwards compatible representation
    */
+  private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>):
+    Array<LegacyLedgerAccount> {
+    const accounts: Array<LegacyLedgerAccount> = []
+    const currencies = [...new Set(input.map(item => item.currency))]
+    input.map(internalAccount => internalAccount.currency)
+    assert.equal(currencies.length, 1, '_fromInternalAccountsToLegacyLedgerAccounts expects accounts of only 1 currency at a time.')
+    const currency = currencies[0]
+    const assetScale = this.currencyManager.getAssetScale(currency)
+    // const assetScale = this._assetScaleForCurrency(currency)
+    // const valueDivisor = 10 ** assetScale
 
-  // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able 
+    const accountUnrestricted: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Unrestricted)
+    assert(accountUnrestricted, 'could not find unrestricted account')
+
+    const accountDeposit: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Deposit)
+    assert(accountDeposit, 'could not find deposit account')
+
+    // Legacy Settlement Balance: How much Dfsp has available to settle.
+    // Was a negative number in the legacy API once the dfsp had deposited funds.
+    const legacySettlementBalancePosted = (accountDeposit.debits_posted - accountDeposit.credits_posted) * BigInt(-1)
+    const legacySettlementBalancePending = (accountDeposit.debits_pending - accountDeposit.credits_pending) * BigInt(-1)
+
+    // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
+    // TODO(LD): I think we need to add together Unrestricted + Restricted
+    const clearingBalancePosted = accountUnrestricted.credits_posted - accountUnrestricted.debits_posted
+    // TODO(LD): This doesn't make any more sense, since we won't use pending/posted
+    // instead this should be the net credit balance of the Reserved account
+    const clearingBalancePending = accountUnrestricted.credits_pending - accountUnrestricted.debits_pending
+    const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
+    const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
+
+    accounts.push({
+      id: accountUnrestricted.id,
+      ledgerAccountType: 'POSITION',
+      currency,
+      isActive: !(accountUnrestricted.flags & AccountFlags.closed),
+      value: Helper.toRealAmount(legacyPositionBalancePosted, assetScale),
+      reservedValue: Helper.toRealAmount(legacyPositionBalancePending, assetScale),
+      // value: convertBigIntToNumber(legacyPositionBalancePosted) / valueDivisor,
+      // reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / valueDivisor,
+      // We don't have this in TigerBeetle, although we could use the created date
+      changedDate: new Date(0)
+    })
+
+    accounts.push({
+      id: accountDeposit.id,
+      ledgerAccountType: 'SETTLEMENT',
+      currency,
+      isActive: !(accountDeposit.flags & AccountFlags.closed),
+      value: Helper.toRealAmount(legacySettlementBalancePosted, assetScale),
+      reservedValue: Helper.toRealAmount(legacySettlementBalancePending, assetScale),
+
+      // value: convertBigIntToNumber(legacySettlementBalancePosted) / valueDivisor,
+      // reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / valueDivisor,
+      // We don't have this in TigerBeetle, although we could use the created date
+      changedDate: new Date(0)
+    })
+
+    return accounts;
+  }
+
+  /**
+   * Maps from an internal TigerBeetle account to a LedgerAccount
+   */
+  private _fromInternalAccountsToLedgerAccounts(input: Array<InternalLedgerAccount>): Array<LedgerAccount> {
+    return input.map(acc => {
+      const assetScale = this.currencyManager.getAssetScale(acc.currency)
+      const realCreditsPending = Helper.toRealAmount(acc.credits_pending, assetScale)
+      const realDebitsPending = Helper.toRealAmount(acc.debits_pending, assetScale)
+      const realCreditsPosted = Helper.toRealAmount(acc.credits_posted, assetScale)
+      const realDebitsPosted = Helper.toRealAmount(acc.debits_posted, assetScale)
+
+      const netCreditsPending = realCreditsPending - realDebitsPending
+      const netDebitsPending = realDebitsPending - realCreditsPending
+
+      const ledgerAccount: LedgerAccount = {
+        id: acc.id,
+        code: acc.code,
+        currency: acc.currency,
+        status: (acc.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
+
+        realCreditsPending: realCreditsPending,
+        realDebitsPending: realDebitsPending,
+        realCreditsPosted: realCreditsPosted,
+        realDebitsPosted: realDebitsPosted,
+      }
+
+      return ledgerAccount
+    })
+
+  }
+
+  // ============================================================================
+  // Clearing Methods
+  // ============================================================================
+
+  // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able
   // to read multiple messages from Kafka at the same point.
 
   // TODO(LD): We need to save the condition for later validation. We can be tricky and put this in
@@ -2195,7 +2393,6 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-
   /**
    * @description Looks up a list of transfers that have timed out.
    */
@@ -2219,7 +2416,7 @@ export default class TigerBeetleLedger implements Ledger {
       if (bookmarkTransfers.length === 0) {
         logger.debug(`sweepTimedOut - no opening bookmark found. creating one now.`)
         // No bookmark transfers exist yet - create one now starting at time=0
-        await this.createOpeningBookmarkTransfer()
+        await this._createOpeningBookmarkTransfer()
 
         bookmarkTransfers = await this.deps.client.queryTransfers(bookmarkQuery)
         if (bookmarkTransfers.length === 0) {
@@ -2392,7 +2589,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  private async createOpeningBookmarkTransfer(): Promise<void> {
+  private async _createOpeningBookmarkTransfer(): Promise<void> {
     const bookmarkControlAcounts: Array<Account> = [
       {
         ...Helper.createAccountTemplate,
@@ -2421,7 +2618,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     if (fatalAccountErrors.length > 0) {
-      throw new Error(`createOpeningBookmarkTransfer() - encountered fatal error when creating bookmark control accounts\n${fatalAccountErrors.join(',')}`)
+      throw new Error(`_createOpeningBookmarkTransfer() - encountered fatal error when creating bookmark control accounts\n${fatalAccountErrors.join(',')}`)
     }
 
     const openingBookmarkTransfer: Transfer = {
@@ -2441,13 +2638,13 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     if (fatalTransferErrors.length > 0) {
-      throw new Error(`createOpeningBookmarkTransfer() - encountered fatal error when creating opening bookmark\n${fatalTransferErrors.join(',')}`)
+      throw new Error(`_createOpeningBookmarkTransfer() - encountered fatal error when creating opening bookmark\n${fatalTransferErrors.join(',')}`)
     }
   }
 
-  /**
-   * Settlement Methods
-   */
+  // ============================================================================
+  // Settlement Methods
+  // ============================================================================
 
   public async closeSettlementWindow(thing: unknown): Promise<unknown> {
     throw new Error('not implemented')
@@ -2460,204 +2657,6 @@ export default class TigerBeetleLedger implements Ledger {
   /**
    * Private Methods
    */
-
-  /**
-   * Lookup the SpecDfsp for this dfspId or create a new one
-   */
-  private async _getOrCreateSpecDfsp(dfspId: string): Promise<bigint> {
-    const result = await this.deps.specStore.queryDfsp(dfspId)
-    if (result.type === 'SpecDfsp') {
-      return result.accountId
-    }
-
-    const accountId = Helper.idSmall()
-    await this.deps.specStore.associateDfsp(dfspId, accountId)
-    return accountId
-  }
-
-  private async _internalAccountsForSpecDfsps(specDfsps: Array<SpecDfsp>): Promise<Array<InternalMasterAccount>> {
-    const dfspIdMap: Record<string, null> = {}
-    const accountKeys: Array<string> = []
-
-    const accountIds = specDfsps.map(spec => spec.accountId)
-    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
-    if (accountResult.type === 'FAILURE') {
-      logger.error(`_internalAccountsForSpecDfsps() - failed with error: ${accountResult.error.message}`)
-      throw accountResult.error
-    }
-
-    return accountResult.result.map((account, idx) => {
-      const spec = specDfsps[idx]
-      assert(spec)
-
-      return {
-        ...account,
-        dfspId: spec.dfspId
-      }
-    })
-  }
-
-  private async _internalAccountsForSpecAccounts(specAccounts: Array<SpecAccount>): Promise<Array<InternalLedgerAccount>> {
-    // flat map
-    const buildKey = (dfspId: string, currency: string, code: AccountCode) => `${dfspId};${currency};${code}`
-    const dfspIdMap: Record<string, null> = {}
-    const accountKeys: Array<string> = []
-    const accountIds: Array<bigint> = []
-
-    specAccounts.forEach(specAccount => {
-      dfspIdMap[specAccount.dfspId] = null
-      // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
-      const keys = [
-        // buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Dfsp),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Deposit),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Unrestricted),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Unrestricted_Lock),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Restricted),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Reserved),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Committed_Outgoing),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Net_Debit_Cap),
-      ]
-      const ids = [
-        specAccount.deposit,
-        specAccount.unrestricted,
-        specAccount.unrestrictedLock,
-        specAccount.restricted,
-        specAccount.reserved,
-        specAccount.commitedOutgoing,
-        specAccount.netDebitCap,
-      ]
-
-      accountKeys.push(...keys)
-      accountIds.push(...ids)
-    })
-    const dfspIds = Object.keys(dfspIdMap)
-    logger.debug(`_internalAccountsForSpecAccounts() - found: ${dfspIds.length} unique dfsps.`)
-
-    assert(accountIds.length < 8000, 'Exceeded maximum number of accounts.')
-
-    // Look up TigerBeetle Accounts
-    const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
-    if (accountResult.type === 'FAILURE') {
-      logger.error(`_internalAccountsForSpecAccounts() - failed with error: ${accountResult.error.message}`)
-      throw accountResult.error
-    }
-
-    const internalLedgerAccounts: Array<InternalLedgerAccount> = []
-    for (let idx = 0; idx < accountResult.result.length; idx++) {
-      const key = accountKeys[idx]
-      const [dfspId, currency, accountCodeStr] = key.split(';')
-      assert(dfspId)
-      assert(currency)
-      assert(accountCodeStr)
-      const accountCode = parseInt(accountCodeStr) as AccountCode
-      const tigerbeetleAccount = accountResult.result[idx]
-
-      internalLedgerAccounts.push({
-        dfspId,
-        currency,
-        accountCode,
-        ...tigerbeetleAccount
-      })
-    }
-
-    return internalLedgerAccounts
-  }
-
-  /**
-   * @description Map from an internal TigerBeetle Ledger representation of a LedgerAccount to a
-   *   backwards compatible representation
-   */
-  private _fromInternalAccountsToLegacyLedgerAccounts(input: Array<InternalLedgerAccount>):
-    Array<LegacyLedgerAccount> {
-    const accounts: Array<LegacyLedgerAccount> = []
-    const currencies = [...new Set(input.map(item => item.currency))]
-    input.map(internalAccount => internalAccount.currency)
-    assert.equal(currencies.length, 1, '_fromInternalAccountsToLegacyLedgerAccounts expects accounts of only 1 currency at a time.')
-    const currency = currencies[0]
-    const assetScale = this.currencyManager.getAssetScale(currency)
-    // const assetScale = this._assetScaleForCurrency(currency)
-    // const valueDivisor = 10 ** assetScale
-
-    const accountUnrestricted: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Unrestricted)
-    assert(accountUnrestricted, 'could not find unrestricted account')
-
-    const accountDeposit: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Deposit)
-    assert(accountDeposit, 'could not find deposit account')
-
-    // Legacy Settlement Balance: How much Dfsp has available to settle.
-    // Was a negative number in the legacy API once the dfsp had deposited funds.
-    const legacySettlementBalancePosted = (accountDeposit.debits_posted - accountDeposit.credits_posted) * BigInt(-1)
-    const legacySettlementBalancePending = (accountDeposit.debits_pending - accountDeposit.credits_pending) * BigInt(-1)
-
-    // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
-    // TODO(LD): I think we need to add together Unrestricted + Restricted
-    const clearingBalancePosted = accountUnrestricted.credits_posted - accountUnrestricted.debits_posted
-    // TODO(LD): This doesn't make any more sense, since we won't use pending/posted
-    // instead this should be the net credit balance of the Reserved account
-    const clearingBalancePending = accountUnrestricted.credits_pending - accountUnrestricted.debits_pending
-    const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
-    const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
-
-    accounts.push({
-      id: accountUnrestricted.id,
-      ledgerAccountType: 'POSITION',
-      currency,
-      isActive: !(accountUnrestricted.flags & AccountFlags.closed),
-      value: Helper.toRealAmount(legacyPositionBalancePosted, assetScale),
-      reservedValue: Helper.toRealAmount(legacyPositionBalancePending, assetScale),
-      // value: convertBigIntToNumber(legacyPositionBalancePosted) / valueDivisor,
-      // reservedValue: convertBigIntToNumber(legacyPositionBalancePending) / valueDivisor,
-      // We don't have this in TigerBeetle, although we could use the created date
-      changedDate: new Date(0)
-    })
-
-    accounts.push({
-      id: accountDeposit.id,
-      ledgerAccountType: 'SETTLEMENT',
-      currency,
-      isActive: !(accountDeposit.flags & AccountFlags.closed),
-      value: Helper.toRealAmount(legacySettlementBalancePosted, assetScale),
-      reservedValue: Helper.toRealAmount(legacySettlementBalancePending, assetScale),
-
-      // value: convertBigIntToNumber(legacySettlementBalancePosted) / valueDivisor,
-      // reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / valueDivisor,
-      // We don't have this in TigerBeetle, although we could use the created date
-      changedDate: new Date(0)
-    })
-
-    return accounts;
-  }
-
-  /**
-   * Maps from an internal TigerBeetle account to a LedgerAccount
-   */
-  private _fromInternalAccountsToLedgerAccounts(input: Array<InternalLedgerAccount>): Array<LedgerAccount> {
-    return input.map(acc => {
-      const assetScale = this.currencyManager.getAssetScale(acc.currency)
-      const realCreditsPending = Helper.toRealAmount(acc.credits_pending, assetScale)
-      const realDebitsPending = Helper.toRealAmount(acc.debits_pending, assetScale)
-      const realCreditsPosted = Helper.toRealAmount(acc.credits_posted, assetScale)
-      const realDebitsPosted = Helper.toRealAmount(acc.debits_posted, assetScale)
-
-      const netCreditsPending = realCreditsPending - realDebitsPending
-      const netDebitsPending = realDebitsPending - realCreditsPending
-
-      const ledgerAccount: LedgerAccount = {
-        id: acc.id,
-        code: acc.code,
-        currency: acc.currency,
-        status: (acc.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
-
-        realCreditsPending: realCreditsPending,
-        realDebitsPending: realDebitsPending,
-        realCreditsPosted: realCreditsPosted,
-        realDebitsPosted: realDebitsPosted,
-      }
-
-      return ledgerAccount
-    })
-
-  }
 
   /**
    * Get the last N transfers from TigerBeetle

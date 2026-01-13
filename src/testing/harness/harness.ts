@@ -3,7 +3,7 @@ import path from 'path';
 import { Client, createClient } from 'tigerbeetle-node';
 import { AdminHandler } from '../../handlers-v2/AdminHandler';
 import { Ledger } from '../../domain/ledger-v2/Ledger';
-import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../../domain/ledger-v2/LegacyCompatibleLedger';
+import LegacyLedger, { LegacyLedgerDependencies } from '../../domain/ledger-v2/LegacyLedger';
 import { PersistedSpecStore } from '../../domain/ledger-v2/SpecStorePersisted';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from '../../domain/ledger-v2/TigerBeetleLedger';
 import { TransferBatcher } from '../../domain/ledger-v2/TransferBatcher';
@@ -334,9 +334,9 @@ export class IntegrationHarness implements Harness {
   }
 
   /**
-   * Create LegacyCompatibleLedger instance
+   * Create LegacyLedger instance
    */
-  private async createLegacyLedger(): Promise<LegacyCompatibleLedger> {
+  private async createLegacyLedger(): Promise<LegacyLedger> {
     // Initialize all cached models
     await EnumCached.initialize();
     await ParticipantCached.initialize();
@@ -366,7 +366,7 @@ export class IntegrationHarness implements Harness {
     const PositionService = require('../../domain/position');
     const prepareModule = require('../../handlers/transfers/prepare');
 
-    const deps: LegacyCompatibleLedgerDependencies = {
+    const deps: LegacyLedgerDependencies = {
       config: this.config,
       knex: Db.getKnex(),
       lifecycle: {
@@ -404,7 +404,7 @@ export class IntegrationHarness implements Harness {
       }
     };
 
-    return new LegacyCompatibleLedger(deps);
+    return new LegacyLedger(deps);
   }
 
   /**

@@ -1,6 +1,6 @@
 import assert from "node:assert"
 import { Ledger } from "src/domain/ledger-v2/Ledger"
-import LegacyCompatibleLedger from "src/domain/ledger-v2/LegacyCompatibleLedger"
+import LegacyLedger from "src/domain/ledger-v2/LegacyLedger"
 import { CreateHubAccountCommand, CreateHubAccountResponse } from "src/domain/ledger-v2/types"
 
 const logger = require('../logger').logger

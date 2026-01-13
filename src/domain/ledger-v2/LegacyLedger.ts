@@ -96,7 +96,7 @@ enum FulfilDuplicateResult {
   DUPLICATED = 'DUPLICATED'
 }
 
-export interface LegacyCompatibleLedgerDependencies {
+export interface LegacyLedgerDependencies {
   config: ApplicationConfig
   knex: Knex
 
@@ -253,12 +253,12 @@ export interface LegacyCompatibleLedgerDependencies {
 
 
 /**
- * @class LegacyCompatibleLedger
- * @description Collects the business logic from all ledger-related activites into a common 
+ * @class LegacyLedger
+ * @description Collects the business logic from all ledger-related activites into a common
  *   interface which can be abstracted out and reimplemented with TigerBeetle
  */
-export default class LegacyCompatibleLedger implements Ledger {
-  constructor(private deps: LegacyCompatibleLedgerDependencies) { }
+export default class LegacyLedger implements Ledger {
+  constructor(private deps: LegacyLedgerDependencies) { }
 
   private async _createHubAccount(accountType: string, currency: string): Promise<void> {
     const participant = await this.deps.lifecycle.participantService.getByName('Hub')
@@ -1089,7 +1089,7 @@ export default class LegacyCompatibleLedger implements Ledger {
     // so for compatibility we are going to keep it this way for now.
     //
     // Ideally we would refactor the positions to not require all of this Kafka context
-    const messageContext = LegacyCompatibleLedger.extractMessageContext(input);
+    const messageContext = LegacyLedger.extractMessageContext(input);
     const { preparedMessagesList } = await this.calculatePreparePositions(payload, messageContext)
     assert(Array.isArray(preparedMessagesList))
     assert(preparedMessagesList.length === 1)
@@ -1722,7 +1722,7 @@ export default class LegacyCompatibleLedger implements Ledger {
   ): Promise<PreparePositionsBatchResult> {
     // this.deps.calculatePreparePositionsBatch expects a whole kafka message
     // so transform the payload to one:
-    const message = LegacyCompatibleLedger.createMinimalPositionKafkaMessage(payload, messageContext)
+    const message = LegacyLedger.createMinimalPositionKafkaMessage(payload, messageContext)
     return this.deps.clearing.calculatePreparePositionsBatch([message])
   }
 

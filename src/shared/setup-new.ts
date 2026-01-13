@@ -13,7 +13,7 @@ const Logger = require('../shared/logger').logger
 import { Enum, Util } from '@mojaloop/central-services-shared';
 import { Kafka } from '@mojaloop/central-services-stream';
 import { AdminHandler } from '../handlers-v2/AdminHandler';
-import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from '../domain/ledger-v2/LegacyCompatibleLedger';
+import LegacyLedger, { LegacyLedgerDependencies } from '../domain/ledger-v2/LegacyLedger';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from '../domain/ledger-v2/TigerBeetleLedger';
 import { PersistedSpecStore } from '../domain/ledger-v2/SpecStorePersisted';
 import { TransferBatcher } from '../domain/ledger-v2/TransferBatcher';
@@ -253,7 +253,7 @@ export async function initialize({
 async function initializeLedger(config: ApplicationConfig): Promise<Ledger> {
   // TODO: Configure the ledgers to run side-by-side
   switch (config.EXPERIMENTAL.LEDGER.PRIMARY) {
-    case 'SQL': return await initializeLegacyCompatibleLedger(config)
+    case 'SQL': return await initializeLegacyLedger(config)
     case 'TIGERBEETLE': return initializeTigerBeetleLedger(config)
     default:
       throw new Error(`initializeLedger uknnown ledger type: ${config.EXPERIMENTAL.LEDGER.PRIMARY}`)
@@ -282,7 +282,7 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
   return new TigerBeetleLedger(tigerBeetleDeps)
 }
 
-async function initializeLegacyCompatibleLedger(config: ApplicationConfig): Promise<LegacyCompatibleLedger> {
+async function initializeLegacyLedger(config: ApplicationConfig): Promise<LegacyLedger> {
   // Existing business logic modules
   const Validator = require('../handlers/transfers/validator')
   const TransferService = require('../domain/transfer/index')
@@ -309,7 +309,7 @@ async function initializeLegacyCompatibleLedger(config: ApplicationConfig): Prom
     db: Db
   });
 
-  const deps: LegacyCompatibleLedgerDependencies = {
+  const deps: LegacyLedgerDependencies = {
     config,
     knex: Db.getKnex(),
     lifecycle: {
@@ -353,7 +353,7 @@ async function initializeLegacyCompatibleLedger(config: ApplicationConfig): Prom
       timeoutService: TimeoutService,
     }
   }
-  return new LegacyCompatibleLedger(deps)
+  return new LegacyLedger(deps)
 }
 
 async function initializeMongoDB(config: ApplicationConfig): Promise<unknown> {

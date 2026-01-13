@@ -2,7 +2,7 @@ import assert from "assert";
 import { Client, createClient } from "tigerbeetle-node";
 import { AdminHandler } from "../../handlers-v2/AdminHandler";
 import { Ledger } from "../../domain/ledger-v2/Ledger";
-import LegacyCompatibleLedger, { LegacyCompatibleLedgerDependencies } from "../../domain/ledger-v2/LegacyCompatibleLedger";
+import LegacyLedger, { LegacyLedgerDependencies } from "../../domain/ledger-v2/LegacyLedger";
 import { PersistedSpecStore } from "../../domain/ledger-v2/SpecStorePersisted";
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from "../../domain/ledger-v2/TigerBeetleLedger";
 import { TransferBatcher } from "../../domain/ledger-v2/TransferBatcher";
@@ -196,7 +196,7 @@ export class HarnessApi implements Harness {
     return new TigerBeetleLedger(deps)
   }
 
-  private async initLegacyLedger(): Promise<LegacyCompatibleLedger> {
+  private async initLegacyLedger(): Promise<LegacyLedger> {
     // Initialize all cached models (same as in setup-new.ts)
     await EnumCached.initialize();
     await ParticipantCached.initialize();
@@ -227,7 +227,7 @@ export class HarnessApi implements Harness {
       db: Db
     });
 
-    const deps: LegacyCompatibleLedgerDependencies = {
+    const deps: LegacyLedgerDependencies = {
       config: this.config.applicationConfig,
       knex: Db.getKnex(),
       lifecycle: {
@@ -265,6 +265,6 @@ export class HarnessApi implements Harness {
       }
     };
 
-    return new LegacyCompatibleLedger(deps)
+    return new LegacyLedger(deps)
   }
 }
