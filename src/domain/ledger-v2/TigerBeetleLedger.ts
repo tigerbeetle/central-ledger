@@ -581,7 +581,7 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.accountId)
     const accountId = BigInt(cmd.accountId)
 
-     try {
+    try {
       logger.debug(`enableDfspAccount() - disabling dfsp: ${cmd.dfspId} accountId: ${cmd.accountId}`)
 
       // Only the Deposit and Unrestricted Accounts can be enabled/disabled
@@ -616,27 +616,48 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       const ledgerOperation = this.currencyManager.getLedgerOperation(spec.currency)
+      // Look up the closing transfer to void it
+      const closingTransfers = (await this.deps.client.getAccountTransfers({
+        account_id: accountId,
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        code: TransferCode.Close_Account,
+        timestamp_min: 0n,
+        timestamp_max: 0n,
+        limit: 10,
+        flags: AccountFilterFlags.credits |
+          AccountFilterFlags.reversed,
+      })).filter(transfer => transfer.flags & TransferFlags.closing_credit)
 
-      // TODO: perform a getAccountTransfers, filter for TransferCode.Close_Account, and find the
-      // latest entry
-
-      // use that entry to get the id of the pending transfer, and then do 
-
-
-
-      // Create a closing transfer to mark this Account as deactivated
-      const closingTransfer: Transfer = {
+      if (closingTransfers.length === 0) {
+        // no transfers found, therefore this account must not be closed
+        // treat is as successful
+        return {
+          type: 'SUCCESS',
+          result: undefined
+        }
+      }
+      const lastClosingTransfer = closingTransfers[0]
+      // Void the closing transfer to reopen this account.
+      const voidClosingTransfer: Transfer = {
         ...Helper.createTransferTemplate,
         id: id(),
+        pending_id: lastClosingTransfer.id,
         debit_account_id: spec.unrestrictedLock,
         credit_account_id: accountToClose === AccountCode.Deposit ? spec.deposit : spec.unrestricted,
         amount: 0n,
         ledger: ledgerOperation,
         code: TransferCode.Close_Account,
-        flags: TransferFlags.closing_credit | TransferFlags.pending,
+        flags: TransferFlags.void_pending_transfer
       }
-      const transferErrors = await this.deps.client.createTransfers([closingTransfer])
+      const transferErrors = await this.deps.client.createTransfers([voidClosingTransfer])
       const fatalErrors = transferErrors.reduce((acc, curr) => {
+        // not a failure, the account is open
+        if (curr.index === 0 && curr.result === CreateTransferError.pending_transfer_already_voided) {
+          return []
+        }
+
         acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
         return acc
       }, [])
@@ -652,7 +673,6 @@ export default class TigerBeetleLedger implements Ledger {
         type: 'SUCCESS',
         result: undefined
       }
-
     } catch (err) {
       return {
         type: 'FAILURE',
@@ -716,6 +736,16 @@ export default class TigerBeetleLedger implements Ledger {
       }
       const transferErrors = await this.deps.client.createTransfers([closingTransfer])
       const fatalErrors = transferErrors.reduce((acc, curr) => {
+        if (curr.index === 0) {
+          switch (curr.result) {
+            case CreateTransferError.ok:
+            case CreateTransferError.credit_account_already_closed: {
+              return acc
+            }
+            default: { }
+          }
+        }
+
         acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
         return acc
       }, [])
