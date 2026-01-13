@@ -434,7 +434,7 @@ export class TestUtils {
    */
   public static printLedgerDfsps(ledgerDfsps: LedgerDfsp[]): void {
     ledgerDfsps.forEach(ledgerDfsp => {
-      console.log(`=== [${ledgerDfsp.name}] Balance Sheet ===`);
+      console.log(`=== [${ledgerDfsp.name}] Account Summary ===`);
       console.log(`Status: ${ledgerDfsp.status}\n`);
       console.log(TestUtils.formatLedgerDfsps([ledgerDfsp]));
       console.log('\n')

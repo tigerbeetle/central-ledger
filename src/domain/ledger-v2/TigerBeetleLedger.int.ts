@@ -8,7 +8,7 @@ import { TestUtils } from '../../testing/testutils';
 import TigerBeetleLedger from "./TigerBeetleLedger";
 import { AccountCode, PrepareResultType } from './types';
 
-const participantService = require('../participant');
+const participantService = require('../participant')
 
 describe('TigerBeetleLedger', () => {
   let harness: IntegrationHarness;
@@ -21,18 +21,18 @@ describe('TigerBeetleLedger', () => {
         { dfspId: 'dfsp_a', currencies: ['USD'], startingDeposits: [100000] },
         { dfspId: 'dfsp_b', currencies: ['USD'], startingDeposits: [100000] }
       ]
-    });
+    })
 
     ledger = harness.getResources().ledger as TigerBeetleLedger;
-  });
+  })
 
   after(async () => {
-    await harness.teardown();
-  });
+    await harness.teardown()
+  })
 
   describe('lifecycle', () => {
     const setupDfsp = async (dfspId: string, depositAmount: number, currency: string = 'USD') => {
-      await participantService.ensureExists(dfspId);
+      await participantService.ensureExists(dfspId)
       TestUtils.unwrapSuccess(await ledger.createDfsp({
         dfspId,
         currencies: [currency]
@@ -56,7 +56,7 @@ describe('TigerBeetleLedger', () => {
       await setupDfsp(dfspId, depositAmount)
 
       // Assert
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,0,0,10000;
         USD,20100,0,0,0,10000,10000;
@@ -76,7 +76,7 @@ describe('TigerBeetleLedger', () => {
       }))
 
       // Assert
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,0,0,10000;
         USD,20100,0,4000,0,10000,6000;
@@ -95,7 +95,7 @@ describe('TigerBeetleLedger', () => {
       }))
 
       // Assert: Query DFSP after limit adjustment
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,0,0,10000;
         USD,20100,0,4000,0,14000,10000;
@@ -135,7 +135,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD';
 
       // Arrange: Create participant and DFSP
-      await participantService.ensureExists(dfspId);
+      await participantService.ensureExists(dfspId)
       TestUtils.unwrapSuccess(await ledger.createDfsp({
         dfspId,
         currencies: [currency]
@@ -158,7 +158,7 @@ describe('TigerBeetleLedger', () => {
       }))
 
       // Assert
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,11000,0,0,11000;
         USD,20100,0,1000,0,11000,10000;
@@ -179,7 +179,7 @@ describe('TigerBeetleLedger', () => {
       }))
 
       // Assert
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,13000,0,0,13000;
         USD,20100,0,4000,0,14000,10000;
@@ -199,7 +199,7 @@ describe('TigerBeetleLedger', () => {
       const transferId = '123456'
 
       // Arrange: Create participant and DFSP
-      await participantService.ensureExists(dfspId);
+      await participantService.ensureExists(dfspId)
       TestUtils.unwrapSuccess(await ledger.createDfsp({
         dfspId,
         currencies: [currency]
@@ -243,7 +243,7 @@ describe('TigerBeetleLedger', () => {
         currency,
         amount: netDebitCap
       }))
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,0,0,10000;
         USD,20100,0,5000,0,10000,5000;
@@ -262,7 +262,7 @@ describe('TigerBeetleLedger', () => {
         amount: withdrawAmount,
         reason: 'Test withdrawal'
       })
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,6000,0,4000;
         USD,20100,6000,5000,0,15000,4000;
@@ -298,7 +298,7 @@ describe('TigerBeetleLedger', () => {
         amount: withdrawAmount,
         reason: 'Test withdrawal'
       }))
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,6000,0,4000;
         USD,20100,6000,5000,0,15000,4000;
@@ -313,7 +313,7 @@ describe('TigerBeetleLedger', () => {
       const withdrawCommitResult = await ledger.withdrawCommit({
         transferId: withdrawalTransferId,
       })
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,0,6000,4000;
         USD,20100,0,11000,0,15000,4000;
@@ -425,7 +425,7 @@ describe('TigerBeetleLedger', () => {
         amount: withdrawAmount,
         reason: 'Test withdrawal'
       }))
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,6000,0,4000;
         USD,20100,6000,5000,0,15000,4000;
@@ -440,7 +440,7 @@ describe('TigerBeetleLedger', () => {
       const withdrawCommitResult = await ledger.withdrawAbort({
         transferId: withdrawalTransferId,
       })
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       unwrapSnapshot(checkSnapshotLedgerDfsp(ledgerDfsp, `
         USD,10200,0,10000,0,0,10000;
         USD,20100,0,5000,0,15000,10000;
@@ -478,7 +478,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD'
 
       await setupDfsp(dfspId, 2500)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const depositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
       assert(depositAccount, 'deposit account not found')
 
@@ -490,7 +490,7 @@ describe('TigerBeetleLedger', () => {
 
       // Assert
       assert(disableAccountResult.type === 'FAILURE')
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const updatedDepositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
       assert.strictEqual(updatedDepositAccount.status, 'ENABLED')
     })
@@ -514,7 +514,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD'
 
       await setupDfsp(dfspId, 2500)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const restrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Restricted)
       assert(restrictedAccount, 'deposit account not found')
 
@@ -538,7 +538,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD'
 
       await setupDfsp(dfspId, 2500)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const unrestricted = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert(unrestricted, 'deposit account not found')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
@@ -554,7 +554,7 @@ describe('TigerBeetleLedger', () => {
 
       // Assert
       assert(disableAccountResult.type === 'SUCCESS')
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const updatedUnrestricted = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert.strictEqual(updatedUnrestricted.status, 'DISABLED')
     })
@@ -565,7 +565,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD'
 
       await setupDfsp(dfspId, 2500)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const unrestrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert(unrestrictedAccount, 'unrestricted account not found')
 
@@ -577,7 +577,7 @@ describe('TigerBeetleLedger', () => {
 
       // Assert
       assert(enableDfspAccountResult.type === 'SUCCESS')
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const updatedUnrestrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
       assert.strictEqual(updatedUnrestrictedAccount.status, 'ENABLED')
     })
@@ -588,7 +588,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD'
 
       await setupDfsp(dfspId, 2500)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const unrestrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert(unrestrictedAccount, 'unrestricted account not found')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
@@ -604,7 +604,7 @@ describe('TigerBeetleLedger', () => {
 
       // Assert
       assert(enableDfspAccountResult.type === 'SUCCESS')
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const updatedUnrestrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
       assert.strictEqual(updatedUnrestrictedAccount.status, 'ENABLED')
     })
@@ -615,7 +615,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD'
 
       await setupDfsp(dfspId, 2500)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const unrestrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert(unrestrictedAccount, 'unrestricted account not found')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
@@ -635,7 +635,7 @@ describe('TigerBeetleLedger', () => {
 
       // Assert
       assert(enableDfspAccountResult.type === 'SUCCESS')
-      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const updatedUnrestrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
       assert.strictEqual(updatedUnrestrictedAccount.status, 'ENABLED')
     })
@@ -649,7 +649,7 @@ describe('TigerBeetleLedger', () => {
       const withdrawalTransferId = randomUUID()
 
       await setupDfsp(dfspId, depositAmount)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const unrestricted = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert(unrestricted, 'unrestricted account not found')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
@@ -683,7 +683,7 @@ describe('TigerBeetleLedger', () => {
       const withdrawalTransferId = randomUUID()
 
       await setupDfsp(dfspId, depositAmount)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }));
+      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const unrestrictedAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert(unrestrictedAccount, 'unrestricted account not found')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
@@ -804,12 +804,12 @@ describe('TigerBeetleLedger', () => {
       const input = TestUtils.buildValidPrepareInput(transferId, payload)
 
       // Act
-      const result = await ledger.prepare(input);
+      const result = await ledger.prepare(input)
 
       // Assert
-      assert.ok(result);
-      assert.equal(result.type, PrepareResultType.PASS);
-    });
+      assert.ok(result)
+      assert.equal(result.type, PrepareResultType.PASS)
+    })
 
     it('02 fulfill transfer', async () => {
       // Arrange
@@ -821,11 +821,11 @@ describe('TigerBeetleLedger', () => {
       const input = TestUtils.buildValidFulfilInput(transferId, payload)
 
       // Act
-      const result = await ledger.fulfil(input);
+      const result = await ledger.fulfil(input)
 
       // Assert
-      assert.ok(result);
-      assert.equal(result.type, PrepareResultType.PASS);
-    });
-  });
+      assert.ok(result)
+      assert.equal(result.type, PrepareResultType.PASS)
+    })
+  })
 })
