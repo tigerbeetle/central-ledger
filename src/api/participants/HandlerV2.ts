@@ -728,10 +728,9 @@ export default class ParticipantAPIHandlerV2 {
           }
 
           if (result.type === 'INSUFFICIENT_FUNDS') {
-            throw ErrorHandler.Factory.createFSPIOPError(
-              ErrorHandler.Enums.FSPIOPErrorCodes.PAYER_FSP_INSUFFICIENT_LIQUIDITY,
-              `Insufficient funds for withdrawal. Available: ${result.availableBalance}, Requested: ${result.requestedAmount}`
-            )
+            // Just log the warning, the previous implementation did this check async, so we never
+            // returned an error
+            Logger.warn('recordFunds() failed silently with INSUFFICENT_FUNDS error')
           }
 
           return h.response().code(202)

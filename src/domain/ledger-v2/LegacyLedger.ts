@@ -102,10 +102,19 @@ export interface ParticipantServiceAccount {
 }
 
 export interface TransferStateChange {
-  transferId: string;
-  transferStateId: string | number;
-  reason?: string;
-  createdDate?: string;
+  transferId: string
+  transferStateId: string | number
+  reason?: string
+  createdDate?: string
+}
+
+export interface TransferStateChangeRow {
+  transferStateChangeId: number
+  transferId: string
+  transferStateId: string
+  reason?: string
+  createdDate: Date
+  enumeration: string
 }
 
 export interface Extension {
@@ -297,7 +306,7 @@ export interface LegacyLedgerDependencies {
       reconciliationTransferPrepare: (payload: any, transactionTimestamp: string, enums: any, trx?: any) => Promise<number>
       reconciliationTransferReserve: (payload: any, transactionTimestamp: string, enums: any, trx?: any) => Promise<number>
       reconciliationTransferCommit: (payload: any, transactionTimestamp: string, enums: any, trx?: any) => Promise<any>
-      getTransferStateByTransferId: (transferId: string) => Promise<string>
+      getTransferStateByTransferId: (transferId: string) => Promise<TransferStateChangeRow>
       getById: (transferId: string) => Promise<any>
     }
     adminHandler: AdminHandler
@@ -823,18 +832,9 @@ export default class LegacyLedger implements Ledger {
 
       // Check if the withdrawal was aborted due to insufficient funds
       const transferState = await this.deps.lifecycle.transferFacade.getTransferStateByTransferId(cmd.transferId)
-      if (transferState === 'ABORTED_REJECTED') {
-        // Get current balance for error message
-        const currentPosition = await this.deps.knex('participantPosition')
-          .join('participantCurrency', 'participantPosition.participantCurrencyId', 'participantCurrency.participantCurrencyId')
-          .where('participantCurrency.participantCurrencyId', accountMatched.participantCurrencyId)
-          .select('participantPosition.value')
-          .first();
-
+      if (transferState.transferStateId === 'ABORTED_REJECTED') {
         return {
-          type: 'INSUFFICIENT_FUNDS',
-          availableBalance: Math.abs(currentPosition?.value || 0),
-          requestedAmount: cmd.amount
+          type: 'INSUFFICIENT_FUNDS'
         }
       }
 

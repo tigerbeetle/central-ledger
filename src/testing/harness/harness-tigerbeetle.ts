@@ -30,7 +30,7 @@ export class HarnessTigerBeetle implements Harness {
 
   public async start(): Promise<TigerBeetleConfig> {
     const clusterId = 0n;
-    const port = await TestUtils.findAvailablePort(10243)
+    const port = await TestUtils.randomAvailablePort()
 
     // Create temporary data file for TigerBeetle
     const tempDir = os.tmpdir();
@@ -104,6 +104,9 @@ export class HarnessTigerBeetle implements Harness {
         logger.info(`TigerBeetle server process exited with code ${code} and signal ${signal}`);
       });
 
+      // Wait for TigerBeetle to be ready before returning
+      await this.waitForTigerBeetleReady(port);
+
       return {
         clusterId,
         address: [`${port}`],
@@ -115,23 +118,31 @@ export class HarnessTigerBeetle implements Harness {
   }
 
   public async teardown(): Promise<void> {
-    // TODO(LD): This isn't tearing down properly!
     if (this.process) {
       try {
+        logger.debug('Sending SIGTERM to TigerBeetle process');
         this.process.kill('SIGTERM');
+
         await new Promise<void>((resolve) => {
-          if (this.process) {
-            this.process.on('close', () => resolve());
-            setTimeout(() => {
-              if (this.process && !this.process.killed) {
-                this.process.kill('SIGKILL');
-              }
-              resolve();
-            }, 5000);
-          } else {
+          if (!this.process) {
             resolve();
+            return;
           }
+
+          const timeout = setTimeout(() => {
+            if (this.process && !this.process.killed) {
+              logger.warn('TigerBeetle did not exit gracefully, sending SIGKILL');
+              this.process.kill('SIGKILL');
+            }
+            resolve();
+          }, 5000);
+
+          this.process.on('close', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
         });
+
         logger.info('TigerBeetle process terminated');
       } catch (error) {
         logger.error(`Failed to terminate TigerBeetle process: ${error.message}`);

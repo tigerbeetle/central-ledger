@@ -654,19 +654,30 @@ export default class TigerBeetleLedger implements Ledger {
 
       // Match the accountId to a specific spec, so we can pull out currency
       let spec: SpecAccount
-      let accountToClose: AccountCode.Deposit | AccountCode.Unrestricted
+      let accountToClose: AccountCode.Unrestricted
+      let matchWrongAccount = false
       specAccounts.forEach(specAccount => {
-        if (specAccount.deposit === accountId) {
-          spec = specAccount
-          accountToClose = AccountCode.Deposit
-          return
-        }
+        // Only allow closing the unrestricted account
         if (specAccount.unrestricted === accountId) {
           spec = specAccount
           accountToClose = AccountCode.Unrestricted
           return
         }
+
+        if (specAccount.deposit === accountId) {
+          matchWrongAccount = true
+          return
+        }
       })
+
+      // Tried to close the deposit account (which is mapped to the Settlement account)
+      if (matchWrongAccount) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`Only position account update is permitted`)
+        }
+      }
+
       if (!spec) {
         return {
           type: 'FAILURE',
@@ -681,7 +692,7 @@ export default class TigerBeetleLedger implements Ledger {
         ...Helper.createTransferTemplate,
         id: id(),
         debit_account_id: spec.unrestrictedLock,
-        credit_account_id: accountToClose === AccountCode.Deposit ? spec.deposit : spec.unrestricted,
+        credit_account_id: spec.unrestricted,
         amount: 0n,
         ledger: ledgerOperation,
         code: TransferCode.Close_Account,
@@ -1039,9 +1050,6 @@ export default class TigerBeetleLedger implements Ledger {
           case WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS: {
             return {
               type: 'INSUFFICIENT_FUNDS',
-              // TODO(LD): remove these if possible!
-              requestedAmount: -1,
-              availableBalance: -1,
             }
           }
           case WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED: {
@@ -1323,6 +1331,8 @@ export default class TigerBeetleLedger implements Ledger {
     try {
       const internalNetDebitCap = await this._getNetDebitCapInternal(query.currency, query.dfspId)
 
+      // TigerBeetleLedger sees this internally as an Unlimited limit, but to match the Admin API
+      // we consider it a missing limit.
       if (internalNetDebitCap.type === 'UNLIMITED') {
         return {
           type: 'FAILURE',
@@ -1334,7 +1344,7 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       const assetScale = this.currencyManager.getAssetScale(query.currency)
-      const value = Number(internalNetDebitCap.amount / BigInt(assetScale))
+      const value = Helper.toRealAmount(internalNetDebitCap.amount, assetScale)
       const limit: LegacyLimit = {
         type: "NET_DEBIT_CAP",
         value,
@@ -1761,22 +1771,32 @@ export default class TigerBeetleLedger implements Ledger {
     const accountUnrestricted: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Unrestricted)
     assert(accountUnrestricted, 'could not find unrestricted account')
 
+    const accountRestricted: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Restricted)
+    assert(accountRestricted, 'could not find restricted account')
+
     const accountDeposit: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Deposit)
     assert(accountDeposit, 'could not find deposit account')
 
     // Legacy Settlement Balance: How much Dfsp has available to settle.
     // Was a negative number in the legacy API once the dfsp had deposited funds.
-    const legacySettlementBalancePosted = (accountDeposit.debits_posted - accountDeposit.credits_posted) * BigInt(-1)
-    const legacySettlementBalancePending = (accountDeposit.debits_pending - accountDeposit.credits_pending) * BigInt(-1)
+    const legacySettlementBalancePosted = (accountDeposit.debits_posted - accountDeposit.credits_posted) * -1n
+    // TODO(LD): This doesn't make any more sense, since we won't use pending/posted
+    const legacySettlementBalancePending = (accountDeposit.debits_pending - accountDeposit.credits_pending) * -1n
 
     // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
-    // TODO(LD): I think we need to add together Unrestricted + Restricted
-    const clearingBalancePosted = accountUnrestricted.credits_posted - accountUnrestricted.debits_posted
-    // TODO(LD): This doesn't make any more sense, since we won't use pending/posted
+    const clearingBalancePosted = accountUnrestricted.credits_posted - accountUnrestricted.debits_posted 
+     + accountRestricted.credits_posted - accountRestricted.debits_posted
+    
     // instead this should be the net credit balance of the Reserved account
     const clearingBalancePending = accountUnrestricted.credits_pending - accountUnrestricted.debits_pending
     const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
     const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
+
+    
+    // Funds withdrawal internally uses Pending/Posted, but doesn't expose this in the API
+    const settlementValue = -1n * (accountDeposit.debits_posted - accountDeposit.credits_pending - accountDeposit.credits_posted)
+    // I'm pretty sure this should always be 0
+    const settlementReservedValue = 0
 
     accounts.push({
       id: accountUnrestricted.id,
@@ -1796,8 +1816,8 @@ export default class TigerBeetleLedger implements Ledger {
       ledgerAccountType: 'SETTLEMENT',
       currency,
       isActive: !(accountDeposit.flags & AccountFlags.closed),
-      value: Helper.toRealAmount(legacySettlementBalancePosted, assetScale),
-      reservedValue: Helper.toRealAmount(legacySettlementBalancePending, assetScale),
+      value: Helper.toRealAmount(settlementValue, assetScale),
+      reservedValue: settlementReservedValue,
 
       // value: convertBigIntToNumber(legacySettlementBalancePosted) / valueDivisor,
       // reservedValue: convertBigIntToNumber(legacySettlementBalancePending) / valueDivisor,

@@ -76,7 +76,6 @@ export interface LegacyLedgerAccount {
   ledgerAccountType: string
   currency: string
   isActive: boolean
-  // TODO(LD): this should be a bigint, shouldn't it?
   value: number
   reservedValue: number
   // TODO(LD): When do we actually use this? What does it mean?
@@ -278,9 +277,6 @@ export interface WithdrawPrepareResponseSuccess {
 
 export interface WithdrawPrepareResponseInsufficientFunds {
   type: 'INSUFFICIENT_FUNDS'
-  // TODO(LD): can we remove this? It's rather hard to get to in TigerBeetle
-  availableBalance: number
-  requestedAmount: number
 }
 
 export interface WithdrawPrepareResponseFailure {
