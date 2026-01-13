@@ -5,8 +5,8 @@ import { CommitTransferDto, CreateTransferDto } from '../../handlers-v2/types';
 import { checkSnapshotLedgerDfsp, unwrapSnapshot } from '../../testing/snapshot';
 import { IntegrationHarness } from '../../testing/harness/harness';
 import { TestUtils } from '../../testing/testutils';
-import TigerBeetleLedger, { AccountCode } from "./TigerBeetleLedger";
-import { PrepareResultType } from './types';
+import TigerBeetleLedger from "./TigerBeetleLedger";
+import { AccountCode, PrepareResultType } from './types';
 
 const participantService = require('../participant');
 

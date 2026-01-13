@@ -51,63 +51,12 @@ import {
   LedgerAccount,
   WithdrawAbortCommand,
   WithdrawAbortResponse,
+  AccountCode,
+  TransferCode,
 } from "./types";
 
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
-
-export enum AccountCode {
-  Settlement_Balance = 10100,
-  Deposit = 10200,
-  Unrestricted = 20100,
-  Unrestricted_Lock = 20101,
-  Restricted = 20200,
-  Reserved = 20300,
-  Committed_Outgoing = 20400,
-  Dfsp = 60100,
-  Net_Debit_Cap = 60200,
-  Net_Debit_Cap_Control = 60201,
-  Dev_Null = 60300,
-
-  // TODO(LD): remove me! 
-  TIMEOUT = 9000,
-}
-
-export enum TransferCode {
-  Deposit = 10001,
-  Withdraw = 20001,
-  Clearing_Reserve = 30001,
-  Clearing_Active_Check = 30002,
-  Clearing_Fulfil = 30003,
-  Clearing_Credit = 30004,
-  Clearing_Reverse = 30005,
-  Settlement_Deposit_Reduce = 40001,
-  Settlement_Deposit_Increase = 40002,
-  Net_Debit_Cap_Lock = 50001,
-  Net_Debit_Cap_Sweep_To_Restricted = 50002,
-  Net_Debit_Cap_Set_Limited = 50004,
-  Net_Debit_Cap_Set_Unlimited = 50005,
-  Net_Debit_Cap_Sweep_To_Unrestricted = 50006,
-  Close_Account = 50007,
-}
-
-export const TransferCodeDescription = {
-  [TransferCode.Deposit]: 'Deposit funds into Unrestricted',
-  [TransferCode.Withdraw]: 'Withdraw funds',
-  [TransferCode.Clearing_Reserve]: 'Reserve funds for Payee Participant.',
-  [TransferCode.Clearing_Active_Check]: 'Ensure both Participants are active.',
-  [TransferCode.Clearing_Fulfil]: 'Fulfil payment.',
-  [TransferCode.Clearing_Credit]: 'Make credit available for transfers',
-  [TransferCode.Clearing_Reverse]: 'Reverse reservation.',
-  [TransferCode.Settlement_Deposit_Reduce]: 'Reduce Deposit amount by sum of debits.',
-  [TransferCode.Settlement_Deposit_Increase]: 'Increase Deposit amount by sum of credits.',
-  [TransferCode.Net_Debit_Cap_Lock]: 'Temporarily lock up to the net debit cap amount.',
-  [TransferCode.Net_Debit_Cap_Sweep_To_Restricted]: 'Sweep whatever remains in Unrestricted to Restricted.',
-  [TransferCode.Net_Debit_Cap_Set_Limited]: 'Set the new Net Debit Cap to a number.',
-  [TransferCode.Net_Debit_Cap_Set_Unlimited]: 'Set the new Net Debit Cap to unlimited.',
-  [TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted]: 'Sweep total balance from Restricted to Unrestricted',
-  [TransferCode.Close_Account]: 'Close account.',
-}
 
 /**
  * Handled errors for withdraw funds
