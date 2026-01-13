@@ -1048,6 +1048,11 @@ export default class TigerBeetleLedger implements Ledger {
             case CreateTransferError.ok: {
               return
             }
+            case CreateTransferError.debit_account_already_closed:
+            case CreateTransferError.credit_account_already_closed: {
+              errorsFatalKnown.push(WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED)
+              break;
+            }
             case CreateTransferError.exists_with_different_flags:
             case CreateTransferError.exists_with_different_pending_id:
             case CreateTransferError.exists_with_different_timeout:
