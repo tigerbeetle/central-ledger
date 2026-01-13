@@ -74,7 +74,7 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig  => {
     SERVER_PRINT_ROUTES_ON_STARTUP: defaultTo(rawConfig.SERVER_PRINT_ROUTES_ON_STARTUP, true),
     EXPERIMENTAL: {
       LEDGER: {
-        PRIMARY: defaultTo(rawConfig.EXPERIMENTAL?.LEDGER?.PRIMARY, 'SQL'),
+        PRIMARY: defaultTo(rawConfig.EXPERIMENTAL?.LEDGER?.PRIMARY, 'LEGACY'),
         SECONDARY: defaultTo(rawConfig.EXPERIMENTAL?.LEDGER?.SECONDARY, 'NONE'),
         TIGERBEETLE_METADATA_STORE: defaultTo(rawConfig.EXPERIMENTAL?.LEDGER?.TIGERBEETLE_METADATA_STORE, 'SQLITE'),
       },

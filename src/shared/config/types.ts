@@ -342,22 +342,22 @@ export interface ApplicationConfig {
     LEDGER: {
       /**
        * Configures the underlying primary ledger.
-       * - `SQL` uses the existing MySQL central-ledger implementation
+       * - `LEGACY` uses the existing MySQL central-ledger implementation
        * - `TIGERBEETLE` uses the TigerBeetle OLTP Database
-       * 
-       * @default 'SQL'
+       *
+       * @default 'LEGACY'
        */
-      PRIMARY: 'SQL' | 'TIGERBEETLE'
+      PRIMARY: LedgerType
 
       /**
-       * Configure a secondary ledger. If configured, the secondary ledger runs alongside the 
-       * primary ledger. 
-       * - When PRIMARY is SQL, SECONDARY MUST be either NONE or TIGERBEETLE
-       * - When PRIMARY is TIGERBEETLE, SECONDARY MUST be either SQL or NONE
-       * 
+       * Configure a secondary ledger. If configured, the secondary ledger runs alongside the
+       * primary ledger.
+       * - When PRIMARY is LEGACY, SECONDARY MUST be either NONE or TIGERBEETLE
+       * - When PRIMARY is TIGERBEETLE, SECONDARY MUST be either LEGACY or NONE
+       *
        * @default 'NONE'
        */
-      SECONDARY: 'SQL' | 'TIGERBEETLE' | 'NONE',
+      SECONDARY: LedgerType | 'NONE',
 
       /**
        * What Database to use to store the Ledger Metadata when the TigerBeetle ledger is enabled
@@ -453,7 +453,7 @@ export interface ApplicationConfig {
      * 
      * For EXTREME_BATCHING=true:
      * - EXPERIMENTAL.LEDGER.PRIMARY = `TIGERBEETLE`
-     * - EXPERIMENTAL.LEDGER.SECONDARY = `NONE` (extreme batching is not supported for the SQL ledger)
+     * - EXPERIMENTAL.LEDGER.SECONDARY = `NONE` (extreme batching is not supported for the LEGACY ledger)
      * - All Kafka consumer and producer batch sizes must be set to 1
      * - ml-api-adapter must also have EXTREME_BATCHING enabled
      * 

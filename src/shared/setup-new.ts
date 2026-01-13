@@ -253,7 +253,7 @@ export async function initialize({
 async function initializeLedger(config: ApplicationConfig): Promise<Ledger> {
   // TODO: Configure the ledgers to run side-by-side
   switch (config.EXPERIMENTAL.LEDGER.PRIMARY) {
-    case 'SQL': return await initializeLegacyLedger(config)
+    case 'LEGACY': return await initializeLegacyLedger(config)
     case 'TIGERBEETLE': return initializeTigerBeetleLedger(config)
     default:
       throw new Error(`initializeLedger uknnown ledger type: ${config.EXPERIMENTAL.LEDGER.PRIMARY}`)
