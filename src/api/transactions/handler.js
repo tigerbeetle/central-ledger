@@ -43,8 +43,7 @@ const getLedger = (request) => {
 const getById = async function (request) {
   try {
 
-    // TODO(LD): Lookup the transfer in the metadata store, and look
-    // for the ilp packet.
+    // TODO(LD): We need to forward this call to the ledger
     const entity = await Transaction.getById(request.params.id)
     if (entity) {
       return await Transaction.getTransactionObject(entity[0].value)

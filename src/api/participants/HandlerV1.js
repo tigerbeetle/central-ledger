@@ -131,7 +131,6 @@ const create = async function (request, h) {
   }
 }
 
-// TODO(LD): I think we need to rewrite this for the case of using LegacyLedger without auto provisioning
 const createHubAccount = async function (request, h) {
   try {
     // start - To Do move to domain

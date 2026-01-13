@@ -31,17 +31,15 @@
 import { FSPIOPError } from "@mojaloop/central-services-error-handling"
 import { Ledger } from "src/domain/ledger-v2/Ledger"
 import { CommandResult } from "src/domain/ledger-v2/types"
-
-// TODO(LD): change to imports!
-const Config = require('../../lib/config')
-const Logger = require('../../shared/logger').logger
-const ErrorHandler = require('@mojaloop/central-services-error-handling')
-const rethrow = require('../../shared/rethrow')
-const MLNumber = require('@mojaloop/ml-number')
-const assert = require('assert')
-const { randomUUID } = require('crypto')
-const { convertBigIntToNumber } = require('../../shared/config/util')
-const ParticipantService = require('../../domain/participant')
+import Config from '../../lib/config'
+import { logger as Logger } from '../../shared/logger'
+import * as ErrorHandler from '@mojaloop/central-services-error-handling'
+import * as rethrow from '../../shared/rethrow'
+import MLNumber from '@mojaloop/ml-number'
+import assert from 'assert'
+import { randomUUID } from 'crypto'
+import { convertBigIntToNumber } from '../../shared/config/util'
+import * as ParticipantService from '../../domain/participant'
 
 const getLedger = (request): Ledger => {
   assert(request, 'request is undefined')
@@ -52,17 +50,16 @@ const getLedger = (request): Ledger => {
 
 export interface IParticipantService {
   ensureExists(name: string): Promise<void>
-  addEndpoint(name: string, payload: { type: string, value: string }): Promise<void>
-  addEndpoints(name: string, endpoints: Array<{ type: string, value: string }>): Promise<Array<any>>
-  getEndpoint(name: string, type: string): Promise<Array<{ name: string, value: string }>>
-  getAllEndpoints(name: string): Promise<Array<{ name: string, value: string }>>
+  addEndpoints(name: string, endpoints: Array<{ type: string, value: string }>): Promise<any>
+  getEndpoint(name: string, type: string): Promise<any>
+  getAllEndpoints(name: string): Promise<any>
 }
 
 interface ParticipantAccount {
   createdBy: string
   createdDate: string | null
   currency: string
-  id: string
+  id: number
   isActive: number
   ledgerAccountType: string
 }
@@ -149,7 +146,7 @@ export default class ParticipantAPIHandlerV2 {
       id: hubUrl,
       // TODO(LD): this could be simply when the first account was created
       created: new Date(),
-      // TODO(LD): Load from some hub account metadata?
+      // Hub can never be deactivated
       isActive: 1,
       // TODO(LD): hardcoded for now
       isProxy: 0,
@@ -420,7 +417,7 @@ export default class ParticipantAPIHandlerV2 {
       const currency = request.query.currency
 
 
-      // TODO(LD): Ideally we would implement this in the getAllDfsps() method itself
+      // Note: Ideally we would implement this in the getAllDfsps() method itself
       // but for now we can stitch this together from a few other methods. The main goal here
       // is to maintain backwards compatibility while not making the surface area of the
       // Ledger interface unnessesarily large.

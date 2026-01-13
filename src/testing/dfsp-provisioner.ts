@@ -73,8 +73,8 @@ export default class DFSPProvisioner {
           return
         }
 
-        // TODO(LD): we need to set this limit for the LegacyLedger because it has a side effect
-        // of enabling the account.
+        // Note: for LegacyLedger, setting the net debit cap has the side-effect of enabling the 
+        // accounts.
         await this.deps.ledger.setNetDebitCap({
           netDebitCapType: "AMOUNT",
           dfspId: config.dfspId,
