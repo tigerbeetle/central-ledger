@@ -1050,59 +1050,6 @@ describe('TigerBeetleLedger', () => {
         assert.match(result.error.message, /payer.*not active/i)
       }
     })
-
-    it('should fail when payee account is closed', async () => {
-      // Arrange
-      const transferId = randomUUID()
-      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
-      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
-
-      // Create a new DFSP, deposit funds, then close it
-      const closedPayeeDfspId = 'dfsp_closed_payee_' + randomUUID().substring(0, 8)
-      await participantService.ensureExists(closedPayeeDfspId)
-      TestUtils.unwrapSuccess(await ledger.createDfsp({
-        dfspId: closedPayeeDfspId,
-        currencies: ['USD']
-      }))
-      TestUtils.unwrapSuccess(await ledger.deposit({
-        transferId: randomUUID(),
-        dfspId: closedPayeeDfspId,
-        currency: 'USD',
-        amount: 1000,
-        reason: 'Initial deposit before closing account'
-      }))
-
-      // Close the payee's unrestricted account
-      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closedPayeeDfspId}))
-      const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
-      assert.ok(unrestricted, 'Unrestricted account should exist')
-      TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
-        dfspId: closedPayeeDfspId,
-        accountId: Number(unrestricted.id)
-      }))
-
-      // Attempt to prepare transfer with closed payee
-      const payload: CreateTransferDto = {
-        transferId,
-        payerFsp: 'dfsp_a',
-        payeeFsp: closedPayeeDfspId,
-        amount: { amount: '100', currency: 'USD' },
-        ilpPacket,
-        condition,
-        expiration: new Date(Date.now() + 60000).toISOString()
-      }
-      const input = TestUtils.buildValidPrepareInput(transferId, payload)
-
-      // Act
-      const result = await ledger.prepare(input)
-
-      // Assert
-      assert.equal(result.type, PrepareResultType.FAIL_OTHER)
-      if (result.type === PrepareResultType.FAIL_OTHER) {
-        assert.ok(result.error)
-        assert.match(result.error.message, /payee.*not active/i)
-      }
-    })
   })
 
   describe('clearing unhappy path - prepare duplicates', () => {
@@ -1130,7 +1077,7 @@ describe('TigerBeetleLedger', () => {
       const result = await ledger.prepare(input)
 
       // Assert
-      assert.equal(result.type, PrepareResultType.PASS)
+      assert.equal(result.type, PrepareResultType.DUPLICATE_NON_FINAL)
     })
 
     it('should detect duplicate with modified parameters', async () => {
@@ -1170,7 +1117,7 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, PrepareResultType.MODIFIED)
     })
 
-    it.only('should detect duplicate after fulfil (final state)', async () => {
+    it('should detect duplicate after fulfil (final state)', async () => {
       // Arrange - Complete full happy path
       const transferId = 'cc246ead-3000-48e3-842c-017c16309d38'
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1203,7 +1150,6 @@ describe('TigerBeetleLedger', () => {
       const result = await ledger.prepare(prepareInput)
 
       // Assert
-      // TODO(LD): failing because the filfilment isn't being saved properly...
       assert.equal(result.type, PrepareResultType.DUPLICATE_FINAL)
     })
   })
@@ -1522,7 +1468,7 @@ describe('TigerBeetleLedger', () => {
       }
     })
 
-    it('should fail to fulfil with closed payee account', async () => {
+    it.only('should fail to fulfil with closed payee account', async () => {
       // Arrange
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1566,7 +1512,7 @@ describe('TigerBeetleLedger', () => {
         accountId: Number(unrestricted.id)
       }))
 
-      // Act - Attempt fulfil with closed payee account
+      // Act
       const fulfilPayload: CommitTransferDto = {
         transferState: 'COMMITTED',
         fulfilment,

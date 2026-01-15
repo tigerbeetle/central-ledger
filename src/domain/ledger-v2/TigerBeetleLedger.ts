@@ -2403,6 +2403,15 @@ export default class TigerBeetleLedger implements Ledger {
       const transferSpecResults = await this.deps.specStore.lookupTransferSpec([input.transferId])
       assert(transferSpecResults.length === 1, `expected transfer spec for id: ${input.transferId}`)
       const transferSpec = transferSpecResults[0]
+      if (transferSpec.type === 'SpecTransferNone') {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
+            `payment metadata not found`
+          ),
+        }
+      }
       assert(transferSpec.type === 'SpecTransfer')
       const ledgerOperation = this.currencyManager.getLedgerOperation(transferSpec.currency)
       const assetScale = this.currencyManager.getAssetScale(transferSpec.currency)
@@ -2608,7 +2617,7 @@ export default class TigerBeetleLedger implements Ledger {
               return
           }
         }
-        if (error.index === 3) {
+        if (error.index === 2) {
           switch (error.result) {
             case CreateTransferError.ok:
               return

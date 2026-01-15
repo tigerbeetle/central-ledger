@@ -351,6 +351,8 @@ export class PersistedSpecStore implements SpecStore {
 
       await this.db.from(TABLE_TRANSFER)
         .insert(records)
+        .onConflict('id')
+        .ignore()
       this.cacheTransfer.put(spec.map(m => ({ type: 'SpecTransfer', ...m })))
 
       return spec.map(m => {

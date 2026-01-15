@@ -24,13 +24,10 @@ export class SpecStoreCacheTransfer {
   get(ids: Array<string>): Array<CacheMissOrHit<SpecTransfer>> {
     const results: Array<CacheMissOrHit<SpecTransfer>> = []
     ids.forEach(id => {
-      console.log(`SpecStoreCacheTransfer.get(): ${id}`)
       if (!this.cacheMap[id]) {
         results.push({ type: 'MISS' })
         return
       }
-
-      console.log(`SpecStoreCacheTransfer.get(): ${id} - ${JSON.stringify(this.cacheMap[id])}`)
 
       results.push({
         type: 'HIT',
@@ -43,8 +40,10 @@ export class SpecStoreCacheTransfer {
 
   put(spec: Array<SpecTransfer>): void {
     spec.forEach(tm => {
-      console.log(`SpecStoreCacheTransfer.put(): ${tm.id}`)
-      console.log(`SpecStoreCacheTransfer.put(): ${tm.id} - ${JSON.stringify(tm)}`)
+      // Don't allow updates, otherwise duplicate and modified transfers could break the cache.
+      if (this.cacheMap[tm.id]) {
+        return
+      }
 
       assert(tm.id)
       assert(tm.payeeId)
@@ -66,8 +65,6 @@ export class SpecStoreCacheTransfer {
   putFulfilments(attachments: Array<AttachTransferSpecFulfilment>): void {
     attachments.forEach(attachment => {
       const existing = this.cacheMap[attachment.id]
-      console.log(`SpecStoreCacheTransfer.putFulfilments(): ${attachment.id}`)
-      console.log(`SpecStoreCacheTransfer.putFulfilments(): ${attachment.id} - ${JSON.stringify(attachment)}`)
       
       // not already cached, no big deal
       if (!existing) {
