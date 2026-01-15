@@ -101,6 +101,59 @@ export class TestUtils {
     return input
   }
 
+  static buildValidAbortInput(transferId: string): FusedFulfilHandlerInput {
+    // Note: For abort, the payload isn't actually used by the abort() method
+    // It only uses input.action and input.transferId
+    const dummyPayload: CommitTransferDto = {
+      transferState: 'RESERVED',
+      fulfilment: '',
+      completedTimestamp: new Date().toISOString()
+    };
+
+    const input: FusedFulfilHandlerInput = {
+      payload: dummyPayload,
+      transferId,
+      headers: {
+        'fspiop-source': 'dfsp_b',
+        'fspiop-destination': 'dfsp_a',
+        'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
+      },
+      message: {
+        value: {
+          from: 'dfsp_b',
+          to: 'dfsp_a',
+          id: `msg-${transferId}`,
+          type: 'application/json',
+          content: {
+            headers: {
+              'fspiop-source': 'dfsp_b',
+              'fspiop-destination': 'dfsp_a',
+            },
+            payload: dummyPayload,
+            uriParams: { id: transferId }
+          },
+          metadata: {
+            event: {
+              id: `event-${transferId}`,
+              type: 'transfer',
+              action: 'abort',
+              createdAt: new Date().toISOString(),
+              state: {
+                status: 'success',
+                code: 0
+              }
+            }
+          }
+        }
+      },
+      action: Enum.Events.Event.Action.ABORT,
+      eventType: 'fulfil',
+      kafkaTopic: 'topic-transfer-fulfil'
+    };
+
+    return input
+  }
+
   static buildValidPrepareInput(transferId: string, payload: CreateTransferDto): FusedPrepareHandlerInput {
     assert(payload.transferId === transferId)
     const input: FusedPrepareHandlerInput = {

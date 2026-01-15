@@ -2122,7 +2122,7 @@ export default class TigerBeetleLedger implements Ledger {
         // Reserve funds for Participant A.
         {
           ...Helper.createTransferTemplate,
-          id: id(),
+          id: prepareId,
           debit_account_id: accountSpecPayer.unrestricted,
           credit_account_id: accountSpecPayer.reserved,
           amount: amountTigerBeetle,
@@ -2135,12 +2135,12 @@ export default class TigerBeetleLedger implements Ledger {
         // Ensure both Participants are active, atomic check on payment status.
         {
           ...Helper.createTransferTemplate,
-          id: prepareId,
+          id: id(),
           debit_account_id: dfspSpecPayer.accountId,
           credit_account_id: dfspSpecPayee.accountId,
           amount: 0n,
           user_data_128: prepareId,
-          ledger: ledgerOperation,
+          ledger: Helper.ledgerIds.globalControl,
           code: TransferCode.Clearing_Active_Check,
           flags: TransferFlags.none
         },
@@ -2162,9 +2162,7 @@ export default class TigerBeetleLedger implements Ledger {
         if (error.index === 0) {
           switch (error.result) {
             case CreateTransferError.ok:
-              return
             case CreateTransferError.exists: {
-              fatalErrors.push({ type: 'EXISTS', ...error })
               return
             }
             case CreateTransferError.exists_with_different_amount:
@@ -2319,7 +2317,7 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_128: prepareId,
         pending_id: prepareId,
         ledger: 0,
-        code: TransferCode.Clearing_Reverse,
+        code: TransferCode.Clearing_Reserve,
         flags: TransferFlags.void_pending_transfer,
       },
     ]
@@ -2536,6 +2534,10 @@ export default class TigerBeetleLedger implements Ledger {
           code: TransferCode.Clearing_Credit,
           flags: TransferFlags.linked
         },
+
+        // If the NDC is unlimited, then we don't even need to do these transfers
+        // although it's probably preferable
+
         // Move the new NDC amount out to a temporary account.
         // if the new NDC amount is unlimited, then move all into temporary account.
         {

@@ -6,7 +6,7 @@ import { checkSnapshotLedgerDfsp, unwrapSnapshot } from '../../testing/snapshot'
 import { IntegrationHarness } from '../../testing/harness/harness';
 import { TestUtils } from '../../testing/testutils';
 import TigerBeetleLedger from "./TigerBeetleLedger";
-import { AccountCode, PrepareResultType } from './types';
+import { AccountCode, FulfilResultType, PrepareResultType } from './types';
 
 const participantService = require('../participant')
 
@@ -782,7 +782,7 @@ describe('TigerBeetleLedger', () => {
     })
   })
 
-  describe.skip('happy path prepare and fulfill', () => {
+  describe('clearing happy path', () => {
     const transferId = randomUUID()
     const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
     const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
@@ -806,6 +806,12 @@ describe('TigerBeetleLedger', () => {
       // Act
       const result = await ledger.prepare(input)
 
+      const tbLedger = ledger as TigerBeetleLedger
+      const accounts = TestUtils.unwrapSuccess(
+        await tbLedger.getDfspV2({dfspId: 'dfsp_a'})
+      )
+      TestUtils.printLedgerDfsps([accounts])
+
       // Assert
       assert.ok(result)
       assert.equal(result.type, PrepareResultType.PASS)
@@ -823,9 +829,757 @@ describe('TigerBeetleLedger', () => {
       // Act
       const result = await ledger.fulfil(input)
 
+      const tbLedger = ledger as TigerBeetleLedger
+      const accountsA = TestUtils.unwrapSuccess(
+        await tbLedger.getDfspV2({dfspId: 'dfsp_a'})
+      )      
+      const accountsB = TestUtils.unwrapSuccess(
+        await tbLedger.getDfspV2({dfspId: 'dfsp_b'})
+      )
+      TestUtils.printLedgerDfsps([accountsA, accountsB])
+
       // Assert
       assert.ok(result)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        console.log('failed with error\n:', result.error)
+      }
+      assert.equal(result.type, FulfilResultType.PASS)
+    })
+  })
+
+  describe('clearing unhappy path - prepare validation', () => {
+    it('should fail when payer DFSP does not exist', async () => {
+        // Arrange
+        const transferId = randomUUID()
+        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+        const payload: CreateTransferDto = {
+          transferId,
+          payerFsp: 'non_existent_payer_dfsp',
+          payeeFsp: 'dfsp_b',
+          amount: { amount: '100', currency: 'USD' },
+          ilpPacket,
+          condition,
+          expiration: new Date(Date.now() + 60000).toISOString()
+        }
+        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+        // Act
+        const result = await ledger.prepare(input)
+
+        // Assert
+        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+        if (result.type === PrepareResultType.FAIL_OTHER) {
+          assert.ok(result.error)
+          assert.match(result.error.message, /payer fsp.*not found/i)
+        }
+      })
+
+      it('should fail when payee DFSP does not exist', async () => {
+        // Arrange
+        const transferId = randomUUID()
+        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+        const payload: CreateTransferDto = {
+          transferId,
+          payerFsp: 'dfsp_a',
+          payeeFsp: 'non_existent_payee_dfsp',
+          amount: { amount: '100', currency: 'USD' },
+          ilpPacket,
+          condition,
+          expiration: new Date(Date.now() + 60000).toISOString()
+        }
+        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+        // Act
+        const result = await ledger.prepare(input)
+
+        // Assert
+        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+        if (result.type === PrepareResultType.FAIL_OTHER) {
+          assert.ok(result.error)
+          assert.match(result.error.message, /payee fsp.*not found/i)
+        }
+      })
+
+      it('should fail when expiration format is invalid', async () => {
+        // Arrange
+        const transferId = randomUUID()
+        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+        const payload: CreateTransferDto = {
+          transferId,
+          payerFsp: 'dfsp_a',
+          payeeFsp: 'dfsp_b',
+          amount: { amount: '100', currency: 'USD' },
+          ilpPacket,
+          condition,
+          expiration: 'invalid-date-format'
+        }
+        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+        // Act
+        const result = await ledger.prepare(input)
+
+        // Assert
+        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+        if (result.type === PrepareResultType.FAIL_OTHER) {
+          assert.ok(result.error)
+          assert.match(result.error.message, /invalid.*expiration/i)
+        }
+      })
+
+      it('should fail when expiration is already in the past', async () => {
+        // Arrange
+        const transferId = randomUUID()
+        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() - 60000))
+        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+        const payload: CreateTransferDto = {
+          transferId,
+          payerFsp: 'dfsp_a',
+          payeeFsp: 'dfsp_b',
+          amount: { amount: '100', currency: 'USD' },
+          ilpPacket,
+          condition,
+          expiration: new Date(Date.now() - 60000).toISOString()
+        }
+        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+        // Act
+        const result = await ledger.prepare(input)
+
+        // Assert
+        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+        if (result.type === PrepareResultType.FAIL_OTHER) {
+          assert.ok(result.error)
+          assert.match(result.error.message, /expiration.*past/i)
+        }
+      })
+  })
+
+  describe('clearing unhappy path - prepare liquidity', () => {
+    it('should fail with insufficient liquidity when payer exceeds available balance', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Create a new DFSP with limited funds (100 USD)
+      const limitedDfspId = 'dfsp_limited_' + randomUUID().substring(0, 8)
+      await participantService.ensureExists(limitedDfspId)
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId: limitedDfspId,
+        currencies: ['USD']
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId: limitedDfspId,
+        currency: 'USD',
+        amount: 100,
+        reason: 'Initial deposit for insufficient liquidity test'
+      }))
+
+      // Attempt to transfer 200 USD (more than available 100)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: limitedDfspId,
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '200', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Act
+      const result = await ledger.prepare(input)
+
+      // Assert
+      assert.equal(result.type, PrepareResultType.FAIL_LIQUIDITY)
+    })
+
+    it('should fail when payer account is closed', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Create a new DFSP, deposit funds, then close it
+      const closedPayerDfspId = 'dfsp_closed_payer_' + randomUUID().substring(0, 8)
+      await participantService.ensureExists(closedPayerDfspId)
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId: closedPayerDfspId,
+        currencies: ['USD']
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId: closedPayerDfspId,
+        currency: 'USD',
+        amount: 1000,
+        reason: 'Initial deposit before closing account'
+      }))
+
+      // Close the payer's unrestricted account
+      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closedPayerDfspId}))
+      const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
+      assert.ok(unrestricted, 'Unrestricted account should exist')
+      TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
+        dfspId: closedPayerDfspId,
+        accountId: Number(unrestricted.id)
+      }))
+
+      // Attempt to prepare transfer with closed payer
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: closedPayerDfspId,
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Act
+      const result = await ledger.prepare(input)
+
+      // Assert
+      assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+      if (result.type === PrepareResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payer.*not active/i)
+      }
+    })
+
+    it('should fail when payee account is closed', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Create a new DFSP, deposit funds, then close it
+      const closedPayeeDfspId = 'dfsp_closed_payee_' + randomUUID().substring(0, 8)
+      await participantService.ensureExists(closedPayeeDfspId)
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId: closedPayeeDfspId,
+        currencies: ['USD']
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId: closedPayeeDfspId,
+        currency: 'USD',
+        amount: 1000,
+        reason: 'Initial deposit before closing account'
+      }))
+
+      // Close the payee's unrestricted account
+      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closedPayeeDfspId}))
+      const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
+      assert.ok(unrestricted, 'Unrestricted account should exist')
+      TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
+        dfspId: closedPayeeDfspId,
+        accountId: Number(unrestricted.id)
+      }))
+
+      // Attempt to prepare transfer with closed payee
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: closedPayeeDfspId,
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Act
+      const result = await ledger.prepare(input)
+
+      // Assert
+      assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+      if (result.type === PrepareResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payee.*not active/i)
+      }
+    })
+  })
+
+  describe('clearing unhappy path - prepare duplicates', () => {
+    it('should handle duplicate prepare (idempotent - exact same)', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare once successfully
+      const firstResult = await ledger.prepare(input)
+      assert.equal(firstResult.type, PrepareResultType.PASS)
+
+      // Act
+      const result = await ledger.prepare(input)
+
+      // Assert
       assert.equal(result.type, PrepareResultType.PASS)
+    })
+
+    it('should detect duplicate with modified parameters', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Prepare with amount 100
+      const payload1: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input1 = TestUtils.buildValidPrepareInput(transferId, payload1)
+      const firstResult = await ledger.prepare(input1)
+      assert.equal(firstResult.type, PrepareResultType.PASS)
+
+      // Act - Prepare again with same transferId but different amount
+      const payload2: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '200', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input2 = TestUtils.buildValidPrepareInput(transferId, payload2)
+      const result = await ledger.prepare(input2)
+
+      // Assert
+      assert.equal(result.type, PrepareResultType.MODIFIED)
+    })
+
+    it.only('should detect duplicate after fulfil (final state)', async () => {
+      // Arrange - Complete full happy path
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare and fulfil
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const fulfilResult = await ledger.fulfil(fulfilInput)
+      assert.equal(fulfilResult.type, FulfilResultType.PASS)
+
+      // Act - Attempt prepare again after fulfil
+      const result = await ledger.prepare(prepareInput)
+
+      // Assert
+      assert.equal(result.type, PrepareResultType.DUPLICATE_FINAL)
+    })
+  })
+
+  describe('clearing unhappy path - abort errors', () => {
+    it('should fail to abort non-existent transfer', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const input = TestUtils.buildValidAbortInput(transferId)
+
+      // Act
+      const result = await ledger.fulfil(input)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payment.*not.*found/i)
+      }
+    })
+
+    it('should detect already aborted transfer (idempotent check)', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare and abort once
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const abortInput = TestUtils.buildValidAbortInput(transferId)
+      const firstAbortResult = await ledger.fulfil(abortInput)
+      assert.equal(firstAbortResult.type, FulfilResultType.PASS)
+
+      // Act - Abort again
+      const result = await ledger.fulfil(abortInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /already aborted/i)
+      }
+    })
+
+    it('should fail to abort already fulfilled transfer', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare and fulfil
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const fulfilResult = await ledger.fulfil(fulfilInput)
+      assert.equal(fulfilResult.type, FulfilResultType.PASS)
+
+      // Act - Attempt abort after fulfil
+      const abortInput = TestUtils.buildValidAbortInput(transferId)
+      const result = await ledger.fulfil(abortInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /already fulfilled/i)
+      }
+    })
+  })
+
+  describe('clearing unhappy path - fulfil validation', () => {
+    it('should fail and auto-abort with wrong fulfilment', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare transfer
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      // Generate wrong fulfilment (not matching the condition)
+      const wrongFulfilment = 'A'.repeat(48)
+
+      // Act
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment: wrongFulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const result = await ledger.fulfil(fulfilInput)
+
+      // Assert - Should fail validation
+      assert.equal(result.type, FulfilResultType.FAIL_VALIDATION)
+      if (result.type === FulfilResultType.FAIL_VALIDATION) {
+        assert.ok(result.error)
+      }
+
+      // TODO: instead of aborting again to check if it's aborted, why not 
+      // check the balance sheet!?
+
+      // Verify transfer was auto-aborted
+      // Try to abort again - should get "already aborted" error
+      const retryInput = TestUtils.buildValidAbortInput(transferId)
+      const retryResult = await ledger.fulfil(retryInput)
+      assert.equal(retryResult.type, FulfilResultType.FAIL_OTHER)
+      if (retryResult.type === FulfilResultType.FAIL_OTHER) {
+        assert.match(retryResult.error.message, /already aborted/i)
+      }
+    })
+
+    it('should fail to fulfil non-existent transfer', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const fulfilment = 'A'.repeat(48)
+      const payload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const input = TestUtils.buildValidFulfilInput(transferId, payload)
+
+      // Act
+      const result = await ledger.fulfil(input)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payment.*not.*found/i)
+      }
+    })
+
+    it.todo('should handle fulfil with missing transfer spec')
+  })
+
+  describe('clearing unhappy path - fulfil state errors', () => {
+    it('should detect already fulfilled transfer (idempotent check)', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare and fulfil once
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const firstFulfilResult = await ledger.fulfil(fulfilInput)
+      assert.equal(firstFulfilResult.type, FulfilResultType.PASS)
+
+      // Act - Fulfil again
+      const result = await ledger.fulfil(fulfilInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /already fulfilled/i)
+      }
+    })
+
+    it('should fail to fulfil already aborted transfer', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare and abort
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const abortInput = TestUtils.buildValidAbortInput(transferId)
+      const abortResult = await ledger.fulfil(abortInput)
+      assert.equal(abortResult.type, FulfilResultType.PASS)
+
+      // Act - Attempt fulfil after abort
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const result = await ledger.fulfil(fulfilInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /already aborted/i)
+      }
+    })
+
+    it('should fail to fulfil with closed payer account', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Create a new DFSP with funds
+      const closingPayerDfspId = 'dfsp_closing_payer_' + randomUUID().substring(0, 8)
+      await participantService.ensureExists(closingPayerDfspId)
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId: closingPayerDfspId,
+        currencies: ['USD']
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId: closingPayerDfspId,
+        currency: 'USD',
+        amount: 1000,
+        reason: 'Initial deposit'
+      }))
+
+      // Prepare transfer (creates pending transfer on payer's reserved account)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: closingPayerDfspId,
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      // Close payer's unrestricted account
+      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closingPayerDfspId}))
+      const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
+      assert.ok(unrestricted, 'Unrestricted account should exist')
+      TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
+        dfspId: closingPayerDfspId,
+        accountId: Number(unrestricted.id)
+      }))
+
+      // Act - Attempt fulfil with closed payer account
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const result = await ledger.fulfil(fulfilInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payer.*account.*closed/i)
+      }
+    })
+
+    it('should fail to fulfil with closed payee account', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Create a new DFSP for payee with funds
+      const closingPayeeDfspId = 'dfsp_closing_payee_' + randomUUID().substring(0, 8)
+      await participantService.ensureExists(closingPayeeDfspId)
+      TestUtils.unwrapSuccess(await ledger.createDfsp({
+        dfspId: closingPayeeDfspId,
+        currencies: ['USD']
+      }))
+      TestUtils.unwrapSuccess(await ledger.deposit({
+        transferId: randomUUID(),
+        dfspId: closingPayeeDfspId,
+        currency: 'USD',
+        amount: 1000,
+        reason: 'Initial deposit'
+      }))
+
+      // Prepare transfer
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: closingPayeeDfspId,
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      // Close payee's unrestricted account
+      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closingPayeeDfspId}))
+      const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
+      assert.ok(unrestricted, 'Unrestricted account should exist')
+      TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
+        dfspId: closingPayeeDfspId,
+        accountId: Number(unrestricted.id)
+      }))
+
+      // Act - Attempt fulfil with closed payee account
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const result = await ledger.fulfil(fulfilInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payee.*account.*closed/i)
+      }
     })
   })
 })
