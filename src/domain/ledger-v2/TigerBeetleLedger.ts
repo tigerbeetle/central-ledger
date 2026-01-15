@@ -78,6 +78,19 @@ type FulfilFailureType = 'ALREADY_ABORTED' |
   'PAYEE_ACCOUNT_CLOSED' |
   'UNKNOWN'
 
+type WithdrawPrepareFailureType = 'ACCOUNT_CLOSED' |
+  'TRANSFER_ID_REUSED' |
+  'INSUFFICIENT_FUNDS' |
+  'UNKNOWN'
+
+type WithdrawCommitFailureType = 'NOT_FOUND' | 'UNKNOWN'
+
+type WithdrawAbortFailureType = 'NOT_FOUND' | 'UNKNOWN'
+
+type DepositFailureType = 'EXISTS' | 'MODIFIED' | 'UNKNOWN'
+
+type SetNetDebitCapFailureType = 'UNKNOWN'
+
 type FailureResult<T> = CreateTransfersError & {
   type: T
 }
@@ -859,14 +872,22 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ]
 
-      let exists = false
-      const fatalErrors = (await this.deps.client.createTransfers(transfers)).reduce((acc, curr) => {
-        if (exists) {
-          return []
+      const createTransfersResults = await this.deps.client.createTransfers(transfers)
+      const fatalErrors: Array<FailureResult<DepositFailureType>> = []
+
+      createTransfersResults.forEach(error => {
+        // Ignore noisy errors
+        if (error.result === CreateTransferError.linked_event_failed) {
+          return
         }
 
-        if (curr.index === 0) {
-          switch (curr.result) {
+        if (error.index === 0) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.exists:
+              fatalErrors.push({ type: 'EXISTS', ...error })
+              return
             case CreateTransferError.exists_with_different_flags:
             case CreateTransferError.exists_with_different_pending_id:
             case CreateTransferError.exists_with_different_timeout:
@@ -878,27 +899,34 @@ export default class TigerBeetleLedger implements Ledger {
             case CreateTransferError.exists_with_different_user_data_32:
             case CreateTransferError.exists_with_different_ledger:
             case CreateTransferError.exists_with_different_code:
-            case CreateTransferError.exists: {
-              exists = true;
-              return []
-            }
-            default: { }
+              fatalErrors.push({ type: 'MODIFIED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
           }
         }
 
-        acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
-        return acc
-      }, [])
-      if (fatalErrors.length > 0) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
-        }
-      }
+        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+      })
 
-      if (exists) {
-        return {
-          type: 'ALREADY_EXISTS'
+      if (fatalErrors.length > 0) {
+        const firstError = fatalErrors[0]
+        switch (firstError.type) {
+          case 'EXISTS':
+            return {
+              type: 'ALREADY_EXISTS'
+            }
+          case 'MODIFIED':
+            return {
+              type: 'FAILURE',
+              error: new Error(`deposit failed - transfer already exists with different parameters`)
+            }
+          case 'UNKNOWN':
+            return {
+              type: 'FAILURE',
+              error: new Error(`deposit failed with error: ${CreateTransferError[firstError.result]}`)
+            }
         }
       }
 
@@ -1011,35 +1039,37 @@ export default class TigerBeetleLedger implements Ledger {
         },
       ]
 
-      // Map to the following known errors:
-      //
-      // Deposit or Unrestricted account closed --> Closed account error
-      // transfer #2 reused id                  --> Id reused error
-      // transfer #2 debits exceeds credits     --> Insufficent funds
       const createTransfersResults = await this.deps.client.createTransfers(transfers)
-      const errorsFatalKnown: Array<WithdrawPrepareErrorsKnown> = []
-      const errorsFatalUnknown = []
+      const fatalErrors: Array<FailureResult<WithdrawPrepareFailureType>> = []
 
       createTransfersResults.forEach(error => {
+        // Ignore noisy errors
+        if (error.result === CreateTransferError.linked_event_failed) {
+          return
+        }
+
         if (error.index === 0) {
-          if (error.result === CreateTransferError.debit_account_already_closed ||
-            error.result === CreateTransferError.credit_account_already_closed
-          ) {
-            errorsFatalKnown.push(WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED)
-            return
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.debit_account_already_closed:
+            case CreateTransferError.credit_account_already_closed:
+              fatalErrors.push({ type: 'ACCOUNT_CLOSED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
           }
         }
 
         if (error.index === 1) {
           switch (error.result) {
-            case CreateTransferError.ok: {
+            case CreateTransferError.ok:
               return
-            }
             case CreateTransferError.debit_account_already_closed:
-            case CreateTransferError.credit_account_already_closed: {
-              errorsFatalKnown.push(WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED)
-              break;
-            }
+            case CreateTransferError.credit_account_already_closed:
+              fatalErrors.push({ type: 'ACCOUNT_CLOSED', ...error })
+              return
             case CreateTransferError.exists_with_different_flags:
             case CreateTransferError.exists_with_different_pending_id:
             case CreateTransferError.exists_with_different_timeout:
@@ -1052,49 +1082,44 @@ export default class TigerBeetleLedger implements Ledger {
             case CreateTransferError.exists_with_different_ledger:
             case CreateTransferError.exists_with_different_code:
             case CreateTransferError.exists:
-            case CreateTransferError.id_already_failed: {
-              errorsFatalKnown.push(WithdrawPrepareErrorsKnown.TRANSFER_ID_REUSED)
-              break;
-            }
+            case CreateTransferError.id_already_failed:
+              fatalErrors.push({ type: 'TRANSFER_ID_REUSED', ...error })
+              return
             case CreateTransferError.exceeds_credits:
-            case CreateTransferError.exceeds_debits: {
-              errorsFatalKnown.push(WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS)
-              break;
-            }
+            case CreateTransferError.exceeds_debits:
+              fatalErrors.push({ type: 'INSUFFICIENT_FUNDS', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
           }
         }
 
-        errorsFatalUnknown.push(`transfer at idx: ${error.index} failed with error: ${CreateTransferError[error.result]}`)
+        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
       })
 
-      if (errorsFatalKnown.length > 0) {
-        // Known error handling
-        switch (errorsFatalKnown[0]) {
-          case WithdrawPrepareErrorsKnown.INSUFFICIENT_FUNDS: {
+      if (fatalErrors.length > 0) {
+        const firstError = fatalErrors[0]
+        switch (firstError.type) {
+          case 'INSUFFICIENT_FUNDS':
             return {
               type: 'INSUFFICIENT_FUNDS',
             }
-          }
-          case WithdrawPrepareErrorsKnown.ACCOUNT_CLOSED: {
+          case 'ACCOUNT_CLOSED':
             return {
               type: 'FAILURE',
               error: new Error(`Withdrawal failed as one or more accounts is closed.`)
             }
-          }
-          case WithdrawPrepareErrorsKnown.TRANSFER_ID_REUSED:
-          default: {
+          case 'TRANSFER_ID_REUSED':
             return {
               type: 'FAILURE',
               error: new Error(`Withdrawal failed - transferId has already been used.`)
             }
-          }
-        }
-      }
-
-      if (errorsFatalUnknown.length > 0) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`Withdrawal failed with errors: ${errorsFatalUnknown.join(';')}`)
+          case 'UNKNOWN':
+            return {
+              type: 'FAILURE',
+              error: new Error(`Withdrawal failed with error: ${CreateTransferError[firstError.result]}`)
+            }
         }
       }
 
@@ -1129,29 +1154,43 @@ export default class TigerBeetleLedger implements Ledger {
       ]
 
       const createTransfersResult = await this.deps.client.createTransfers(transfers)
-      const errorsFatal = []
-      for (const error of createTransfersResult) {
-        if (error.result === CreateTransferError.ok) {
-          continue
+      const fatalErrors: Array<FailureResult<WithdrawCommitFailureType>> = []
+
+      createTransfersResult.forEach(error => {
+        // Ignore noisy errors
+        if (error.result === CreateTransferError.linked_event_failed) {
+          return
         }
 
         if (error.index === 0) {
-          if (error.result === CreateTransferError.pending_transfer_not_found) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.pending_transfer_not_found:
+              fatalErrors.push({ type: 'NOT_FOUND', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
+          }
+        }
+
+        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+      })
+
+      if (fatalErrors.length > 0) {
+        const firstError = fatalErrors[0]
+        switch (firstError.type) {
+          case 'NOT_FOUND':
             return {
               type: 'FAILURE',
               error: new Error(`transferId: ${cmd.transferId} not found`)
             }
-          }
-        }
-
-        errorsFatal.push(`transfer at ${error.index} failed with error: ${CreateTransferError[error.result]}`)
-      }
-
-      // unknown errors
-      if (errorsFatal.length > 0) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`withdrawCommit() failed with errors: ${errorsFatal.join(';')}`)
+          case 'UNKNOWN':
+            return {
+              type: 'FAILURE',
+              error: new Error(`withdrawCommit() failed with error: ${CreateTransferError[firstError.result]}`)
+            }
         }
       }
 
@@ -1187,29 +1226,38 @@ export default class TigerBeetleLedger implements Ledger {
       ]
 
       const createTransfersResult = await this.deps.client.createTransfers(transfers)
-      const errorsFatal = []
-      for (const error of createTransfersResult) {
-        if (error.result === CreateTransferError.ok) {
-          continue
+      const fatalErrors: Array<FailureResult<WithdrawAbortFailureType>> = []
+
+      createTransfersResult.forEach(error => {
+        if (error.index === 0) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.pending_transfer_not_found:
+              fatalErrors.push({ type: 'NOT_FOUND', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
+          }
         }
 
-        if (error.index === 0) {
-          if (error.result === CreateTransferError.pending_transfer_not_found) {
+        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+      })
+
+      if (fatalErrors.length > 0) {
+        const firstError = fatalErrors[0]
+        switch (firstError.type) {
+          case 'NOT_FOUND':
             return {
               type: 'FAILURE',
               error: new Error(`transferId: ${cmd.transferId} not found`)
             }
-          }
-        }
-
-        errorsFatal.push(`transfer at ${error.index} failed with error: ${CreateTransferError[error.result]}`)
-      }
-
-      // unknown errors
-      if (errorsFatal.length > 0) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`withdrawAbort() failed with errors: ${errorsFatal.join(';')}`)
+          case 'UNKNOWN':
+            return {
+              type: 'FAILURE',
+              error: new Error(`withdrawAbort() failed with error: ${CreateTransferError[firstError.result]}`)
+            }
         }
       }
 
@@ -1315,17 +1363,33 @@ export default class TigerBeetleLedger implements Ledger {
         flags: TransferFlags.void_pending_transfer
       },
     ]
-    const fatalErrors = (await this.deps.client.createTransfers(transfers)).reduce((acc, curr) => {
-      if (curr.index === 0 && curr.result === CreateTransferError.ok) {
-        return acc
+    const createTransfersResults = await this.deps.client.createTransfers(transfers)
+    const fatalErrors: Array<FailureResult<SetNetDebitCapFailureType>> = []
+
+    createTransfersResults.forEach(error => {
+      // Ignore noisy errors
+      if (error.result === CreateTransferError.linked_event_failed) {
+        return
       }
-      acc.push(CreateTransferError[curr.result])
-      return acc
-    }, [])
+
+      if (error.index === 0) {
+        switch (error.result) {
+          case CreateTransferError.ok:
+            return
+          default:
+            fatalErrors.push({ type: 'UNKNOWN', ...error })
+            return
+        }
+      }
+
+      throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+    })
+
     if (fatalErrors.length > 0) {
+      const firstError = fatalErrors[0]
       return {
         type: 'FAILURE',
-        error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+        error: new Error(`setNetDebitCap failed with error: ${CreateTransferError[firstError.result]}`)
       }
     }
 
