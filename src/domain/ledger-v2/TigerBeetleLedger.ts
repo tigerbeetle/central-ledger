@@ -91,6 +91,12 @@ type DepositFailureType = 'EXISTS' | 'MODIFIED' | 'UNKNOWN'
 
 type SetNetDebitCapFailureType = 'UNKNOWN'
 
+type CloseDfspMasterAccountFailureType = 'DEBIT_ACCOUNT_NOT_FOUND' | 'ALREADY_CLOSED' | 'UNKNOWN'
+
+type EnableDfspAccountFailureType = 'ALREADY_ENABLED' | 'UNKNOWN'
+
+type DisableDfspAccountFailureType = 'ALREADY_CLOSED' | 'UNKNOWN'
+
 type FailureResult<T> = CreateTransfersError & {
   type: T
 }
@@ -469,7 +475,7 @@ export default class TigerBeetleLedger implements Ledger {
     })
 
     if (transfers.length === 0) {
-      // consider this a success, the Account isn't closed!
+      // This is a success case, as account isn't closed.
       return {
         type: 'SUCCESS',
         result: undefined
@@ -529,41 +535,50 @@ export default class TigerBeetleLedger implements Ledger {
       flags: TransferFlags.closing_credit | TransferFlags.pending,
     }
     const transferErrors = await this.deps.client.createTransfers([closingTransfer])
-    if (transferErrors.length === 0) {
+    const fatalErrors: Array<FailureResult<CloseDfspMasterAccountFailureType>> = []
+
+    transferErrors.forEach(error => {
+      if (error.index === 0) {
+        switch (error.result) {
+          case CreateTransferError.ok:
+            return
+          case CreateTransferError.debit_account_not_found:
+            fatalErrors.push({ type: 'DEBIT_ACCOUNT_NOT_FOUND', ...error })
+            return
+          case CreateTransferError.credit_account_already_closed:
+            fatalErrors.push({ type: 'ALREADY_CLOSED', ...error })
+            return
+          default:
+            fatalErrors.push({ type: 'UNKNOWN', ...error })
+            return
+        }
+      }
+
+      throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+    })
+
+    if (fatalErrors.length === 0) {
       return {
         type: DeactivateDfspResponseType.SUCCESS
       }
     }
 
-    for (const err of transferErrors) {
-      if (err.result === CreateTransferError.debit_account_not_found) {
+    const firstError = fatalErrors[0]
+    switch (firstError.type) {
+      case 'DEBIT_ACCOUNT_NOT_FOUND':
         return {
           type: DeactivateDfspResponseType.CREATE_ACCOUNT
         }
-      }
-
-      if (err.result === CreateTransferError.ok) {
-        return {
-          type: DeactivateDfspResponseType.SUCCESS
-        }
-      }
-
-      if (err.result === CreateTransferError.credit_account_already_closed) {
+      case 'ALREADY_CLOSED':
         return {
           type: DeactivateDfspResponseType.ALREADY_CLOSED
         }
-      }
-
-      return {
-        type: DeactivateDfspResponseType.FAILED,
-        error: new Error(`_closeDfspMasterAccount failed with unexpected error: ${CreateTransferError[err.result]}`)
-      }
+      case 'UNKNOWN':
+        return {
+          type: DeactivateDfspResponseType.FAILED,
+          error: new Error(`_closeDfspMasterAccount failed with unexpected error: ${CreateTransferError[firstError.result]}`)
+        }
     }
-    transferErrors.forEach((err, idx) => {
-      if (err.result === CreateTransferError.debit_account_not_found) {
-        return
-      }
-    })
   }
 
   public async enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>> {
@@ -643,20 +658,40 @@ export default class TigerBeetleLedger implements Ledger {
         flags: TransferFlags.void_pending_transfer
       }
       const transferErrors = await this.deps.client.createTransfers([voidClosingTransfer])
-      const fatalErrors = transferErrors.reduce((acc, curr) => {
-        // not a failure, the account is open
-        if (curr.index === 0 && curr.result === CreateTransferError.pending_transfer_already_voided) {
-          return []
+      const fatalErrors: Array<FailureResult<EnableDfspAccountFailureType>> = []
+
+      transferErrors.forEach(error => {
+        if (error.index === 0) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.pending_transfer_already_voided:
+              // Not a failure - the account is already open
+              fatalErrors.push({ type: 'ALREADY_ENABLED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
+          }
         }
 
-        acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
-        return acc
-      }, [])
+        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+      })
 
       if (fatalErrors.length > 0) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+        const firstError = fatalErrors[0]
+        switch (firstError.type) {
+          case 'ALREADY_ENABLED':
+            // Account already open - treat as success
+            return {
+              type: 'SUCCESS',
+              result: undefined
+            }
+          case 'UNKNOWN':
+            return {
+              type: 'FAILURE',
+              error: new Error(`enableDfspAccount failed with error: ${CreateTransferError[firstError.result]}`)
+            }
         }
       }
 
@@ -737,25 +772,40 @@ export default class TigerBeetleLedger implements Ledger {
         flags: TransferFlags.closing_credit | TransferFlags.pending,
       }
       const transferErrors = await this.deps.client.createTransfers([closingTransfer])
-      const fatalErrors = transferErrors.reduce((acc, curr) => {
-        if (curr.index === 0) {
-          switch (curr.result) {
+      const fatalErrors: Array<FailureResult<DisableDfspAccountFailureType>> = []
+
+      transferErrors.forEach(error => {
+        if (error.index === 0) {
+          switch (error.result) {
             case CreateTransferError.ok:
-            case CreateTransferError.credit_account_already_closed: {
-              return acc
-            }
-            default: { }
+              return
+            case CreateTransferError.credit_account_already_closed:
+              // Account already closed - treat as success
+              fatalErrors.push({ type: 'ALREADY_CLOSED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
           }
         }
 
-        acc.push(`Transfer at idx: ${curr.index} failed with error: ${CreateTransferError[curr.result]}`)
-        return acc
-      }, [])
+        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+      })
 
       if (fatalErrors.length > 0) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`failed to create transfers with errors: ${fatalErrors.join(';')}`)
+        const firstError = fatalErrors[0]
+        switch (firstError.type) {
+          case 'ALREADY_CLOSED':
+            // Account already closed - treat as success
+            return {
+              type: 'SUCCESS',
+              result: undefined
+            }
+          case 'UNKNOWN':
+            return {
+              type: 'FAILURE',
+              error: new Error(`disableDfspAccount failed with error: ${CreateTransferError[firstError.result]}`)
+            }
         }
       }
 
@@ -2310,10 +2360,6 @@ export default class TigerBeetleLedger implements Ledger {
     createTransferErrors.forEach(error => {
       if (error.index !== 0) {
         throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
-      }
-      // Ignore noisy errors
-      if (error.result === CreateTransferError.linked_event_failed) {
-        return
       }
 
       switch (error.result) {
