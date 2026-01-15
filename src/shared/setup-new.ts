@@ -266,18 +266,10 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
     replica_addresses: config.EXPERIMENTAL.TIGERBEETLE.ADDRESS
   })
   const specStore = new PersistedSpecStore(Db.getKnex())
-  const transferBatcher = new TransferBatcher(
-    client,
-    8000,
-    25  // batch interval ms - TODO: make configurable
-  )
-
   const tigerBeetleDeps: TigerBeetleLedgerDependencies = {
     config,
     client,
-    specStore,
-    transferBatcher,
-    // participantService: require('../domain/participant')
+    specStore
   }
   return new TigerBeetleLedger(tigerBeetleDeps)
 }

@@ -59,56 +59,26 @@ const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
 
 
-type PrepareFailureType = 'FAIL_LIQUIDITY' |
-  'PAYER_CLOSED' |
-  'PAYEE_CLOSED' |
-  'MODIFIED' |
-  'EXISTS' |
-  'UNKNOWN'
-
-type AbortFailureType = 'ALREADY_ABORTED' |
-  'ALREADY_FULFILLED' |
-  'NOT_FOUND' |
-  'UNKNOWN'
-
-type FulfilFailureType = 'ALREADY_ABORTED' |
-  'ALREADY_FULFILLED' |
-  'NOT_FOUND' |
-  'PAYER_ACCOUNT_CLOSED' |
-  'PAYEE_ACCOUNT_CLOSED' |
-  'UNKNOWN'
-
-type WithdrawPrepareFailureType = 'ACCOUNT_CLOSED' |
-  'TRANSFER_ID_REUSED' |
-  'INSUFFICIENT_FUNDS' |
-  'UNKNOWN'
-
-type WithdrawCommitFailureType = 'NOT_FOUND' | 'UNKNOWN'
-
-type WithdrawAbortFailureType = 'NOT_FOUND' | 'UNKNOWN'
-
-type DepositFailureType = 'EXISTS' | 'MODIFIED' | 'UNKNOWN'
-
-type SetNetDebitCapFailureType = 'UNKNOWN'
-
-type CloseDfspMasterAccountFailureType = 'DEBIT_ACCOUNT_NOT_FOUND' | 'ALREADY_CLOSED' | 'UNKNOWN'
-
-type EnableDfspAccountFailureType = 'ALREADY_ENABLED' | 'UNKNOWN'
-
-type DisableDfspAccountFailureType = 'ALREADY_CLOSED' | 'UNKNOWN'
-
+/**
+ * Internal mapping of TigerBeetle errors 
+ */
 type FailureResult<T> = CreateTransfersError & {
   type: T
 }
-
-/**
- * Handled errors for withdraw funds
- */
-enum WithdrawPrepareErrorsKnown {
-  ACCOUNT_CLOSED,
-  INSUFFICIENT_FUNDS,
-  TRANSFER_ID_REUSED,
-}
+type PrepareFailureType = 'FAIL_LIQUIDITY' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'MODIFIED' | 
+  'EXISTS' | 'UNKNOWN'
+type AbortFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' | 'UNKNOWN'
+type FulfilFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' | 
+  'PAYER_ACCOUNT_CLOSED' | 'PAYEE_ACCOUNT_CLOSED' | 'UNKNOWN'
+type WithdrawPrepareFailureType = 'ACCOUNT_CLOSED' | 'TRANSFER_ID_REUSED' | 'INSUFFICIENT_FUNDS' |
+  'UNKNOWN'
+type WithdrawCommitFailureType = 'NOT_FOUND' | 'UNKNOWN'
+type WithdrawAbortFailureType = 'NOT_FOUND' | 'UNKNOWN'
+type DepositFailureType = 'EXISTS' | 'MODIFIED' | 'UNKNOWN'
+type SetNetDebitCapFailureType = 'UNKNOWN'
+type CloseDfspMasterAccountFailureType = 'DEBIT_ACCOUNT_NOT_FOUND' | 'ALREADY_CLOSED' | 'UNKNOWN'
+type EnableDfspAccountFailureType = 'ALREADY_ENABLED' | 'UNKNOWN'
+type DisableDfspAccountFailureType = 'ALREADY_CLOSED' | 'UNKNOWN'
 
 /**
  * An internal representation of an Account, combined with Spec
@@ -139,8 +109,6 @@ export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
   client: Client
   specStore: SpecStore
-  // TODO(LD): remove me!
-  transferBatcher: TransferBatcher
 }
 
 export default class TigerBeetleLedger implements Ledger {

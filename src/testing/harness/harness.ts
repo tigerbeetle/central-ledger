@@ -6,7 +6,6 @@ import { Ledger } from '../../domain/ledger-v2/Ledger';
 import LegacyLedger, { LegacyLedgerDependencies } from '../../domain/ledger-v2/LegacyLedger';
 import { PersistedSpecStore } from '../../domain/ledger-v2/SpecStorePersisted';
 import TigerBeetleLedger, { TigerBeetleLedgerDependencies } from '../../domain/ledger-v2/TigerBeetleLedger';
-import { TransferBatcher } from '../../domain/ledger-v2/TransferBatcher';
 import Db from '../../lib/db';
 import Cache from '../../lib/cache';
 import EnumCached from '../../lib/enumCached';
@@ -79,7 +78,6 @@ export interface IntegrationHarnessResources {
   config: ApplicationConfig;
   dbConfig: DatabaseConfig;
   tbConfig: TigerBeetleConfig;
-  transferBatcher: TransferBatcher;
 }
 
 /**
@@ -136,7 +134,6 @@ export class IntegrationHarness implements Harness {
   private dbHarness: HarnessDatabase;
   private tbHarness: HarnessTigerBeetle;
   private client: Client;
-  private transferBatcher: TransferBatcher;
   private config: ApplicationConfig;
   private resources: IntegrationHarnessResources;
 
@@ -232,7 +229,6 @@ export class IntegrationHarness implements Harness {
         cluster_id: tbResult.clusterId,
         replica_addresses: tbResult.address,
       });
-      this.transferBatcher = new TransferBatcher(this.client, 100, 1);
 
       // Create ledger based on type
       const ledger = ledgerType === 'TIGERBEETLE'
@@ -268,7 +264,6 @@ export class IntegrationHarness implements Harness {
         config: this.config,
         dbConfig: dbResult,
         tbConfig: tbResult,
-        transferBatcher: this.transferBatcher
       };
 
       logger.info('IntegrationHarness started successfully');
@@ -300,11 +295,6 @@ export class IntegrationHarness implements Harness {
         this.client.destroy();
       }
 
-      // Clean up transfer batcher
-      if (this.transferBatcher) {
-        this.transferBatcher.cleanup();
-      }
-
       // Teardown harnesses
       if (this.tbHarness) {
         await this.tbHarness.teardown();
@@ -327,8 +317,7 @@ export class IntegrationHarness implements Harness {
     const deps: TigerBeetleLedgerDependencies = {
       config: this.config,
       client: this.client,
-      specStore: new PersistedSpecStore(Db.getKnex()),
-      transferBatcher: this.transferBatcher,
+      specStore: new PersistedSpecStore(Db.getKnex())
     };
     return new TigerBeetleLedger(deps);
   }

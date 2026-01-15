@@ -186,12 +186,9 @@ export class HarnessApi implements Harness {
 
   private async initTigerBeetleLedger(): Promise<TigerBeetleLedger> {
     const deps: TigerBeetleLedgerDependencies = {
-      // TODO: do we need to set up the ledger config based on what the harness did?
       config: this.config.applicationConfig,
       client: this.client,
       specStore: new PersistedSpecStore(this.dbLib.getKnex()),
-      transferBatcher: this.transferBatcher,
-      // participantService: this.participantService,
     }
     return new TigerBeetleLedger(deps)
   }
