@@ -1172,7 +1172,7 @@ describe('TigerBeetleLedger', () => {
 
     it.only('should detect duplicate after fulfil (final state)', async () => {
       // Arrange - Complete full happy path
-      const transferId = randomUUID()
+      const transferId = 'cc246ead-3000-48e3-842c-017c16309d38'
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
       const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
       const payload: CreateTransferDto = {
@@ -1199,10 +1199,11 @@ describe('TigerBeetleLedger', () => {
       const fulfilResult = await ledger.fulfil(fulfilInput)
       assert.equal(fulfilResult.type, FulfilResultType.PASS)
 
-      // Act - Attempt prepare again after fulfil
+      // Act 
       const result = await ledger.prepare(prepareInput)
 
       // Assert
+      // TODO(LD): failing because the filfilment isn't being saved properly...
       assert.equal(result.type, PrepareResultType.DUPLICATE_FINAL)
     })
   })

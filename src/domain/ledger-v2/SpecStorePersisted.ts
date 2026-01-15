@@ -1,6 +1,6 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SaveFundingSpecCommand, SaveSpecFundingResult, FundingAction, SaveSpecFundingResultExists } from "./SpecStore";
+import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SaveFundingSpecCommand, SaveSpecFundingResult, FundingAction, SaveSpecFundingResultExists, AttachTransferSpecFulfilment } from "./SpecStore";
 import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
 import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
@@ -69,7 +69,7 @@ function hydrateSpecAccount(result: any): SpecAccount {
     type: 'SpecAccount',
     dfspId: record.dfspId,
     currency: record.currency,
-    
+
     deposit: BigInt(record.deposit),
     unrestricted: BigInt(record.unrestricted),
     unrestrictedLock: BigInt(record.unrestrictedLock),
@@ -169,7 +169,7 @@ export class PersistedSpecStore implements SpecStore {
   async queryAccounts(dfspId: string): Promise<Array<SpecAccount>> {
     // Don't go to the cache
     const records = await this.db.from(TABLE_ACCOUNT)
-      .where({dfspId})
+      .where({ dfspId })
       .orderBy('dfspId', 'desc')
       .orderBy('currency', 'desc')
       .limit(1000)
@@ -345,18 +345,12 @@ export class PersistedSpecStore implements SpecStore {
           ilpCondition: m.condition,
           ilpPacket: m.ilpPacket,
         }
-        if (m.fulfilment) {
-          record.fulfilment = m.fulfilment
-        }
 
         return record
       })
 
-      // TODO: when saving make sure it upserts properly
       await this.db.from(TABLE_TRANSFER)
         .insert(records)
-        .onConflict('id')
-        .merge(['fulfilment']);
       this.cacheTransfer.put(spec.map(m => ({ type: 'SpecTransfer', ...m })))
 
       return spec.map(m => {
@@ -367,6 +361,32 @@ export class PersistedSpecStore implements SpecStore {
     } catch (err) {
       logger.error(`saveTransferSpec() - failed with error: ${err.message}`)
       return spec.map(m => {
+        return {
+          type: 'FAILURE'
+        }
+      })
+    }
+  }
+
+  async attachTransferSpecFulfilment(attachments: Array<AttachTransferSpecFulfilment>):
+    Promise<Array<SaveSpecTransferResult>> {
+    try {
+      await this.db.transaction(async (trx) => {
+        for (const attachment of attachments) {
+          await trx(TABLE_TRANSFER)
+            .where({ id: attachment.id })
+            .update({ fulfilment: attachment.fulfilment });
+        }
+      });
+
+      this.cacheTransfer.putFulfilments(attachments)
+
+      return attachments.map(() => ({
+        type: 'SUCCESS'
+      }))
+    } catch (err) {
+      logger.error(`attachTransferSpecFulfilment() - failed with error: ${err.message}`)
+      return attachments.map(m => {
         return {
           type: 'FAILURE'
         }

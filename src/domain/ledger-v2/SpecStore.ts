@@ -95,7 +95,12 @@ export interface SpecDfspNone {
   readonly type: 'SpecDfspNone'
 }
 
-export type SaveTransferSpecCommand = Omit<SpecTransfer, 'type'>
+export type SaveTransferSpecCommand = Omit<SpecTransfer, 'type' | 'fulfilment'>
+
+export type AttachTransferSpecFulfilment = {
+  id: string,
+  fulfilment: string
+}
 
 export interface SaveSpecTransferResultSuccess {
   type: 'SUCCESS'
@@ -159,6 +164,11 @@ export interface SpecStore {
    * Saves the transfer spec to the spec store
    */
   saveTransferSpec(spec: Array<SaveTransferSpecCommand>): Promise<Array<SaveSpecTransferResult>>
+
+  /**
+   * Attaches the fulfilment to the already created spec
+   */
+  attachTransferSpecFulfilment(attachments: Array<AttachTransferSpecFulfilment>): Promise<Array<SaveSpecTransferResult>>
 
   /**
    * Looks up the funding spec for a given set of transfer IDs. Always returns the fundings

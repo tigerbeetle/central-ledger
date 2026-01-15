@@ -2162,7 +2162,9 @@ export default class TigerBeetleLedger implements Ledger {
         if (error.index === 0) {
           switch (error.result) {
             case CreateTransferError.ok:
+              return
             case CreateTransferError.exists: {
+              fatalErrors.push({ type: 'EXISTS', ...error })
               return
             }
             case CreateTransferError.exists_with_different_amount:
@@ -2481,9 +2483,9 @@ export default class TigerBeetleLedger implements Ledger {
       // Attach the fulfilment to the TransferSpec
       // There's a latency performance hit we're going to take here sadly, not sure if there's any
       // way around it.
-      await this.deps.specStore.saveTransferSpec([
+      await this.deps.specStore.attachTransferSpecFulfilment([
         {
-          ...transferSpec,
+          id: transferSpec.id,
           fulfilment: input.payload.fulfilment,
         }
       ])
@@ -2672,10 +2674,10 @@ export default class TigerBeetleLedger implements Ledger {
       user_data_64: 0n,
       user_data_32: 0,
       ledger: 0,
-      code: 1,
+      code: 0,
       timestamp_min: 0n,
       timestamp_max: 0n,
-      limit: 3,
+      limit: 10,
       flags: 0
     })
 
@@ -2685,52 +2687,29 @@ export default class TigerBeetleLedger implements Ledger {
       }
     }
 
-    if (relatedTransfers.length === 1) {
-      const pendingTransfer = relatedTransfers[0]
-      assert(pendingTransfer)
-      assert(pendingTransfer.flags & TransferFlags.pending)
-      // TigerBeetle timeout is defined in seconds
-      const timeoutNs = BigInt(pendingTransfer.timeout) * 1_000_000_000n;
-      const createdAt = pendingTransfer.timestamp
-      const expiredAt = createdAt + timeoutNs
-
-      /**
-       * TODO(LD): There could be clock mismatch errors here, since we are using our own time
-       *   instead of the TigerBeetle time, we don't know 100% for sure that TigerBeetle has
-       *   actually timed out the transfer.
-       */
-      const nowNs = BigInt(Date.now()) * 1_000_000_000n
-      const expiredAtMs = convertBigIntToNumber(expiredAt / 1_000_000n)
-      if (expiredAt > nowNs) {
-        return {
-          type: LookupTransferResultType.FOUND_FINAL,
-          finalizedTransfer: {
-            completedTimestamp: (new Date(expiredAtMs)).toISOString(),
-            transferState: "ABORTED"
-          }
-        }
-      }
-
+    // should be either 1 (non final - pending only) or 2 (final - voided or posted)
+    const reserveTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Reserve)
+    if (reserveTransfers.length === 1) {
       return {
         type: LookupTransferResultType.FOUND_NON_FINAL
       }
     }
 
-    if (relatedTransfers.length > 2) {
+    if (reserveTransfers.length > 2) {
       return {
         type: LookupTransferResultType.FAILED,
         error: ErrorHandler.Factory.createInternalServerFSPIOPError(
-          `Found: ${relatedTransfers.length} related transfers. Expected at most 2.`
+          `Found: ${relatedTransfers.length} transfers with code: ${TransferCode.Clearing_Reserve}. Expected at most 2.`
         )
       }
     }
 
     let pendingTransfer: Transfer;
     let finalTransfer: Transfer;
-    if (relatedTransfers[0].id === prepareId) {
-      [pendingTransfer, finalTransfer] = relatedTransfers
-    } else if (relatedTransfers[1].id === prepareId) {
-      [finalTransfer, pendingTransfer] = relatedTransfers
+    if (reserveTransfers[0].id === prepareId) {
+      [pendingTransfer, finalTransfer] = reserveTransfers
+    } else if (reserveTransfers[1].id === prepareId) {
+      [finalTransfer, pendingTransfer] = reserveTransfers
     } else {
       return {
         type: LookupTransferResultType.FAILED,
