@@ -1,11 +1,11 @@
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import { Enum } from '@mojaloop/central-services-shared';
-import assert from "assert";
+import assert, { ok } from "assert";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { ApplicationConfig } from "src/shared/config";
 import { QueryResult } from 'src/shared/results';
-import { Account, AccountFilterFlags, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
+import { Account, AccountFilterFlags, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, CreateTransfersError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { CurrencyManager } from './CurrencyManager';
@@ -57,6 +57,18 @@ import {
 
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
+
+
+type PrepareFailureType = 'FAIL_LIQUIDITY' |
+  'PAYER_CLOSED' |
+  'PAYEE_CLOSED' |
+  'MODIFIED' |
+  'EXISTS' |
+  'UNKNOWN'
+
+type PrepareFailureResult = CreateTransfersError & {
+  type: PrepareFailureType,
+}
 
 /**
  * Handled errors for withdraw funds
@@ -744,7 +756,7 @@ export default class TigerBeetleLedger implements Ledger {
     try {
       const netDebitCapInternal = await this._getNetDebitCapInternal(cmd.currency, cmd.dfspId)
       const spec = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
-      if (spec.type === 'SpecAccountNone' ) {
+      if (spec.type === 'SpecAccountNone') {
         throw new Error(`no dfspId found: ${cmd.dfspId}`)
       }
       const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
@@ -1822,15 +1834,15 @@ export default class TigerBeetleLedger implements Ledger {
     const legacySettlementBalancePending = (accountDeposit.debits_pending - accountDeposit.credits_pending) * -1n
 
     // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
-    const clearingBalancePosted = accountUnrestricted.credits_posted - accountUnrestricted.debits_posted 
-     + accountRestricted.credits_posted - accountRestricted.debits_posted
-    
+    const clearingBalancePosted = accountUnrestricted.credits_posted - accountUnrestricted.debits_posted
+      + accountRestricted.credits_posted - accountRestricted.debits_posted
+
     // instead this should be the net credit balance of the Reserved account
     const clearingBalancePending = accountUnrestricted.credits_pending - accountUnrestricted.debits_pending
     const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
     const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
 
-    
+
     // Funds withdrawal internally uses Pending/Posted, but doesn't expose this in the API
     const settlementValue = -1n * (accountDeposit.debits_posted - accountDeposit.credits_pending - accountDeposit.credits_posted)
     // I'm pretty sure this should always be 0
@@ -1903,10 +1915,6 @@ export default class TigerBeetleLedger implements Ledger {
 
   // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able
   // to read multiple messages from Kafka at the same point.
-
-  // TODO(LD): We need to save the condition for later validation. We can be tricky and put this in
-  // a cache that gets broadcast to all fulfil handlers, or otherwise use Kafka keys to ensure that
-  // the condition and fulfil end up on the same handler instance.
   public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
     logger.debug('TigerBeetleLedger.prepare()')
     try {
@@ -1921,9 +1929,15 @@ export default class TigerBeetleLedger implements Ledger {
       const payer = input.payload.payerFsp
       const payee = input.payload.payeeFsp
 
+      // Lookup the Dfsp and Account Specs
+
       // TODO(LD): switch the interface to array based!
-      const payerSpec = await this.deps.specStore.getAccountSpec(payer, currency)
-      if (payerSpec.type === 'SpecAccountNone') {
+      // TODO(LD): is queryDfsp cached?
+      const dfspSpecPayer = await this.deps.specStore.queryDfsp(payer)
+      const dfspSpecPayee = await this.deps.specStore.queryDfsp(payer)
+      const accountSpecPayer = await this.deps.specStore.getAccountSpec(payer, currency)
+      const accountSpecPayee = await this.deps.specStore.getAccountSpec(payee, currency)
+      if (dfspSpecPayer.type === 'SpecDfspNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
@@ -1932,23 +1946,45 @@ export default class TigerBeetleLedger implements Ledger {
           ),
         }
       }
-      const payeeSpec = await this.deps.specStore.getAccountSpec(payee, currency)
-      if (payeeSpec.type === 'SpecAccountNone') {
+      if (dfspSpecPayee.type === 'SpecDfspNone') {
         return {
           type: PrepareResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payee fsp: ${payee} not found`
+            `payee fsp: ${payer} not found`
+          ),
+        }
+      }
+      if (accountSpecPayer.type === 'SpecAccountNone') {
+        return {
+          type: PrepareResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
+            `payer fsp: ${payer} not found`
+          ),
+        }
+      }
+      if (accountSpecPayee.type === 'SpecAccountNone') {
+        return {
+          type: PrepareResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
+            `payee fsp: ${payer} not found`
           ),
         }
       }
 
       const prepareId = Helper.fromMojaloopId(input.payload.transferId)
-      const clearingLedgerId = this.currencyManager.getClearingLedgerId(currency)
-      // TODO(LD): move this to the CurrencyManager
-      const amount = Helper.fromMojaloopAmount(amountStr, 2)
+      const ledgerOperation = this.currencyManager.getLedgerOperation(currency)
+      const assetScale = this.currencyManager.getAssetScale(currency)
+      const amountTigerBeetle = Helper.fromMojaloopAmount(amountStr, assetScale)
 
       const nowMs = (new Date()).getTime()
+      /**
+       * In future versions of the FSPIOP API, expiration will be defined in relative seconds,
+       * instead of absolute timestamps. That will make the below timeout calculations less error
+       * prone.
+       */
       const expirationMs = Date.parse(input.payload.expiration)
       if (isNaN(expirationMs)) {
         return {
@@ -1970,26 +2006,9 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      // TigerBeetle timeouts are specified in seconds. I'm not sure if we should round this up or
-      // down. For now, let's be pessimistic and round down.
-      const timeoutMs = expirationMs - nowMs
-      assert(timeoutMs > 0)
-      const timeoutSeconds = Math.floor(timeoutMs / 1000)
-      if (timeoutSeconds === 0) {
-        return {
-          type: PrepareResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
-            `transfer expiry must be one or more seconds in the future.`
-          ),
-        }
-      }
-      logger.warn(`prepare() - rounding down derived transfer timeout of ${timeoutMs} to ${timeoutSeconds * 1000}`)
-
-
       /**
        * Write Last, Read First Rule
-       * We write data dependencies first, then write to TigerBeetle
+       * Write data dependencies first, then write to TigerBeetle
        * Reference: https://tigerbeetle.com/blog/2025-11-06-the-write-last-read-first-rule/
        */
       await this.deps.specStore.saveTransferSpec([
@@ -2003,28 +2022,33 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ])
 
-      /**
-       * Dr Payer_Clearing
-       *  Cr Payee_Clearing
-       * Flags: pending
-       */
-      const transfer: Transfer = {
-        ...Helper.createTransferTemplate,
-        id: prepareId,
-        debit_account_id: payerSpec.unrestricted,
-        credit_account_id: payeeSpec.restricted,
-        amount,
-        pending_id: 0n,
-        // Also used as a correlation to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
-        user_data_128: prepareId,
-        timeout: timeoutSeconds,
-        ledger: clearingLedgerId,
-        code: 1,
-        flags: TransferFlags.pending,
-      }
-
-      // TODO(LD): add a 1 value linked transfer between the payer and payee master accounts
-      // these will fail if either of the master accounts are disabled
+      const transfers: Array<Transfer> = [
+        // Reserve funds for Participant A.
+        {
+          ...Helper.createTransferTemplate,
+          id: prepareId,
+          debit_account_id: accountSpecPayer.unrestricted,
+          credit_account_id: accountSpecPayer.reserved,
+          amount: amountTigerBeetle,
+          // Correlation id to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: TransferCode.Clearing_Reserve,
+          flags: TransferFlags.linked,
+        },
+        // Ensure both Participants are active.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: dfspSpecPayer.accountId,
+          credit_account_id: dfspSpecPayee.accountId,
+          amount: 0n,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: TransferCode.Clearing_Active_Check,
+          flags: TransferFlags.none
+        },
+      ]
 
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
         return {
@@ -2032,10 +2056,66 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      const error = await this.deps.transferBatcher.enqueueTransfer(transfer)
-      if (error) {
-        // specific error handling cases
-        if (error === CreateTransferError.exceeds_credits) {
+      const fatalErrors: Array<PrepareFailureResult> = []
+      const createTransferErrors = await this.deps.client.createTransfers(transfers)
+      createTransferErrors.forEach(error => {
+        if (error.index === 0) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.exists: {
+              fatalErrors.push({ type: 'EXISTS', ...error })
+              return
+            }
+            case CreateTransferError.exists_with_different_amount:
+            case CreateTransferError.exists_with_different_debit_account_id:
+            case CreateTransferError.exists_with_different_credit_account_id: {
+              fatalErrors.push({ type: 'MODIFIED', ...error })
+              return
+            }
+            case CreateTransferError.exceeds_credits: {
+              fatalErrors.push({ type: 'FAIL_LIQUIDITY', ...error })
+              return
+            }
+            // Collapse the DFSP deactivated and DFSP account deactivated into the same error
+            case CreateTransferError.debit_account_already_closed:
+              fatalErrors.push({ type: 'PAYER_CLOSED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
+          }
+        }
+
+        if (error.index === 1) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.debit_account_already_closed:
+              fatalErrors.push({ type: 'PAYER_CLOSED', ...error })
+              return
+            case CreateTransferError.credit_account_already_closed:
+              fatalErrors.push({ type: 'PAYEE_CLOSED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
+          }
+        }
+
+        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
+      })
+
+      if (fatalErrors.length === 0) {
+        return {
+          type: PrepareResultType.PASS
+        }
+      }
+
+      // Handle just the first error
+      const firstError = fatalErrors[0]
+      switch (firstError.type) {
+        case 'FAIL_LIQUIDITY': {
           return {
             type: PrepareResultType.FAIL_LIQUIDITY,
             error: ErrorHandler.Factory.createFSPIOPError(
@@ -2043,81 +2123,78 @@ export default class TigerBeetleLedger implements Ledger {
             )
           }
         }
-
-        if (error === CreateTransferError.exists_with_different_amount ||
-          error === CreateTransferError.exists_with_different_debit_account_id ||
-          error === CreateTransferError.exists_with_different_credit_account_id) {
+        case 'PAYER_CLOSED':
+          return {
+            type: PrepareResultType.FAIL_OTHER,
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+              `payer is not active`
+            )
+          }
+        case 'PAYEE_CLOSED':
+          return {
+            type: PrepareResultType.FAIL_OTHER,
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+              `payee is not active`
+            )
+          }
+        case 'EXISTS': {
+          // handled below
+          break;
+        }
+        case 'MODIFIED':
           return {
             type: PrepareResultType.MODIFIED
           }
-        }
+        case 'UNKNOWN':
+          return {
+            type: PrepareResultType.FAIL_OTHER,
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+              `prepare failed with unknown error: ${CreateTransferError[firstError.result]}`
+            )
+          }
+      }
 
-        /**
-         * Pending Transfer has already been created.
-         * 
-         * Note that because Mojaloop defines timeouts as expiration times, we can't guarantee that
-         * a timeout for a duplicate transfer will always be the same.
-         * 
-         * Look up what it is, and map to a PrepareResultType
-         */
-        if (error === CreateTransferError.exists ||
-          error === CreateTransferError.exists_with_different_timeout) {
-          const lookupTransferResult = await this.lookupTransfer({
-            transferId: input.payload.transferId
-          })
+      assert(firstError.type === 'EXISTS')
+      const lookupTransferResult = await this.lookupTransfer({
+        transferId: input.payload.transferId
+      })
 
-          switch (lookupTransferResult.type) {
-            case LookupTransferResultType.FOUND_NON_FINAL: {
-              return {
-                type: PrepareResultType.DUPLICATE_NON_FINAL
-              }
-            }
-            case LookupTransferResultType.FOUND_FINAL: {
-              return {
-                type: PrepareResultType.DUPLICATE_FINAL,
-                finalizedTransfer: lookupTransferResult.finalizedTransfer,
-              }
-            }
-            case LookupTransferResultType.NOT_FOUND: {
-              return {
-                type: PrepareResultType.FAIL_OTHER,
-                error: ErrorHandler.Factory.createInternalServerFSPIOPError(
-                  `TigerBeetleLedger.prepare() - TigerBeetleLedger.lookupTransfer() got result \
-                  ${lookupTransferResult.type} after encountering ${error}. This should not be \
-                  possible`.replace(/\s+/g, ' ')
-                )
-              }
-            }
-            case LookupTransferResultType.FAILED: {
-              return {
-                type: PrepareResultType.FAIL_OTHER,
-                error: lookupTransferResult.error
-              }
-            }
+      switch (lookupTransferResult.type) {
+        case LookupTransferResultType.FOUND_NON_FINAL: {
+          return {
+            type: PrepareResultType.DUPLICATE_NON_FINAL
           }
         }
-
-        // unhandled TigerBeetle Error
-        const readableError = CreateTransferError[error]
-
-        return {
-          type: PrepareResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
-            `prepare failed with error: ${readableError}`
-          )
+        case LookupTransferResultType.FOUND_FINAL: {
+          return {
+            type: PrepareResultType.DUPLICATE_FINAL,
+            finalizedTransfer: lookupTransferResult.finalizedTransfer,
+          }
+        }
+        case LookupTransferResultType.NOT_FOUND: {
+          return {
+            type: PrepareResultType.FAIL_OTHER,
+            error: ErrorHandler.Factory.createInternalServerFSPIOPError(
+              `TigerBeetleLedger.prepare() - TigerBeetleLedger.lookupTransfer() got result \
+                  ${lookupTransferResult.type} after encountering ${firstError}. This should not be \
+                  possible`.replace(/\s+/g, ' ')
+            )
+          }
+        }
+        case LookupTransferResultType.FAILED: {
+          return {
+            type: PrepareResultType.FAIL_OTHER,
+            error: lookupTransferResult.error
+          }
         }
       }
-
-      return {
-        type: PrepareResultType.PASS
-      }
-
     } catch (err) {
       return {
         type: PrepareResultType.FAIL_OTHER,
         error: err
-
       }
     }
   }
