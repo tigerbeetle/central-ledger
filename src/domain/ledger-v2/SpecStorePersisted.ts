@@ -4,6 +4,7 @@ import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAc
 import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
 import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
+import { SpecStoreCacheDfsp } from "./SpecStoreCacheDfsp";
 
 interface SpecRecordAccount {
   id: number;
@@ -103,13 +104,18 @@ function dehydrateSpecAccount(spec: SpecAccount): any {
 export class PersistedSpecStore implements SpecStore {
   private cacheAccount: SpecStoreCacheAccount
   private cacheTransfer: SpecStoreCacheTransfer
+  private cacheDfsp: SpecStoreCacheDfsp
 
   constructor(private db: Knex) {
     this.cacheAccount = new SpecStoreCacheAccount()
     this.cacheTransfer = new SpecStoreCacheTransfer()
+    this.cacheDfsp = new SpecStoreCacheDfsp()
   }
 
   async associateDfsp(dfspId: string, accountId: bigint): Promise<void> {
+    // Invalidate cache before insert
+    this.cacheDfsp.delete(dfspId)
+
     await this.db.from(TABLE_DFSP).insert({
       dfspId,
       accountId: accountId.toString()
@@ -136,6 +142,13 @@ export class PersistedSpecStore implements SpecStore {
   }
 
   async queryDfsp(dfspId: string): Promise<SpecDfsp | SpecDfspNone> {
+    // Check cache first
+    const cacheResult = this.cacheDfsp.get(dfspId)
+    if (cacheResult.type === 'HIT') {
+      return cacheResult.contents
+    }
+
+    // Cache miss - query database
     const result = await this.db.from(TABLE_DFSP)
       .where({ dfspId })
       .first();
@@ -145,11 +158,16 @@ export class PersistedSpecStore implements SpecStore {
     }
 
     const specRecord = result as SpecRecordDfsp
-    return {
+    const spec: SpecDfsp = {
       type: 'SpecDfsp',
       dfspId: specRecord.dfspId,
       accountId: BigInt(specRecord.accountId),
     }
+
+    // Populate cache before returning
+    this.cacheDfsp.put(dfspId, spec)
+
+    return spec
   }
 
   async queryAccountsAll(): Promise<Array<SpecAccount>> {
