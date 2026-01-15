@@ -56,24 +56,28 @@ export class TestUtils {
     }
   }
 
-  static buildValidFulfilInput(transferId: string, payload: CommitTransferDto): FusedFulfilHandlerInput {
+  static buildValidFulfilInput(
+    transferId: string,
+    payload: CommitTransferDto,
+    callerDfspId: string = 'dfsp_b'
+  ): FusedFulfilHandlerInput {
     const input: FusedFulfilHandlerInput = {
       payload,
       transferId,
       headers: {
-        'fspiop-source': 'dfsp_b',
+        'fspiop-source': callerDfspId,
         'fspiop-destination': 'dfsp_a',
         'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
       },
       message: {
         value: {
-          from: 'dfsp_b',
+          from: callerDfspId,
           to: 'dfsp_a',
           id: `msg-${transferId}`,
           type: 'application/json',
           content: {
             headers: {
-              'fspiop-source': 'dfsp_b',
+              'fspiop-source': callerDfspId,
               'fspiop-destination': 'dfsp_a',
             },
             payload,
@@ -95,13 +99,17 @@ export class TestUtils {
       },
       action: Enum.Events.Event.Action.COMMIT,
       eventType: 'fulfil',
-      kafkaTopic: 'topic-transfer-fulfil'
+      kafkaTopic: 'topic-transfer-fulfil',
+      callerDfspId
     };
 
     return input
   }
 
-  static buildValidAbortInput(transferId: string): FusedFulfilHandlerInput {
+  static buildValidAbortInput(
+    transferId: string,
+    callerDfspId: string = 'dfsp_b'
+  ): FusedFulfilHandlerInput {
     // Note: For abort, the payload isn't actually used by the abort() method
     // It only uses input.action and input.transferId
     const dummyPayload: CommitTransferDto = {
@@ -114,19 +122,19 @@ export class TestUtils {
       payload: dummyPayload,
       transferId,
       headers: {
-        'fspiop-source': 'dfsp_b',
+        'fspiop-source': callerDfspId,
         'fspiop-destination': 'dfsp_a',
         'content-type': 'application/vnd.interoperability.transfers+json;version=1.0'
       },
       message: {
         value: {
-          from: 'dfsp_b',
+          from: callerDfspId,
           to: 'dfsp_a',
           id: `msg-${transferId}`,
           type: 'application/json',
           content: {
             headers: {
-              'fspiop-source': 'dfsp_b',
+              'fspiop-source': callerDfspId,
               'fspiop-destination': 'dfsp_a',
             },
             payload: dummyPayload,
@@ -148,7 +156,8 @@ export class TestUtils {
       },
       action: Enum.Events.Event.Action.ABORT,
       eventType: 'fulfil',
-      kafkaTopic: 'topic-transfer-fulfil'
+      kafkaTopic: 'topic-transfer-fulfil',
+      callerDfspId
     };
 
     return input

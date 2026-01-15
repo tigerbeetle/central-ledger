@@ -35,6 +35,10 @@ export interface FusedFulfilHandlerInput {
   action: SupportedFulfilHandlerAction;
   eventType: string;
   kafkaTopic: string;
+  /**
+   * The DFSP ID of the caller, extracted from FSPIOP-Source header
+   */
+  callerDfspId: string;
 }
 
 export class FusedFulfilHandler {
@@ -176,6 +180,11 @@ export class FusedFulfilHandler {
         throw new Error(`FusedFulfilHandler.extractMessageData() - unexpected action: ${action}.`)
     }
 
+    // Extract caller DFSP ID from FSPIOP-Source header
+    const callerDfspId = headers['fspiop-source'];
+    assert(callerDfspId, 'callerDfspId (FSPIOP-Source header) is required');
+    assert(typeof callerDfspId === 'string', 'callerDfspId must be a string');
+
     return {
       message,
       payload,
@@ -183,7 +192,8 @@ export class FusedFulfilHandler {
       transferId,
       action,
       eventType,
-      kafkaTopic: message.topic
+      kafkaTopic: message.topic,
+      callerDfspId
     };
   }
 

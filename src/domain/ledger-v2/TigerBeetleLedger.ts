@@ -2300,12 +2300,28 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   private async abort(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
-    // TODO(LD): lookup the payeeDfsp, and ensure that only the payee can call this
-    // ideally permissions checks would happen elsewhere, but I think the only place with full
-    // context is here!
-
     logger.debug('TigerBeetleLedger.abort()')
     assert(input.action === Enum.Events.Event.Action.ABORT)
+
+    // Lookup transfer spec to verify authorization
+    const transferSpecResults = await this.deps.specStore.lookupTransferSpec([input.transferId])
+
+    // If transfer exists, verify authorization
+    if (transferSpecResults.length === 1 && transferSpecResults[0].type === 'SpecTransfer') {
+      const transferSpec = transferSpecResults[0]
+
+      // Authorization check - only payee can abort
+      if (input.callerDfspId !== transferSpec.payeeId) {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `Only the payee (${transferSpec.payeeId}) can abort this transfer. Caller: ${input.callerDfspId}`
+          )
+        }
+      }
+    }
+
     const prepareId = Helper.fromMojaloopId(input.transferId)
 
     // Void the pending transfer
@@ -2413,6 +2429,18 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
       assert(transferSpec.type === 'SpecTransfer')
+
+      // Authorization check - only payee can fulfil
+      if (input.callerDfspId !== transferSpec.payeeId) {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `Only the payee (${transferSpec.payeeId}) can fulfil this transfer. Caller: ${input.callerDfspId}`
+          )
+        }
+      }
+
       const ledgerOperation = this.currencyManager.getLedgerOperation(transferSpec.currency)
       const assetScale = this.currencyManager.getAssetScale(transferSpec.currency)
       const amountTigerBeetle = Helper.fromMojaloopAmount(transferSpec.amount, assetScale)

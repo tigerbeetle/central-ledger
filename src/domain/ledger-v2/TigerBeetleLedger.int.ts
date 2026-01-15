@@ -1468,7 +1468,7 @@ describe('TigerBeetleLedger', () => {
       }
     })
 
-    it.only('should fail to fulfil with closed payee account', async () => {
+    it('should fail to fulfil with closed payee account', async () => {
       // Arrange
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1518,7 +1518,7 @@ describe('TigerBeetleLedger', () => {
         fulfilment,
         completedTimestamp: new Date().toISOString()
       }
-      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, closingPayeeDfspId)
       const result = await ledger.fulfil(fulfilInput)
 
       // Assert
@@ -1526,6 +1526,77 @@ describe('TigerBeetleLedger', () => {
       if (result.type === FulfilResultType.FAIL_OTHER) {
         assert.ok(result.error)
         assert.match(result.error.message, /payee.*account.*closed/i)
+      }
+    })
+  })
+
+  describe('clearing unhappy path - authorization', () => {
+    it('should fail to fulfil when caller is not the payee', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare transfer
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      // Act - Attempt fulfil with payer as caller (should only be payee)
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, 'dfsp_a')
+      const result = await ledger.fulfil(fulfilInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /only.*payee.*fulfil/i)
+      }
+    })
+
+    it('should fail to abort when caller is not the payee', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare transfer
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      // Act - Attempt abort with payer as caller (should only be payee)
+      const abortInput = TestUtils.buildValidAbortInput(transferId, 'dfsp_a')
+      const result = await ledger.fulfil(abortInput)
+
+      // Assert
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /only.*payee.*abort/i)
       }
     })
   })
