@@ -35,6 +35,7 @@ exports.up = async (knex) => {
         t.foreign('payeeId').references('name').inTable('participant')
         t.string('ilpCondition', 256).notNullable()
         t.text('ilpPacket').notNullable()
+        t.string('amount', 16).notNullable()
         t.string('currency', 3).notNullable()
         t.string('fulfilment', 256)
       })

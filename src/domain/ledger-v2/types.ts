@@ -328,6 +328,7 @@ export interface DisableDfspAccountCommand {
 
 export type SetNetDebitCapCommand = SetNetDebitCapAmountCommand | SetNetDebitCapUnlimitedCommand
 
+// TODO(LD): refactor this to use the NetDebitCap type
 export interface SetNetDebitCapAmountCommand {
   netDebitCapType: 'AMOUNT'
   dfspId: string

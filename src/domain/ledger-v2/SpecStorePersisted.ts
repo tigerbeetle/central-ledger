@@ -25,6 +25,7 @@ interface SpecRecordAccount {
 interface SpecRecordTransfer {
   id: string
   currency: string
+  amount: string
   payerId: string
   payeeId: string
   ilpCondition: string
@@ -320,6 +321,7 @@ export class PersistedSpecStore implements SpecStore {
         type: 'SpecTransfer',
         id: record.id,
         currency: record.currency,
+        amount: record.amount,
         payerId: record.payerId,
         payeeId: record.payeeId,
         condition: record.ilpCondition,
@@ -337,6 +339,7 @@ export class PersistedSpecStore implements SpecStore {
         const record: SpecRecordTransfer = {
           id: m.id,
           currency: m.currency,
+          amount: m.amount,
           payerId: m.payerId,
           payeeId: m.payeeId,
           ilpCondition: m.condition,

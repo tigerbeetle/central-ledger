@@ -28,6 +28,11 @@ export interface SpecAccountNone {
 export interface SpecTransfer {
   type: 'SpecTransfer'
   id: string,
+  // Ideally we wouldn't need to include this here and store it in the SpecStore because it confuses
+  // which is the system of record (TigerBeetle) vs the system of reference (MySQL).
+  // We _need_ to store amount in the system of reference because we need it in Ledger.fulfil() and
+  // can't afford the performance hit to lookup the prepared payment in TigerBeetle
+  amount: string,
   currency: string,
   payerId: string,
   payeeId: string,
@@ -154,12 +159,6 @@ export interface SpecStore {
    * Saves the transfer spec to the spec store
    */
   saveTransferSpec(spec: Array<SaveTransferSpecCommand>): Promise<Array<SaveSpecTransferResult>>
-
-  // /**
-  //  * Update existing transfers, attaching the fulfilment
-  //  */
-  // updateTransferSpecFulfilment(transfersToUpdate: Array<{id: string, fulfilment: string}>): Promise<Array<SaveTransferSpecResult>>
-
 
   /**
    * Looks up the funding spec for a given set of transfer IDs. Always returns the fundings
