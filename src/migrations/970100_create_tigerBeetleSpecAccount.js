@@ -38,8 +38,7 @@ exports.up = async (knex) => {
         t.string('restricted', 64).notNullable()
         t.string('reserved', 64).notNullable()
         t.string('commitedOutgoing', 64).notNullable()
-        t.string('netDebitCap', 64).notNullable()
-        t.string('netDebitCapControl', 64).notNullable()
+        
         t.boolean('isTombstoned').defaultTo(false).notNullable()
         t.dateTime('createdDate').defaultTo(knex.fn.now()).notNullable()
         t.dateTime('updatedDate').defaultTo(knex.fn.now()).notNullable()

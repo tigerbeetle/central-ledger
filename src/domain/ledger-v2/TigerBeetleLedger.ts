@@ -165,9 +165,8 @@ export default class TigerBeetleLedger implements Ledger {
           accountSpecResult.restricted,
           accountSpecResult.reserved,
           accountSpecResult.commitedOutgoing,
-          accountSpecResult.netDebitCap,
         ]);
-        if (accounts.length === 7) {
+        if (accounts.length === 6) {
           return {
             type: 'ALREADY_EXISTS'
           }
@@ -191,8 +190,6 @@ export default class TigerBeetleLedger implements Ledger {
         restricted: Helper.idSmall(),
         reserved: Helper.idSmall(),
         commitedOutgoing: Helper.idSmall(),
-        netDebitCap: Helper.idSmall(),
-        netDebitCapControl: Helper.idSmall(),
       }
 
       const accounts: Array<Account> = [
@@ -220,22 +217,22 @@ export default class TigerBeetleLedger implements Ledger {
           code: AccountCode.Dfsp,
           flags: 0,
         },
-        // Net Debit Cap - stores the Net Debit Cap for this Dfsp + Currency
-        {
-          ...Helper.createAccountTemplate,
-          id: accountIds.netDebitCap,
-          ledger: ledgerControl,
-          code: AccountCode.Net_Debit_Cap,
-          flags: AccountFlags.linked
-        },
-        // Net Debit Cap Control account - counterparty for the Net Debit Cap Setting
-        {
-          ...Helper.createAccountTemplate,
-          id: accountIds.netDebitCapControl,
-          ledger: ledgerControl,
-          code: AccountCode.Net_Debit_Cap_Control,
-          flags: AccountFlags.linked
-        },
+        // // Net Debit Cap - stores the Net Debit Cap for this Dfsp + Currency
+        // {
+        //   ...Helper.createAccountTemplate,
+        //   id: accountIds.netDebitCap,
+        //   ledger: ledgerControl,
+        //   code: AccountCode.Net_Debit_Cap,
+        //   flags: AccountFlags.linked
+        // },
+        // // Net Debit Cap Control account - counterparty for the Net Debit Cap Setting
+        // {
+        //   ...Helper.createAccountTemplate,
+        //   id: accountIds.netDebitCapControl,
+        //   ledger: ledgerControl,
+        //   code: AccountCode.Net_Debit_Cap_Control,
+        //   flags: AccountFlags.linked
+        // },
         // Deposit
         {
           ...Helper.createAccountTemplate,
@@ -312,7 +309,6 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      // TODO(LD): Set up the net debit cap with an opening transfer of Maximum amount
       const setNetDebitCapResult = await this.setNetDebitCap({
         netDebitCapType: 'UNLIMITED',
         dfspId: cmd.dfspId,
@@ -1325,7 +1321,7 @@ export default class TigerBeetleLedger implements Ledger {
       dfspId: cmd.dfspId,
       currency: cmd.currency
     }])
-    assert(saveSpecNetDebitCapResults.length === 0)
+    assert(saveSpecNetDebitCapResults.length === 1)
     const saveSpecNetDebitCapResult = saveSpecNetDebitCapResults[0]
     if (saveSpecNetDebitCapResult.type === 'FAILURE') {
       logger.error(`setNetDebitCap() - saveSpecNetDebitCaps() failed with error: \
@@ -1832,7 +1828,6 @@ export default class TigerBeetleLedger implements Ledger {
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Restricted),
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Reserved),
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Committed_Outgoing),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Net_Debit_Cap),
       ]
       const ids = [
         specAccount.deposit,
@@ -1841,7 +1836,6 @@ export default class TigerBeetleLedger implements Ledger {
         specAccount.restricted,
         specAccount.reserved,
         specAccount.commitedOutgoing,
-        specAccount.netDebitCap,
       ]
 
       accountKeys.push(...keys)
@@ -2466,11 +2460,9 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      // TODO(LD): need to get the net debit cap of the payee
-      const netDebitCapPayee: InternalNetDebitCap = {
-        type: 'UNLIMITED',
-      } as unknown as InternalNetDebitCap
-
+      const netDebitCapPayee = await this._getNetDebitCapInternal(
+        accountSpecPayee.currency, accountSpecPayee.dfspId
+      )
       const prepareId = Helper.fromMojaloopId(input.transferId)
 
       // Validate that the fulfilment matches the condition
@@ -2564,7 +2556,8 @@ export default class TigerBeetleLedger implements Ledger {
           id: idLockTransfer,
           debit_account_id: accountSpecPayee.unrestricted,
           credit_account_id: accountSpecPayee.unrestrictedLock,
-          amount: netDebitCapPayee.type === 'LIMITED' ? netDebitCapPayee.amount : amount_max,
+          amount: netDebitCapPayee.type === 'LIMITED' ? 
+            Helper.toTigerBeetleAmount(netDebitCapPayee.amount, assetScale) : amount_max,
           user_data_128: prepareId,
           ledger: ledgerOperation,
           code: TransferCode.Net_Debit_Cap_Lock,
@@ -3102,8 +3095,6 @@ export default class TigerBeetleLedger implements Ledger {
       accountIdToSpec.set(spec.restricted.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Restricted });
       accountIdToSpec.set(spec.reserved.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Reserved });
       accountIdToSpec.set(spec.commitedOutgoing.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Committed_Outgoing });
-      accountIdToSpec.set(spec.netDebitCap.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Net_Debit_Cap });
-      accountIdToSpec.set(spec.netDebitCapControl.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Net_Debit_Cap_Control });
     }
 
     // Enrich transfers with account information

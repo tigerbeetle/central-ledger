@@ -14,6 +14,22 @@ describe('TigerBeetleLedger', () => {
   let harness: IntegrationHarness;
   let ledger: TigerBeetleLedger;
 
+  const setupDfsp = async (dfspId: string, depositAmount: number, currency: string = 'USD') => {
+    await participantService.ensureExists(dfspId)
+    TestUtils.unwrapSuccess(await ledger.createDfsp({
+      dfspId,
+      currencies: [currency]
+    }))
+    TestUtils.unwrapSuccess(await ledger.deposit({
+      transferId: randomUUID(),
+      dfspId,
+      currency,
+      amount: depositAmount,
+      reason: 'Initial deposit'
+    }))
+  }
+
+
   before(async () => {
     harness = await IntegrationHarness.create({
       hubCurrencies: ['USD'],
@@ -31,21 +47,6 @@ describe('TigerBeetleLedger', () => {
   })
 
   describe('lifecycle', () => {
-    const setupDfsp = async (dfspId: string, depositAmount: number, currency: string = 'USD') => {
-      await participantService.ensureExists(dfspId)
-      TestUtils.unwrapSuccess(await ledger.createDfsp({
-        dfspId,
-        currencies: [currency]
-      }))
-      TestUtils.unwrapSuccess(await ledger.deposit({
-        transferId: randomUUID(),
-        dfspId,
-        currency,
-        amount: depositAmount,
-        reason: 'Initial deposit'
-      }))
-    }
-
     it('creates a dfsp, deposits funds, sets the limit and adjusts the limit', async () => {
       const dfspId = 'dfsp_c';
       const currency = 'USD';
@@ -63,8 +64,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,0,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;`
       ))
 
       // Act: Adjust the net debit cap to lower than deposit amount
@@ -83,8 +83,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,4000,4000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,6000,6000;`
+        USD,20400,0,0,0,0,0;`
       ))
 
       // Act: Now adjust NDC to be greater than deposit amount
@@ -102,8 +101,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,4000,0,4000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,6000,6000;`
+        USD,20400,0,0,0,0,0;`
       ))
 
       // Act: Now deposit more funds
@@ -123,8 +121,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,4000,0,4000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,6000,6000;`
+        USD,20400,0,0,0,0,0;`
       ))
     })
 
@@ -165,8 +162,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,1000,1000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,10000,10000;`
+        USD,20400,0,0,0,0,0;`
       ))
 
       // Act: Deposit another 2,000
@@ -186,8 +182,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,1000,0,4000,3000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,10000,10000;`
+        USD,20400,0,0,0,0,0;`
       ))
     })
 
@@ -250,8 +245,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,5000,5000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,5000,5000;`
+        USD,20400,0,0,0,0,0;`
       ))
 
       // Act
@@ -269,8 +263,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,5000,5000;`
+        USD,20400,0,0,0,0,0;`
       ))
       assert(withdrawPrepareResult.type === 'SUCCESS', 'expected success result')
     })
@@ -305,8 +298,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,5000,5000;`
+        USD,20400,0,0,0,0,0;`
       ))
 
       // Act
@@ -320,8 +312,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,5000,5000;`
+        USD,20400,0,0,0,0,0;`
       ))
       assert(withdrawCommitResult.type === 'SUCCESS', 'expected success result')
     })
@@ -432,8 +423,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,5000,5000;`
+        USD,20400,0,0,0,0,0;`
       ))
 
       // Act
@@ -447,8 +437,7 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;
-        USD,60200,0,0,0,5000,5000;`
+        USD,20400,0,0,0,0,0;`
       ))
       assert(withdrawCommitResult.type === 'SUCCESS', 'expected success result')
     })
@@ -808,7 +797,7 @@ describe('TigerBeetleLedger', () => {
 
       const tbLedger = ledger as TigerBeetleLedger
       const accounts = TestUtils.unwrapSuccess(
-        await tbLedger.getDfspV2({dfspId: 'dfsp_a'})
+        await tbLedger.getDfspV2({ dfspId: 'dfsp_a' })
       )
       TestUtils.printLedgerDfsps([accounts])
 
@@ -829,12 +818,11 @@ describe('TigerBeetleLedger', () => {
       // Act
       const result = await ledger.fulfil(input)
 
-      const tbLedger = ledger as TigerBeetleLedger
       const accountsA = TestUtils.unwrapSuccess(
-        await tbLedger.getDfspV2({dfspId: 'dfsp_a'})
-      )      
+        await ledger.getDfspV2({ dfspId: 'dfsp_a' })
+      )
       const accountsB = TestUtils.unwrapSuccess(
-        await tbLedger.getDfspV2({dfspId: 'dfsp_b'})
+        await ledger.getDfspV2({ dfspId: 'dfsp_b' })
       )
       TestUtils.printLedgerDfsps([accountsA, accountsB])
 
@@ -845,116 +833,216 @@ describe('TigerBeetleLedger', () => {
       }
       assert.equal(result.type, FulfilResultType.PASS)
     })
+
+    it('payee dfsp with unlimited net debit cap always receives credit in Unrestricted', async () => {
+      // Arrange
+      await setupDfsp('dfsp_c', 10000, 'USD')
+      TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
+        netDebitCapType: 'UNLIMITED',
+        dfspId: 'dfsp_c',
+        currency: 'USD'
+      }))
+
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_c',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Clear the payment
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, 'dfsp_c')
+      const fulfilResult = await ledger.fulfil(fulfilInput)
+      assert.equal(fulfilResult.type, FulfilResultType.PASS)
+
+      const accountsPost = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_c' })
+      )
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,0,0,10100,10100;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,100,0,100,0;`
+      ))
+    })
+
+    it('net receiver payee dfsp with a limited net debit cap gets funds swept into unrestricted', async () => {
+      // Arrange
+      await setupDfsp('dfsp_c', 10000, 'USD')
+      TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
+        netDebitCapType: 'LIMITED',
+        dfspId: 'dfsp_c',
+        currency: 'USD',
+        amount: 5123
+      }))
+
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_c',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Clear the payment
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, 'dfsp_c')
+      const fulfilResult = await ledger.fulfil(fulfilInput)
+      assert.equal(fulfilResult.type, FulfilResultType.PASS)
+
+      // Assert
+      const accountsPost = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_c' })
+      )
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,4977,0,10100,5123;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,4977,4977;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,100,0,100,0;`
+      ))
+    })
   })
 
   describe('clearing unhappy path - prepare validation', () => {
     it('should fail when payer DFSP does not exist', async () => {
-        // Arrange
-        const transferId = randomUUID()
-        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
-        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
-        const payload: CreateTransferDto = {
-          transferId,
-          payerFsp: 'non_existent_payer_dfsp',
-          payeeFsp: 'dfsp_b',
-          amount: { amount: '100', currency: 'USD' },
-          ilpPacket,
-          condition,
-          expiration: new Date(Date.now() + 60000).toISOString()
-        }
-        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'non_existent_payer_dfsp',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
 
-        // Act
-        const result = await ledger.prepare(input)
+      // Act
+      const result = await ledger.prepare(input)
 
-        // Assert
-        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
-        if (result.type === PrepareResultType.FAIL_OTHER) {
-          assert.ok(result.error)
-          assert.match(result.error.message, /payer fsp.*not found/i)
-        }
-      })
+      // Assert
+      assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+      if (result.type === PrepareResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payer fsp.*not found/i)
+      }
+    })
 
-      it('should fail when payee DFSP does not exist', async () => {
-        // Arrange
-        const transferId = randomUUID()
-        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
-        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
-        const payload: CreateTransferDto = {
-          transferId,
-          payerFsp: 'dfsp_a',
-          payeeFsp: 'non_existent_payee_dfsp',
-          amount: { amount: '100', currency: 'USD' },
-          ilpPacket,
-          condition,
-          expiration: new Date(Date.now() + 60000).toISOString()
-        }
-        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+    it('should fail when payee DFSP does not exist', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'non_existent_payee_dfsp',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
 
-        // Act
-        const result = await ledger.prepare(input)
+      // Act
+      const result = await ledger.prepare(input)
 
-        // Assert
-        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
-        if (result.type === PrepareResultType.FAIL_OTHER) {
-          assert.ok(result.error)
-          assert.match(result.error.message, /payee fsp.*not found/i)
-        }
-      })
+      // Assert
+      assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+      if (result.type === PrepareResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payee fsp.*not found/i)
+      }
+    })
 
-      it('should fail when expiration format is invalid', async () => {
-        // Arrange
-        const transferId = randomUUID()
-        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
-        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
-        const payload: CreateTransferDto = {
-          transferId,
-          payerFsp: 'dfsp_a',
-          payeeFsp: 'dfsp_b',
-          amount: { amount: '100', currency: 'USD' },
-          ilpPacket,
-          condition,
-          expiration: 'invalid-date-format'
-        }
-        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+    it('should fail when expiration format is invalid', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: 'invalid-date-format'
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
 
-        // Act
-        const result = await ledger.prepare(input)
+      // Act
+      const result = await ledger.prepare(input)
 
-        // Assert
-        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
-        if (result.type === PrepareResultType.FAIL_OTHER) {
-          assert.ok(result.error)
-          assert.match(result.error.message, /invalid.*expiration/i)
-        }
-      })
+      // Assert
+      assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+      if (result.type === PrepareResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /invalid.*expiration/i)
+      }
+    })
 
-      it('should fail when expiration is already in the past', async () => {
-        // Arrange
-        const transferId = randomUUID()
-        const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() - 60000))
-        const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
-        const payload: CreateTransferDto = {
-          transferId,
-          payerFsp: 'dfsp_a',
-          payeeFsp: 'dfsp_b',
-          amount: { amount: '100', currency: 'USD' },
-          ilpPacket,
-          condition,
-          expiration: new Date(Date.now() - 60000).toISOString()
-        }
-        const input = TestUtils.buildValidPrepareInput(transferId, payload)
+    it('should fail when expiration is already in the past', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() - 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() - 60000).toISOString()
+      }
+      const input = TestUtils.buildValidPrepareInput(transferId, payload)
 
-        // Act
-        const result = await ledger.prepare(input)
+      // Act
+      const result = await ledger.prepare(input)
 
-        // Assert
-        assert.equal(result.type, PrepareResultType.FAIL_OTHER)
-        if (result.type === PrepareResultType.FAIL_OTHER) {
-          assert.ok(result.error)
-          assert.match(result.error.message, /expiration.*past/i)
-        }
-      })
+      // Assert
+      assert.equal(result.type, PrepareResultType.FAIL_OTHER)
+      if (result.type === PrepareResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /expiration.*past/i)
+      }
+    })
   })
 
   describe('clearing unhappy path - prepare liquidity', () => {
@@ -1020,7 +1108,7 @@ describe('TigerBeetleLedger', () => {
       }))
 
       // Close the payer's unrestricted account
-      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closedPayerDfspId}))
+      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId: closedPayerDfspId }))
       const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert.ok(unrestricted, 'Unrestricted account should exist')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
@@ -1355,7 +1443,7 @@ describe('TigerBeetleLedger', () => {
       const firstFulfilResult = await ledger.fulfil(fulfilInput)
       assert.equal(firstFulfilResult.type, FulfilResultType.PASS)
 
-      // Act - Fulfil again
+      // Act
       const result = await ledger.fulfil(fulfilInput)
 
       // Assert
@@ -1443,7 +1531,7 @@ describe('TigerBeetleLedger', () => {
       assert.equal(prepareResult.type, PrepareResultType.PASS)
 
       // Close payer's unrestricted account
-      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closingPayerDfspId}))
+      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId: closingPayerDfspId }))
       const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert.ok(unrestricted, 'Unrestricted account should exist')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({
@@ -1504,7 +1592,7 @@ describe('TigerBeetleLedger', () => {
       assert.equal(prepareResult.type, PrepareResultType.PASS)
 
       // Close payee's unrestricted account
-      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({dfspId: closingPayeeDfspId}))
+      const dfspAccounts = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId: closingPayeeDfspId }))
       const unrestricted = dfspAccounts.accounts.find(acc => acc.code === AccountCode.Unrestricted)
       assert.ok(unrestricted, 'Unrestricted account should exist')
       TestUtils.unwrapSuccess(await ledger.disableDfspAccount({

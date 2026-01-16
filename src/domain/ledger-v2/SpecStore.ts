@@ -7,8 +7,6 @@ export interface DfspAccountIds {
   restricted: bigint,
   reserved: bigint,
   commitedOutgoing: bigint,
-  netDebitCap: bigint,
-  netDebitCapControl: bigint,
 }
 
 /**

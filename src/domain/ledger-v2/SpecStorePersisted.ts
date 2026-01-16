@@ -16,8 +16,6 @@ interface SpecRecordAccount {
   restricted: string,
   reserved: string,
   commitedOutgoing: string,
-  netDebitCap: string,
-  netDebitCapControl: string,
   isTombstoned: boolean;
   createdDate: string;
   updatedDate: string;
@@ -74,22 +72,17 @@ function hydrateSpecAccount(result: any): SpecAccount {
   assert(record.restricted)
   assert(record.reserved)
   assert(record.commitedOutgoing)
-  assert(record.netDebitCap)
-  assert(record.netDebitCapControl)
 
   const spec: SpecAccount = {
     type: 'SpecAccount',
     dfspId: record.dfspId,
     currency: record.currency,
-
     deposit: BigInt(record.deposit),
     unrestricted: BigInt(record.unrestricted),
     unrestrictedLock: BigInt(record.unrestrictedLock),
     restricted: BigInt(record.restricted),
     reserved: BigInt(record.reserved),
     commitedOutgoing: BigInt(record.commitedOutgoing),
-    netDebitCap: BigInt(record.netDebitCap),
-    netDebitCapControl: BigInt(record.netDebitCapControl),
   }
 
   return spec
@@ -105,8 +98,6 @@ function dehydrateSpecAccount(spec: SpecAccount): any {
     restricted: spec.restricted,
     reserved: spec.reserved,
     commitedOutgoing: spec.commitedOutgoing,
-    netDebitCap: spec.netDebitCap,
-    netDebitCapControl: spec.netDebitCapControl,
   }
 
   return record
@@ -262,8 +253,6 @@ export class PersistedSpecStore implements SpecStore {
         restricted: accounts.restricted.toString(),
         reserved: accounts.reserved.toString(),
         commitedOutgoing: accounts.commitedOutgoing.toString(),
-        netDebitCap: accounts.netDebitCap.toString(),
-        netDebitCapControl: accounts.netDebitCapControl.toString(),
       })
       .update({
         isTombstoned: true,
