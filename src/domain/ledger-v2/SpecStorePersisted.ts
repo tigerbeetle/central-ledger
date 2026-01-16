@@ -1,10 +1,10 @@
 import assert from "assert";
 import { Knex } from "knex";
-import { DfspAccountIds, SpecStore, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecTransfer, SpecTransferNone, SaveSpecTransferResult, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SaveFundingSpecCommand, SaveSpecFundingResult, FundingAction, SaveSpecFundingResultExists, AttachTransferSpecFulfilment } from "./SpecStore";
-import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 import { logger } from '../../shared/logger';
-import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
+import { AttachTransferSpecFulfilment, DfspAccountIds, FundingAction, GetSpecNetDebitCapResult, SaveFundingSpecCommand, SaveSpecFundingResult, SaveSpecNetDebitCapResult, SaveSpecTransferResult, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SpecNetDebitCap, SpecStore, SpecTransfer, SpecTransferNone } from "./SpecStore";
 import { SpecStoreCacheDfsp } from "./SpecStoreCacheDfsp";
+import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
+import { SpecStoreCacheAccount } from "./StoreCacheAccount";
 
 interface SpecRecordAccount {
   id: number;
@@ -47,10 +47,21 @@ interface SpecRecordFunding {
   reason: string
 }
 
+interface SpecRecordNetDebitCap {
+  id: number
+  dfspId: string
+  currency: string
+  type: 'UNLIMITED' | 'LIMITED'
+  amount: string | null
+  createdDate: string
+  updatedDate: string
+}
+
 const TABLE_ACCOUNT = 'tigerBeetleSpecAccount'
 const TABLE_TRANSFER = 'tigerBeetleSpecTransfer'
 const TABLE_DFSP = 'tigerBeetleSpecDfsp'
 const TABLE_FUNDING = 'tigerBeetleSpecFunding'
+const TABLE_NET_DEBIT_CAP = 'tigerBeetleSpecNetDebitCap'
 
 function hydrateSpecAccount(result: any): SpecAccount {
   const record = result as SpecRecordAccount;
@@ -496,6 +507,118 @@ export class PersistedSpecStore implements SpecStore {
           type: 'FAILURE'
         }
       })
+    }
+  }
+
+  async saveSpecNetDebitCaps(netDebitCaps: Array<SpecNetDebitCap>): Promise<Array<SaveSpecNetDebitCapResult>> {
+    const results: Array<SaveSpecNetDebitCapResult> = []
+
+    for (const spec of netDebitCaps) {
+      try {
+        const record: Partial<SpecRecordNetDebitCap> = {
+          dfspId: spec.dfspId,
+          currency: spec.currency,
+          type: spec.type,
+          amount: spec.type === 'LIMITED' ? String(spec.amount) : null
+        }
+
+        // Use insert with onConflict to handle upsert
+        await this.db.from(TABLE_NET_DEBIT_CAP)
+          .insert(record)
+          .onConflict(['dfspId', 'currency'])
+          .merge(['type', 'amount', 'updatedDate'])
+
+        results.push({ type: 'SUCCESS' })
+      } catch (err) {
+        logger.error(`saveSpecNetDebitCaps() - failed for dfspId: ${spec.dfspId}, currency: ${spec.currency}`, err)
+        results.push({
+          type: 'FAILURE',
+          error: err instanceof Error ? err : new Error(String(err))
+        })
+      }
+    }
+
+    return results
+  }
+
+  async getSpecNetDebitCaps(dfspCurrencies: Array<{ dfspId: string; currency: string; }>): Promise<Array<GetSpecNetDebitCapResult>> {
+    try {
+      // Build WHERE IN clause for bulk query
+      const queryBuilder = this.db.from(TABLE_NET_DEBIT_CAP)
+
+      // Use whereIn with composite key matching
+      queryBuilder.where(function() {
+        for (const { dfspId, currency } of dfspCurrencies) {
+          this.orWhere({ dfspId, currency })
+        }
+      })
+
+      const records = await queryBuilder
+
+      // Create a map for fast lookup
+      const recordMap: Record<string, SpecRecordNetDebitCap> = {}
+      for (const record of records) {
+        const specRecord = record as SpecRecordNetDebitCap
+        const key = `${specRecord.dfspId}:${specRecord.currency}`
+
+        // Assertions to validate record integrity
+        assert(specRecord.type === 'UNLIMITED' || specRecord.type === 'LIMITED',
+          `Invalid type: ${specRecord.type}`)
+
+        if (specRecord.type === 'UNLIMITED') {
+          assert(specRecord.amount === null,
+            `Expected amount to be NULL for UNLIMITED, got: ${specRecord.amount}`)
+        } else {
+          assert(specRecord.amount !== null && specRecord.amount !== undefined,
+            `Expected amount to exist for LIMITED, got: ${specRecord.amount}`)
+        }
+
+        recordMap[key] = specRecord
+      }
+
+      // Map results in the same order as input queries
+      const results: Array<GetSpecNetDebitCapResult> = dfspCurrencies.map(query => {
+        const key = `${query.dfspId}:${query.currency}`
+        const specRecord = recordMap[key]
+
+        if (!specRecord) {
+          return {
+            type: 'FAILURE',
+            query,
+            error: new Error(`Net debit cap not found for dfspId: ${query.dfspId}, currency: ${query.currency}`)
+          }
+        }
+
+        // Construct the discriminated union based on type
+        const spec: SpecNetDebitCap = specRecord.type === 'UNLIMITED'
+          ? {
+              type: 'UNLIMITED',
+              dfspId: specRecord.dfspId,
+              currency: specRecord.currency
+            }
+          : {
+              type: 'LIMITED',
+              amount: Number(specRecord.amount),
+              dfspId: specRecord.dfspId,
+              currency: specRecord.currency
+            }
+
+        return {
+          type: 'SUCCESS',
+          result: spec
+        }
+      })
+
+      return results
+    } catch (err) {
+      logger.error(`getSpecNetDebitCaps() - bulk query failed`, err)
+
+      // Return FAILURE for all queries if the bulk operation fails
+      return dfspCurrencies.map(query => ({
+        type: 'FAILURE',
+        query,
+        error: err instanceof Error ? err : new Error(String(err))
+      }))
     }
   }
 }

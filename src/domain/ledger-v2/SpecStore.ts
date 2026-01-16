@@ -1,3 +1,5 @@
+import { QueryResult } from "src/shared/results"
+
 export interface DfspAccountIds {
   deposit: bigint,
   unrestricted: bigint,
@@ -10,7 +12,7 @@ export interface DfspAccountIds {
 }
 
 /**
- * The specification which defines the TigerBeetle Accounts for the dfspId + currency
+ * The specification which defines the TigerBeetle Accounts for a dfspId + currency
  */
 export interface SpecAccount extends DfspAccountIds {
   readonly type: 'SpecAccount'
@@ -18,6 +20,22 @@ export interface SpecAccount extends DfspAccountIds {
   currency: string,
 }
 
+/**
+ * Defines the Net Debit Cap setting for a dfspId + currency
+ */
+export type SpecNetDebitCap = {
+  type: 'UNLIMITED',
+  dfspId: string,
+  currency: string,
+} | {
+  type: 'LIMITED',
+  amount: number,
+  dfspId: string,
+  currency: string,
+}
+
+
+// TODO(LD): refactor this to a simple result type
 export interface SpecAccountNone {
   type: 'SpecAccountNone'
 }
@@ -81,6 +99,22 @@ export interface SaveSpecFundingResultFailure {
 }
 
 export type SaveSpecFundingResult = SaveSpecFundingResultSuccess | SaveSpecFundingResultExists | SaveSpecFundingResultFailure
+
+export type SaveSpecNetDebitCapResult = {
+  type: 'SUCCESS'
+} | {
+  type: 'FAILURE',
+  error: Error
+}
+
+export type GetSpecNetDebitCapResult = {
+  type: 'SUCCESS',
+  result: SpecNetDebitCap
+} | {
+  type: 'FAILURE',
+  query: {dfspId: string, currency: string},
+  error: Error
+}
 
 /**
  * The specification which describes the master account for the DFSP
@@ -180,4 +214,14 @@ export interface SpecStore {
    * Saves the funding spec to the spec store
    */
   saveFundingSpec(spec: Array<SaveFundingSpecCommand>): Promise<Array<SaveSpecFundingResult>>
+
+  /**
+   * Saves the net debit caps
+   */
+  saveSpecNetDebitCaps(netDebitCaps: Array<SpecNetDebitCap>): Promise<Array<SaveSpecNetDebitCapResult>>
+
+  /**
+   * Gets the net debit caps
+   */
+  getSpecNetDebitCaps(dfspCurrencies: Array<{dfspId: string, currency: string}>): Promise<Array<GetSpecNetDebitCapResult>>
 }

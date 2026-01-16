@@ -905,7 +905,7 @@ export default class LegacyLedger implements Ledger {
   }
 
   public async setNetDebitCap(cmd: SetNetDebitCapCommand): Promise<CommandResult<void>> {
-    assert(cmd.netDebitCapType === 'AMOUNT', 'LegacyLedger does not support setting an unlimited net debit cap. Set to a very large number instead.')
+    assert(cmd.netDebitCapType === 'LIMITED', 'LegacyLedger does not support setting an unlimited net debit cap. Set to a very large number instead.')
     assert(cmd.dfspId)
     assert(cmd.currency)
     assert(cmd.amount)

@@ -341,7 +341,8 @@ describe('LegacyLedger', () => {
         },
         action: Enum.Events.Event.Action.COMMIT,
         eventType: 'fulfil',
-        kafkaTopic: 'topic-transfer-fulfil'
+        kafkaTopic: 'topic-transfer-fulfil',
+        callerDfspId: 'dfsp_b'
       };
 
       // Act

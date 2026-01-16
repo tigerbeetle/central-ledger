@@ -69,7 +69,7 @@ describe('TigerBeetleLedger', () => {
 
       // Act: Adjust the net debit cap to lower than deposit amount
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
-        netDebitCapType: 'AMOUNT',
+        netDebitCapType: 'LIMITED',
         dfspId,
         currency,
         amount: adjustedLimit
@@ -142,7 +142,7 @@ describe('TigerBeetleLedger', () => {
       }))
 
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
-        netDebitCapType: 'AMOUNT',
+        netDebitCapType: 'LIMITED',
         dfspId,
         currency,
         amount: 10000
@@ -238,7 +238,7 @@ describe('TigerBeetleLedger', () => {
 
       await setupDfsp(dfspId, depositAmount)
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
-        netDebitCapType: 'AMOUNT',
+        netDebitCapType: 'LIMITED',
         dfspId,
         currency,
         amount: netDebitCap
@@ -286,7 +286,7 @@ describe('TigerBeetleLedger', () => {
 
       await setupDfsp(dfspId, depositAmount)
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
-        netDebitCapType: 'AMOUNT',
+        netDebitCapType: 'LIMITED',
         dfspId,
         currency,
         amount: netDebitCap
@@ -413,7 +413,7 @@ describe('TigerBeetleLedger', () => {
 
       await setupDfsp(dfspId, depositAmount)
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
-        netDebitCapType: 'AMOUNT',
+        netDebitCapType: 'LIMITED',
         dfspId,
         currency,
         amount: netDebitCap

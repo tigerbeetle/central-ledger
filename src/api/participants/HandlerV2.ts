@@ -349,7 +349,7 @@ export default class ParticipantAPIHandlerV2 {
       }
 
       const setNetDebitCapResult = await ledger.setNetDebitCap({
-        netDebitCapType: 'AMOUNT',
+        netDebitCapType: 'LIMITED',
         dfspId: request.params.name,
         currency: request.payload.currency,
         amount: request.payload.limit.value
@@ -486,7 +486,7 @@ export default class ParticipantAPIHandlerV2 {
       const ledger = getLedger(request)
 
       const result = await ledger.setNetDebitCap({
-        netDebitCapType: 'AMOUNT',
+        netDebitCapType: 'LIMITED',
         dfspId: request.params.name,
         currency: request.payload.currency,
         amount: request.payload.limit.value

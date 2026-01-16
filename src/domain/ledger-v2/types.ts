@@ -330,7 +330,7 @@ export type SetNetDebitCapCommand = SetNetDebitCapAmountCommand | SetNetDebitCap
 
 // TODO(LD): refactor this to use the NetDebitCap type
 export interface SetNetDebitCapAmountCommand {
-  netDebitCapType: 'AMOUNT'
+  netDebitCapType: 'LIMITED'
   dfspId: string
   currency: string
   amount: number

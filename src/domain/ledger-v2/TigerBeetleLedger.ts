@@ -1298,7 +1298,7 @@ export default class TigerBeetleLedger implements Ledger {
     let amountNetDebitCap: bigint
     let code: number
     switch (cmd.netDebitCapType) {
-      case 'AMOUNT': {
+      case 'LIMITED': {
         assert(cmd.amount)
         assert(cmd.amount >= 0, 'expected amount to 0 or a positive integer')
         const assetScale = this.currencyManager.getAssetScale(cmd.currency)
@@ -1318,21 +1318,9 @@ export default class TigerBeetleLedger implements Ledger {
     }
     const spec = specAccountResult
     const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
-    const ledgerControl = this.currencyManager.getLedgerControl(cmd.currency)
 
     const idLockTransfer = id()
     const transfers: Array<Transfer> = [
-      // Set the new Net Debit Cap
-      {
-        ...Helper.createTransferTemplate,
-        id: id(),
-        debit_account_id: spec.netDebitCapControl,
-        credit_account_id: spec.netDebitCap,
-        amount: amountNetDebitCap,
-        ledger: ledgerControl,
-        code,
-        flags: TransferFlags.linked,
-      },
       // Sweep total balance from Restricted to Unrestricted
       {
         ...Helper.createTransferTemplate,
@@ -1351,7 +1339,7 @@ export default class TigerBeetleLedger implements Ledger {
         id: idLockTransfer,
         debit_account_id: spec.unrestricted,
         credit_account_id: spec.unrestrictedLock,
-        amount: cmd.netDebitCapType === 'AMOUNT' ? amountNetDebitCap : amount_max,
+        amount: cmd.netDebitCapType === 'LIMITED' ? amountNetDebitCap : amount_max,
         ledger: ledgerOperation,
         code: TransferCode.Net_Debit_Cap_Lock,
         flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.pending
