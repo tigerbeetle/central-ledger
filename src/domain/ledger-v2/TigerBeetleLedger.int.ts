@@ -836,10 +836,10 @@ describe('TigerBeetleLedger', () => {
 
     it('payee dfsp with unlimited net debit cap always receives credit in Unrestricted', async () => {
       // Arrange
-      await setupDfsp('dfsp_c', 10000, 'USD')
+      await setupDfsp('dfsp_aa', 10000, 'USD')
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
         netDebitCapType: 'UNLIMITED',
-        dfspId: 'dfsp_c',
+        dfspId: 'dfsp_aa',
         currency: 'USD'
       }))
 
@@ -849,7 +849,7 @@ describe('TigerBeetleLedger', () => {
       const payload: CreateTransferDto = {
         transferId,
         payerFsp: 'dfsp_a',
-        payeeFsp: 'dfsp_c',
+        payeeFsp: 'dfsp_aa',
         amount: { amount: '100', currency: 'USD' },
         ilpPacket,
         condition,
@@ -866,12 +866,12 @@ describe('TigerBeetleLedger', () => {
         fulfilment,
         completedTimestamp: new Date().toISOString()
       }
-      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, 'dfsp_c')
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, 'dfsp_aa')
       const fulfilResult = await ledger.fulfil(fulfilInput)
       assert.equal(fulfilResult.type, FulfilResultType.PASS)
 
       const accountsPost = TestUtils.unwrapSuccess(
-        await ledger.getDfspV2({ dfspId: 'dfsp_c' })
+        await ledger.getDfspV2({ dfspId: 'dfsp_aa' })
       )
       unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
         USD,10200,0,10000,0,0,10000;
@@ -885,10 +885,10 @@ describe('TigerBeetleLedger', () => {
 
     it('net receiver payee dfsp with a limited net debit cap gets funds swept into unrestricted', async () => {
       // Arrange
-      await setupDfsp('dfsp_c', 10000, 'USD')
+      await setupDfsp('dfsp_ab', 10000, 'USD')
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
         netDebitCapType: 'LIMITED',
-        dfspId: 'dfsp_c',
+        dfspId: 'dfsp_ab',
         currency: 'USD',
         amount: 5123
       }))
@@ -899,7 +899,7 @@ describe('TigerBeetleLedger', () => {
       const payload: CreateTransferDto = {
         transferId,
         payerFsp: 'dfsp_a',
-        payeeFsp: 'dfsp_c',
+        payeeFsp: 'dfsp_ab',
         amount: { amount: '100', currency: 'USD' },
         ilpPacket,
         condition,
@@ -916,13 +916,13 @@ describe('TigerBeetleLedger', () => {
         fulfilment,
         completedTimestamp: new Date().toISOString()
       }
-      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, 'dfsp_c')
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, 'dfsp_ab')
       const fulfilResult = await ledger.fulfil(fulfilInput)
       assert.equal(fulfilResult.type, FulfilResultType.PASS)
 
       // Assert
       const accountsPost = TestUtils.unwrapSuccess(
-        await ledger.getDfspV2({ dfspId: 'dfsp_c' })
+        await ledger.getDfspV2({ dfspId: 'dfsp_ab' })
       )
       unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
         USD,10200,0,10000,0,0,10000;
@@ -1337,14 +1337,15 @@ describe('TigerBeetleLedger', () => {
   })
 
   describe('clearing unhappy path - fulfil validation', () => {
-    it.only('should fail and auto-abort with wrong fulfilment', async () => {
+    it('should fail and auto-abort with wrong fulfilment', async () => {
       // Arrange
+      await setupDfsp('dfsp_ac', 100000, 'USD')
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
       const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
       const payload: CreateTransferDto = {
         transferId,
-        payerFsp: 'dfsp_a',
+        payerFsp: 'dfsp_ac',
         payeeFsp: 'dfsp_b',
         amount: { amount: '100', currency: 'USD' },
         ilpPacket,
@@ -1361,7 +1362,7 @@ describe('TigerBeetleLedger', () => {
       const wrongFulfilment = 'A'.repeat(48)
 
       const accountsPre = TestUtils.unwrapSuccess(
-        await ledger.getDfspV2({ dfspId: 'dfsp_a' })
+        await ledger.getDfspV2({ dfspId: 'dfsp_ac' })
       )
       unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPre, `
         USD,10200,0,100000,0,0,100000;
@@ -1389,7 +1390,7 @@ describe('TigerBeetleLedger', () => {
 
       // Check that it was reverted in the balance sheet
       const accountsPost = TestUtils.unwrapSuccess(
-        await ledger.getDfspV2({ dfspId: 'dfsp_a' })
+        await ledger.getDfspV2({ dfspId: 'dfsp_ac' })
       )
      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
         USD,10200,0,100000,0,0,100000;
@@ -1423,7 +1424,27 @@ describe('TigerBeetleLedger', () => {
       }
     })
 
-    it.todo('should handle fulfil with missing transfer spec')
+    it('should handle fulfil with missing transfer spec', async () => {
+      // Arrange - Try to fulfil a transfer that was never prepared (so spec doesn't exist)
+      const transferId = randomUUID()
+      const fulfilment = 'A'.repeat(48)
+      const payload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const input = TestUtils.buildValidFulfilInput(transferId, payload)
+
+      // Act
+      const result = await ledger.fulfil(input)
+
+      // Assert - Should fail with "payment metadata not found" error
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /payment metadata not found/i)
+      }
+    })
   })
 
   describe('clearing unhappy path - fulfil state errors', () => {

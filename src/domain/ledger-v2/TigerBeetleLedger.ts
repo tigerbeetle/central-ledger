@@ -58,7 +58,6 @@ import {
 const NS_PER_MS = 1_000_000n
 const NS_PER_SECOND = NS_PER_MS * 1_000n
 
-
 /**
  * Internal mapping of TigerBeetle errors 
  */
@@ -87,7 +86,7 @@ interface InternalLedgerAccount extends Account {
   dfspId: string,
   currency: string,
   // Technically we don't need this since it lives on the account.code, but as a number,
-  // but typing this specifically makes life easier.
+  // but explicit typing here makes accessing this property easier.
   accountCode: AccountCode
 }
 
@@ -96,13 +95,6 @@ interface InternalLedgerAccount extends Account {
  */
 interface InternalMasterAccount extends Account {
   dfspId: string,
-}
-
-type InternalNetDebitCap = {
-  type: 'LIMITED'
-  amount: bigint,
-} | {
-  type: 'UNLIMITED'
 }
 
 export interface TigerBeetleLedgerDependencies {
@@ -180,9 +172,7 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       const ledgerOperation = this.currencyManager.getLedgerOperation(currency)
-      const ledgerControl = this.currencyManager.getLedgerControl(currency)
       const accountIdSettlementBalance = this.currencyManager.getAccountIdSettlementBalance(currency)
-
       const accountIds: DfspAccountIds = {
         deposit: Helper.idSmall(),
         unrestricted: Helper.idSmall(),
@@ -217,22 +207,6 @@ export default class TigerBeetleLedger implements Ledger {
           code: AccountCode.Dfsp,
           flags: 0,
         },
-        // // Net Debit Cap - stores the Net Debit Cap for this Dfsp + Currency
-        // {
-        //   ...Helper.createAccountTemplate,
-        //   id: accountIds.netDebitCap,
-        //   ledger: ledgerControl,
-        //   code: AccountCode.Net_Debit_Cap,
-        //   flags: AccountFlags.linked
-        // },
-        // // Net Debit Cap Control account - counterparty for the Net Debit Cap Setting
-        // {
-        //   ...Helper.createAccountTemplate,
-        //   id: accountIds.netDebitCapControl,
-        //   ledger: ledgerControl,
-        //   code: AccountCode.Net_Debit_Cap_Control,
-        //   flags: AccountFlags.linked
-        // },
         // Deposit
         {
           ...Helper.createAccountTemplate,
@@ -1357,7 +1331,6 @@ export default class TigerBeetleLedger implements Ledger {
         ledger: ledgerOperation,
         code: TransferCode.Net_Debit_Cap_Lock,
         flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.pending
-        // flags: TransferFlags.linked | TransferFlags.pending
       },
       // Sweep whatever remains in Unrestricted to Restricted.
       {
