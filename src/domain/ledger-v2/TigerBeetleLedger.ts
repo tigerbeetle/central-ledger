@@ -65,10 +65,10 @@ const NS_PER_SECOND = NS_PER_MS * 1_000n
 type FailureResult<T> = CreateTransfersError & {
   type: T
 }
-type PrepareFailureType = 'FAIL_LIQUIDITY' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'MODIFIED' | 
+type PrepareFailureType = 'FAIL_LIQUIDITY' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'MODIFIED' |
   'EXISTS' | 'UNKNOWN'
 type AbortFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' | 'UNKNOWN'
-type FulfilFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' | 
+type FulfilFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' |
   'PAYER_ACCOUNT_CLOSED' | 'PAYEE_ACCOUNT_CLOSED' | 'UNKNOWN'
 type WithdrawPrepareFailureType = 'ACCOUNT_CLOSED' | 'TRANSFER_ID_REUSED' | 'INSUFFICIENT_FUNDS' |
   'UNKNOWN'
@@ -1319,6 +1319,25 @@ export default class TigerBeetleLedger implements Ledger {
     const spec = specAccountResult
     const ledgerOperation = this.currencyManager.getLedgerOperation(cmd.currency)
 
+    // Write Last, Read First
+    const saveSpecNetDebitCapResults = await this.deps.specStore.saveSpecNetDebitCaps([{
+      type: cmd.netDebitCapType,
+      amount: cmd.netDebitCapType === 'UNLIMITED' ? undefined : cmd.amount,
+      dfspId: cmd.dfspId,
+      currency: cmd.currency
+    }])
+    assert(saveSpecNetDebitCapResults.length === 0)
+    const saveSpecNetDebitCapResult = saveSpecNetDebitCapResults[0]
+    if (saveSpecNetDebitCapResult.type === 'FAILURE') {
+      logger.error(`setNetDebitCap() - saveSpecNetDebitCaps() failed with error: \
+        ${saveSpecNetDebitCapResult.error.message}`
+      )
+      return {
+        type: 'FAILURE',
+        error: saveSpecNetDebitCapResult.error
+      }
+    }
+
     const idLockTransfer = id()
     const transfers: Array<Transfer> = [
       // Sweep total balance from Restricted to Unrestricted
@@ -1395,7 +1414,7 @@ export default class TigerBeetleLedger implements Ledger {
       const firstError = fatalErrors[0]
       return {
         type: 'FAILURE',
-        error: new Error(`setNetDebitCap failed with error: ${CreateTransferError[firstError.result]}`)
+        error: new Error(`setNetDebitCap() failed with error: ${CreateTransferError[firstError.result]}`)
       }
     }
 
@@ -1409,24 +1428,28 @@ export default class TigerBeetleLedger implements Ledger {
     assert(query.currency)
     assert(query.dfspId)
 
-    const ids = await this.deps.specStore.getAccountSpec(query.dfspId, query.currency)
-    if (ids.type === 'SpecAccountNone') {
-      return {
-        type: 'FAILURE',
-        error: ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND
-            `failed as getDfspAccountMetata() returned 'DfspAccountSpecNone' for \
-              dfspId: ${query.dfspId}, and currency: ${query.currency}`.replace(/\s+/g, ' ')
-        )
-      }
-    }
 
     try {
-      const internalNetDebitCap = await this._getNetDebitCapInternal(query.currency, query.dfspId)
+      const getSpecNetDebitCapsResult = await this.deps.specStore.getSpecNetDebitCaps([{
+        dfspId: query.dfspId,
+        currency: query.currency
+      }])
+      assert(getSpecNetDebitCapsResult.length === 1, 'Expected exactly 1 SpecNetDebitCapResult')
+      const specNetDebitCapResult = getSpecNetDebitCapsResult[0]
+      if (specNetDebitCapResult.type === 'FAILURE') {
+        logger.error(`getNetDebitCap() - failed with error: \
+          ${specNetDebitCapResult.error}`)
+
+        return {
+          type: 'FAILURE',
+          error: specNetDebitCapResult.error
+        }
+      }
+      const netDebitCap = specNetDebitCapResult.result
 
       // TigerBeetleLedger sees this internally as an Unlimited limit, but to match the Admin API
       // we consider it a missing limit.
-      if (internalNetDebitCap.type === 'UNLIMITED') {
+      if (netDebitCap.type === 'UNLIMITED') {
         return {
           type: 'FAILURE',
           error: ErrorHandler.Factory.createFSPIOPError(
@@ -1435,12 +1458,9 @@ export default class TigerBeetleLedger implements Ledger {
           )
         }
       }
-
-      const assetScale = this.currencyManager.getAssetScale(query.currency)
-      const value = Helper.toRealAmount(internalNetDebitCap.amount, assetScale)
       const limit: LegacyLimit = {
         type: "NET_DEBIT_CAP",
-        value,
+        value: netDebitCap.amount,
         alarmPercentage: 10
       }
 
@@ -2675,7 +2695,7 @@ export default class TigerBeetleLedger implements Ledger {
           )
         }
       }
-      
+
       return {
         type: FulfilResultType.PASS
       }
