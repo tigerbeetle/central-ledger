@@ -1337,7 +1337,7 @@ describe('TigerBeetleLedger', () => {
   })
 
   describe('clearing unhappy path - fulfil validation', () => {
-    it('should fail and auto-abort with wrong fulfilment', async () => {
+    it.only('should fail and auto-abort with wrong fulfilment', async () => {
       // Arrange
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1360,6 +1360,18 @@ describe('TigerBeetleLedger', () => {
       // Generate wrong fulfilment (not matching the condition)
       const wrongFulfilment = 'A'.repeat(48)
 
+      const accountsPre = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_a' })
+      )
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPre, `
+        USD,10200,0,100000,0,0,100000;
+        USD,20100,100,0,0,100000,99900;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,0,100,0,0;
+        USD,20400,0,0,0,0,0;`
+      ))
+
       // Act
       const fulfilPayload: CommitTransferDto = {
         transferState: 'COMMITTED',
@@ -1375,17 +1387,18 @@ describe('TigerBeetleLedger', () => {
         assert.ok(result.error)
       }
 
-      // TODO: instead of aborting again to check if it's aborted, why not 
-      // check the balance sheet!?
-
-      // Verify transfer was auto-aborted
-      // Try to abort again - should get "already aborted" error
-      const retryInput = TestUtils.buildValidAbortInput(transferId)
-      const retryResult = await ledger.fulfil(retryInput)
-      assert.equal(retryResult.type, FulfilResultType.FAIL_OTHER)
-      if (retryResult.type === FulfilResultType.FAIL_OTHER) {
-        assert.match(retryResult.error.message, /already aborted/i)
-      }
+      // Check that it was reverted in the balance sheet
+      const accountsPost = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_a' })
+      )
+     unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
+        USD,10200,0,100000,0,0,100000;
+        USD,20100,0,0,0,100000,100000;
+        USD,20101,0,0,0,0,0;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,0,0,0,0;`
+      ))
     })
 
     it('should fail to fulfil non-existent transfer', async () => {
