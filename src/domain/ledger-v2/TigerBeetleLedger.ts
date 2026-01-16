@@ -10,7 +10,7 @@ import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { CurrencyManager } from './CurrencyManager';
 import { Ledger } from "./Ledger";
-import { DfspAccountIds, SpecAccount, SpecDfsp, SpecStore } from "./SpecStore";
+import { DfspAccountIds, SpecAccount, SpecDfsp, SpecNetDebitCap, SpecStore } from "./SpecStore";
 import Helper from './TigerBeetleLedgerHelper';
 import { TransferBatcher } from "./TransferBatcher";
 import {
@@ -798,7 +798,8 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.reason)
 
     try {
-      const netDebitCapInternal = await this._getNetDebitCapInternal(cmd.currency, cmd.dfspId)
+      // Lookup the net debit cap
+      const netDebitCap = await this._getNetDebitCapInternal(cmd.currency, cmd.dfspId)
       const spec = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
       if (spec.type === 'SpecAccountNone') {
         throw new Error(`no dfspId found: ${cmd.dfspId}`)
@@ -828,8 +829,8 @@ export default class TigerBeetleLedger implements Ledger {
 
       const idLockTransfer = id()
       let netDebitCapLockAmount = amount_max
-      if (netDebitCapInternal.type === 'LIMITED') {
-        netDebitCapLockAmount = netDebitCapInternal.amount
+      if (netDebitCap.type === 'LIMITED') {
+        netDebitCapLockAmount = Helper.toTigerBeetleAmount(netDebitCap.amount, assetScale)
       }
       const transfers: Array<Transfer> = [
         // Deposit funds into Unrestricted
@@ -1027,7 +1028,8 @@ export default class TigerBeetleLedger implements Ledger {
           id: idLockTransfer,
           debit_account_id: spec.unrestricted,
           credit_account_id: spec.unrestrictedLock,
-          amount: netDebitCap.type === 'LIMITED' ? netDebitCap.amount : amount_max,
+          amount: netDebitCap.type === 'LIMITED' ?
+            Helper.toTigerBeetleAmount(netDebitCap.amount, assetScale) : amount_max,
           ledger: ledgerOperation,
           code: TransferCode.Net_Debit_Cap_Lock,
           flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.pending
@@ -1296,20 +1298,17 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.dfspId)
 
     let amountNetDebitCap: bigint
-    let code: number
     switch (cmd.netDebitCapType) {
       case 'LIMITED': {
         assert(cmd.amount)
         assert(cmd.amount >= 0, 'expected amount to 0 or a positive integer')
         const assetScale = this.currencyManager.getAssetScale(cmd.currency)
         amountNetDebitCap = Helper.toTigerBeetleAmount(cmd.amount, assetScale)
-        code = TransferCode.Net_Debit_Cap_Set_Limited
-
         break;
       }
       case 'UNLIMITED': {
         amountNetDebitCap = 0n
-        code = TransferCode.Net_Debit_Cap_Set_Unlimited
+        break;
       }
     }
     const specAccountResult = await this.deps.specStore.getAccountSpec(cmd.dfspId, cmd.currency)
@@ -1476,49 +1475,22 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  private async _getNetDebitCapInternal(currency: string, dfspId: string): Promise<InternalNetDebitCap> {
-    const ids = await this.deps.specStore.getAccountSpec(dfspId, currency)
-    assert(ids.type === 'SpecAccount', `Could not find spec for dfsp + currency: ${dfspId}, ${currency}`)
-
-    // Net Debit Cap is defined as the amount of the last transfer in the account
-    // + code. If the transfer code === 8, then we consider the amount, if it is 9, then
-    // we consider the net debit cap to be unlimited.
-    const transfers = await this.deps.client.getAccountTransfers({
-      account_id: ids.netDebitCap,
-      user_data_128: 0n,
-      user_data_64: 0n,
-      user_data_32: 0,
-      code: 0,
-      timestamp_min: 0n,
-      timestamp_max: 0n,
-      limit: 1,
-      flags: AccountFilterFlags.credits | AccountFilterFlags.reversed,
-    })
-    if (transfers.length === 0) {
-      throw new Error(`no _getNetDebitCapInternal() no net debit cap transfers found for account: ${ids.netDebitCap}`)
+  /**
+   * Helper function to get one and only one net debit cap
+   */
+  private async _getNetDebitCapInternal(currency: string, dfspId: string): Promise<SpecNetDebitCap> {
+    const getSpecNetDebitCapsResult = await this.deps.specStore.getSpecNetDebitCaps([{
+      dfspId,
+      currency,
+    }])
+    assert(getSpecNetDebitCapsResult.length === 1, 'Expected exactly 1 SpecNetDebitCapResult')
+    const specNetDebitCapResult = getSpecNetDebitCapsResult[0]
+    if (specNetDebitCapResult.type === 'FAILURE') {
+      logger.error(`_getNetDebitCapInternal2() - failed with error: ${specNetDebitCapResult.error}`)
+      throw specNetDebitCapResult.error
     }
-    assert(transfers.length === 1, 'Expected to find only 1 transfer')
-    const amount = transfers[0].amount
-    const code = transfers[0].code
 
-    switch (code) {
-      case TransferCode.Net_Debit_Cap_Set_Unlimited: {
-        assert(amount === 0n, 'Expected amount to be 0 for unlimited net debit cap transfer')
-
-        return {
-          type: 'UNLIMITED'
-        }
-      }
-      case TransferCode.Net_Debit_Cap_Set_Limited: {
-        return {
-          type: 'LIMITED',
-          amount,
-        }
-      }
-      default: {
-        throw new Error(`unexpected code: ${code} for net debit cap transfer.`)
-      }
-    }
+    return specNetDebitCapResult.result
   }
 
   public async getDfsp(query: { dfspId: string; }): Promise<QueryResult<LegacyLedgerDfsp>> {
