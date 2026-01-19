@@ -262,6 +262,9 @@ export class PersistedSpecStore implements SpecStore {
     this.cacheAccount.delete(dfspId, currency)
   }
 
+  // The cache should be warmed up based on the prepare(), provided that the Kafka key partitioning
+  // is set up properly. The only time we would expect a lot of misses is when scaling out the 
+  // services or after a crash.
   async lookupTransferSpec(ids: Array<string>): Promise<Array<SpecTransfer | SpecTransferNone>> {
     // First port of call, check the cache
     const transferSpecCached = this.cacheTransfer.get(ids)
@@ -284,7 +287,8 @@ export class PersistedSpecStore implements SpecStore {
         return tm.contents
       })
     }
-
+    
+    logger.warn(`lookupTransferSpec() - cache miss for: ${missingIds.length}/${ids.length} ids.`)
     const tranferSpecPersisted = await this.lookupTransferSpecPersisted(missingIds)
     tranferSpecPersisted.forEach(tm => {
       if (tm.type === 'SpecTransfer') {

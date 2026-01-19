@@ -29,7 +29,6 @@ describe('TigerBeetleLedger', () => {
     }))
   }
 
-
   before(async () => {
     harness = await IntegrationHarness.create({
       hubCurrencies: ['USD'],
@@ -725,7 +724,8 @@ describe('TigerBeetleLedger', () => {
       assert(prepareResult.type === PrepareResultType.PASS)
 
       // Act
-      await TestUtils.sleep(1500) // wait for TigerBeetle to timeout the transfer
+      // wait for TigerBeetle to timeout the transfer - no longer happens
+      await TestUtils.sleep(1500) 
       const sweepResult = await ledger.sweepTimedOut()
 
       // Assert

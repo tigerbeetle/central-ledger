@@ -1955,8 +1955,6 @@ export default class TigerBeetleLedger implements Ledger {
   // Clearing Methods
   // ============================================================================
 
-  // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able
-  // to read multiple messages from Kafka at the same point.
   public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
     logger.debug('TigerBeetleLedger.prepare()')
     try {
@@ -2345,8 +2343,6 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  // TODO(LD): Make this interface batch compatible. This will require the new handlers to be able 
-  // to read multiple messages from Kafka at the same point.
   public async fulfil(input: FusedFulfilHandlerInput): Promise<FulfilResult> {
     logger.debug('TigerBeetleLedger.fulfil()')
 
@@ -2361,8 +2357,6 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     try {
-      // TODO(LD): this SHOULD be in cache if we use the Kafka key partitioning properly. We should 
-      // add some observability here to catch misconfiguration errors
       const transferSpecResults = await this.deps.specStore.lookupTransferSpec([input.transferId])
       assert(transferSpecResults.length === 1, `expected transfer spec for id: ${input.transferId}`)
       const transferSpec = transferSpecResults[0]
@@ -2852,6 +2846,21 @@ export default class TigerBeetleLedger implements Ledger {
       // TODO(LD): In future versions (0.17), create a dummy transfer to get the last timestamp of the
       // switch, and use this instead of the NodeJS process time here, to protect us from clock
       // drifts.
+
+      // I need to double check the inter-scheme stuff, but I think if we set the timeout to 0,
+      // then we know that we are the Remote Ledger for the Payment, and don't have the authority
+      // to time it out. 
+      // 
+      // If we _do_ set the timeout, then we can rely on TigerBeetle to have reverted
+      // the pending Transfer and need to communicate that to others.
+      // 
+      // Otherwise we would have to set the timeout somewhere in the transfer user_data in order to 
+      // keep track of when it is safe to abort it and inform interested parties. Which could still
+      // be a decent option given that the timeout is given as an absolute time.
+      // 
+      // OR we could look at TransferSpec and do a query based on timeouts, to get the possible
+      // timed out transfers, and abort them accordingly. (that would be the simpler approach)
+      //
       const nowNs = BigInt(new Date().getTime()) * 1_000_000n
       Object.keys(maybeTimedOutTransfers).forEach(key => {
         const transfer = maybeTimedOutTransfers[key]
