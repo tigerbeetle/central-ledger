@@ -121,7 +121,7 @@ export enum AccountCode {
   Settlement_Balance = 10100,
   Deposit = 10200,
   Unrestricted = 20100,
-  Unrestricted_Lock = 20101,
+  Clearing_Credit = 20101,
   Restricted = 20200,
   Reserved = 20300,
   Committed_Outgoing = 20400,
@@ -129,6 +129,9 @@ export enum AccountCode {
   Net_Debit_Cap = 60200,
   Net_Debit_Cap_Control = 60201,
   Dev_Null = 60300,
+  Clearing_Setup = 60400,
+  Clearing_Limit = 60500,
+  Unrestricted_Lock = 60600,
 
   // TODO(LD): remove me! 
   TIMEOUT = 9000,

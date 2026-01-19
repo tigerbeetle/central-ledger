@@ -180,6 +180,9 @@ export default class TigerBeetleLedger implements Ledger {
         restricted: Helper.idSmall(),
         reserved: Helper.idSmall(),
         commitedOutgoing: Helper.idSmall(),
+        clearingCredit: Helper.idSmall(),
+        clearingSetup: Helper.idSmall(),
+        clearingLimit: Helper.idSmall(),
       }
 
       const accounts: Array<Account> = [
@@ -253,6 +256,30 @@ export default class TigerBeetleLedger implements Ledger {
           id: accountIds.commitedOutgoing,
           ledger: ledgerOperation,
           code: AccountCode.Committed_Outgoing,
+          flags: AccountFlags.debits_must_not_exceed_credits,
+        },
+        // Clearing_Setup
+        {
+          ...Helper.createAccountTemplate,
+          id: accountIds.clearingSetup,
+          ledger: ledgerOperation,
+          code: AccountCode.Clearing_Setup,
+          flags: 0,
+        },
+        // Clearing_Limit
+        {
+          ...Helper.createAccountTemplate,
+          id: accountIds.clearingLimit,
+          ledger: ledgerOperation,
+          code: AccountCode.Clearing_Limit,
+          flags: AccountFlags.debits_must_not_exceed_credits,
+        },
+        // Clearing_Credit
+        {
+          ...Helper.createAccountTemplate,
+          id: accountIds.clearingCredit,
+          ledger: ledgerOperation,
+          code: AccountCode.Clearing_Credit,
           flags: AccountFlags.debits_must_not_exceed_credits,
         },
       ]
@@ -1792,23 +1819,27 @@ export default class TigerBeetleLedger implements Ledger {
 
     specAccounts.forEach(specAccount => {
       dfspIdMap[specAccount.dfspId] = null
-      // TODO(LD): Add more account types, especially the special accounts for e.g. DFSP active/inactive, or 
       const keys = [
-        // buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Dfsp),
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Deposit),
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Unrestricted),
-        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Unrestricted_Lock),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Clearing_Credit),
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Restricted),
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Reserved),
         buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Committed_Outgoing),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Unrestricted_Lock),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Clearing_Setup),
+        buildKey(specAccount.dfspId, specAccount.currency, AccountCode.Clearing_Limit),
       ]
       const ids = [
         specAccount.deposit,
         specAccount.unrestricted,
-        specAccount.unrestrictedLock,
+        specAccount.clearingCredit,
         specAccount.restricted,
         specAccount.reserved,
         specAccount.commitedOutgoing,
+        specAccount.unrestrictedLock,
+        specAccount.clearingSetup,
+        specAccount.clearingLimit,
       ]
 
       accountKeys.push(...keys)
@@ -1931,15 +1962,11 @@ export default class TigerBeetleLedger implements Ledger {
       const realCreditsPosted = Helper.toRealAmount(acc.credits_posted, assetScale)
       const realDebitsPosted = Helper.toRealAmount(acc.debits_posted, assetScale)
 
-      const netCreditsPending = realCreditsPending - realDebitsPending
-      const netDebitsPending = realDebitsPending - realCreditsPending
-
       const ledgerAccount: LedgerAccount = {
         id: acc.id,
         code: acc.code,
         currency: acc.currency,
         status: (acc.flags & AccountFlags.closed) && 'DISABLED' || 'ENABLED',
-
         realCreditsPending: realCreditsPending,
         realDebitsPending: realDebitsPending,
         realCreditsPosted: realCreditsPosted,
@@ -2063,21 +2090,10 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ])
 
+      // TODO: need to store all the pending ids!
+
       const transfers: Array<Transfer> = [
-        // Reserve funds for Participant A.
-        {
-          ...Helper.createTransferTemplate,
-          id: prepareId,
-          debit_account_id: accountSpecPayer.unrestricted,
-          credit_account_id: accountSpecPayer.reserved,
-          amount: amountTigerBeetle,
-          // Correlation id to map between Mojaloop Transfers (1) ---- (*) TigerBeetle Transfers
-          user_data_128: prepareId,
-          ledger: ledgerOperation,
-          code: TransferCode.Clearing_Reserve,
-          flags: TransferFlags.linked | TransferFlags.pending,
-        },
-        // Ensure both Participants are active, atomic check on payment status.
+        // Ensure both Participants are active
         {
           ...Helper.createTransferTemplate,
           id: id(),
@@ -2087,8 +2103,69 @@ export default class TigerBeetleLedger implements Ledger {
           user_data_128: prepareId,
           ledger: Helper.ledgerIds.globalControl,
           code: TransferCode.Clearing_Active_Check,
-          flags: TransferFlags.none
+          flags: TransferFlags.linked
         },
+        // Setup the limit account for this payment.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecPayer.clearingSetup,
+          credit_account_id: accountSpecPayer.clearingLimit,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: 1,
+          flags: TransferFlags.linked,
+        },
+        // Reserve funds for Participant A from Clearing Credit
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecPayer.clearingCredit,
+          credit_account_id: accountSpecPayer.clearingSetup,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: TransferCode.Clearing_Reserve,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.balancing_credit,
+        },
+        // Reserve funds for Participant A from Unrestricted
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecPayer.unrestricted,
+          credit_account_id: accountSpecPayer.clearingSetup,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: TransferCode.Clearing_Reserve,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.balancing_credit,
+        },
+        // Reserve funds for Participant A from Clearing_Setup
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecPayer.clearingSetup,
+          credit_account_id: accountSpecPayer.reserved,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: TransferCode.Clearing_Reserve,
+          flags: TransferFlags.linked
+        },
+        // ??
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecPayer.clearingLimit,
+          credit_account_id: accountSpecPayer.clearingSetup,
+          amount: amount_max,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: 1,
+          flags: TransferFlags.balancing_credit
+        },
+        
       ]
 
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
@@ -2104,7 +2181,26 @@ export default class TigerBeetleLedger implements Ledger {
         if (error.result === CreateTransferError.linked_event_failed) {
           return
         }
+
         if (error.index === 0) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.debit_account_already_closed:
+              fatalErrors.push({ type: 'PAYER_CLOSED', ...error })
+              return
+            case CreateTransferError.credit_account_already_closed:
+              fatalErrors.push({ type: 'PAYEE_CLOSED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
+          }
+        }
+
+        // TODO(LD): need to figure out how the errors changed:
+        // specifically idempotency check (need to reinstate derivation from Mojaloop id)
+        if (error.index === 1) {
           switch (error.result) {
             case CreateTransferError.ok:
               return
@@ -2132,16 +2228,14 @@ export default class TigerBeetleLedger implements Ledger {
           }
         }
 
-        if (error.index === 1) {
+        if (error.index === 5) {
           switch (error.result) {
             case CreateTransferError.ok:
               return
-            case CreateTransferError.debit_account_already_closed:
-              fatalErrors.push({ type: 'PAYER_CLOSED', ...error })
+            case CreateTransferError.exceeds_credits: {
+              fatalErrors.push({ type: 'FAIL_LIQUIDITY', ...error })
               return
-            case CreateTransferError.credit_account_already_closed:
-              fatalErrors.push({ type: 'PAYEE_CLOSED', ...error })
-              return
+            }
             default:
               fatalErrors.push({ type: 'UNKNOWN', ...error })
               return

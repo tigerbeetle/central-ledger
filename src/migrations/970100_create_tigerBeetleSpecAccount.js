@@ -38,6 +38,9 @@ exports.up = async (knex) => {
         t.string('restricted', 64).notNullable()
         t.string('reserved', 64).notNullable()
         t.string('commitedOutgoing', 64).notNullable()
+        t.string('clearingCredit', 64).notNullable()
+        t.string('clearingSetup', 64).notNullable()
+        t.string('clearingLimit', 64).notNullable()
         
         t.boolean('isTombstoned').defaultTo(false).notNullable()
         t.dateTime('createdDate').defaultTo(knex.fn.now()).notNullable()

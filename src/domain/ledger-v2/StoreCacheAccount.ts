@@ -36,6 +36,9 @@ export class SpecStoreCacheAccount {
     assert(typeof spec.restricted === 'bigint');
     assert(typeof spec.reserved === 'bigint');
     assert(typeof spec.commitedOutgoing === 'bigint');
+    assert(typeof spec.clearingCredit === 'bigint');
+    assert(typeof spec.clearingSetup === 'bigint');
+    assert(typeof spec.clearingLimit === 'bigint');
     
     const key = this.key(dfspId, currency);
     this.cacheMap[key] = spec;

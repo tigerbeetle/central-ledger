@@ -776,7 +776,7 @@ describe('TigerBeetleLedger', () => {
     const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
     const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
 
-    it('01 prepare transfer', async () => {
+    it.only('01 prepare transfer', async () => {
       // Arrange
       const payload: CreateTransferDto = {
         transferId,
@@ -794,12 +794,15 @@ describe('TigerBeetleLedger', () => {
 
       // Act
       const result = await ledger.prepare(input)
-
-      const tbLedger = ledger as TigerBeetleLedger
-      const accounts = TestUtils.unwrapSuccess(
-        await tbLedger.getDfspV2({ dfspId: 'dfsp_a' })
+      
+      const accountsA = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_a' })
       )
-      TestUtils.printLedgerDfsps([accounts])
+      const accountsB = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_b' })
+      )
+      TestUtils.printLedgerDfsps([accountsA, accountsB])
+
 
       // Assert
       assert.ok(result)

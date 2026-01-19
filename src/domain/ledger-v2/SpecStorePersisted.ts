@@ -16,6 +16,9 @@ interface SpecRecordAccount {
   restricted: string,
   reserved: string,
   commitedOutgoing: string,
+  clearingCredit: string,
+  clearingSetup: string,
+  clearingLimit: string,
   isTombstoned: boolean;
   createdDate: string;
   updatedDate: string;
@@ -83,6 +86,9 @@ function hydrateSpecAccount(result: any): SpecAccount {
     restricted: BigInt(record.restricted),
     reserved: BigInt(record.reserved),
     commitedOutgoing: BigInt(record.commitedOutgoing),
+    clearingCredit: BigInt(record.clearingCredit),
+    clearingSetup: BigInt(record.clearingSetup),
+    clearingLimit: BigInt(record.clearingLimit),
   }
 
   return spec
@@ -98,6 +104,9 @@ function dehydrateSpecAccount(spec: SpecAccount): any {
     restricted: spec.restricted,
     reserved: spec.reserved,
     commitedOutgoing: spec.commitedOutgoing,
+    clearingCredit: spec.clearingCredit,
+    clearingSetup: spec.clearingSetup,
+    clearingLimit: spec.clearingLimit,
   }
 
   return record
@@ -253,6 +262,9 @@ export class PersistedSpecStore implements SpecStore {
         restricted: accounts.restricted.toString(),
         reserved: accounts.reserved.toString(),
         commitedOutgoing: accounts.commitedOutgoing.toString(),
+        clearingCredit: accounts.clearingCredit.toString(),
+        clearingSetup: accounts.clearingSetup.toString(),
+        clearingLimit: accounts.clearingLimit.toString(),
       })
       .update({
         isTombstoned: true,

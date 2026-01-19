@@ -1,5 +1,3 @@
-import { QueryResult } from "src/shared/results"
-
 export interface DfspAccountIds {
   deposit: bigint,
   unrestricted: bigint,
@@ -7,6 +5,9 @@ export interface DfspAccountIds {
   restricted: bigint,
   reserved: bigint,
   commitedOutgoing: bigint,
+  clearingCredit: bigint
+  clearingSetup: bigint
+  clearingLimit: bigint
 }
 
 /**
