@@ -1648,7 +1648,10 @@ export default class LegacyLedger implements Ledger {
 
       if (transfer.transferState === 'RECEIVED') {
         return {
-          type: LookupTransferResultType.FOUND_NON_FINAL
+          type: LookupTransferResultType.FOUND_NON_FINAL,
+          amountClearingCredit: 0n,
+          amountUnrestricted: 0n,
+
         }
       }
 

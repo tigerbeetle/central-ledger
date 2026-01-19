@@ -466,7 +466,11 @@ export type LookupTransferQueryResponse = LookupTransferQueryResponseFoundNonFin
   | LookupTransferQueryResponseFailed
 
 export interface LookupTransferQueryResponseFoundNonFinal {
-  type: LookupTransferResultType.FOUND_NON_FINAL
+  type: LookupTransferResultType.FOUND_NON_FINAL,
+  // Transfer amount from Clearing Credit -> Reserved
+  amountClearingCredit: bigint
+  // Transfer amount from Unrestricted -> Reserved
+  amountUnrestricted: bigint
 }
 
 export interface LookupTransferQueryResponseFoundFinal {

@@ -67,8 +67,8 @@ type FailureResult<T> = CreateTransfersError & {
 type PrepareFailureType = 'FAIL_LIQUIDITY' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'MODIFIED' |
   'EXISTS' | 'UNKNOWN'
 type AbortFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' | 'UNKNOWN'
-type FulfilFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' |
-  'PAYER_ACCOUNT_CLOSED' | 'PAYEE_ACCOUNT_CLOSED' | 'UNKNOWN'
+type FulfilFailureType = 'ALREADY_ABORTED' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'ALREADY_FULFILLED'
+  | 'NOT_FOUND' | 'PAYER_ACCOUNT_CLOSED' | 'PAYEE_ACCOUNT_CLOSED' | 'UNKNOWN'
 type WithdrawPrepareFailureType = 'ACCOUNT_CLOSED' | 'TRANSFER_ID_REUSED' | 'INSUFFICIENT_FUNDS' |
   'UNKNOWN'
 type WithdrawCommitFailureType = 'NOT_FOUND' | 'UNKNOWN'
@@ -1999,7 +1999,6 @@ export default class TigerBeetleLedger implements Ledger {
       // Lookup the Dfsp and Account Specs
 
       // TODO(LD): switch the interface to array based!
-      // TODO(LD): is queryDfsp cached?
       const dfspSpecPayer = await this.deps.specStore.queryDfsp(payer)
       const dfspSpecPayee = await this.deps.specStore.queryDfsp(payee)
       const accountSpecPayer = await this.deps.specStore.getAccountSpec(payer, currency)
@@ -2090,20 +2089,23 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ])
 
-      // TODO: need to store all the pending ids!
+      // TODO: Can we hash the key properties of the transfer for our idempotency check?
+      // or is it already contained in the condition or ilppacket somewhere?
+      const transferHash = 0n
 
       const transfers: Array<Transfer> = [
         // Ensure both Participants are active
         {
           ...Helper.createTransferTemplate,
-          id: id(),
+          id: prepareId,
           debit_account_id: dfspSpecPayer.accountId,
           credit_account_id: dfspSpecPayee.accountId,
-          amount: 0n,
+          amount: amountTigerBeetle,
           user_data_128: prepareId,
+          user_data_64: transferHash,
           ledger: Helper.ledgerIds.globalControl,
           code: TransferCode.Clearing_Active_Check,
-          flags: TransferFlags.linked
+          flags: TransferFlags.linked | TransferFlags.pending,
         },
         // Setup the limit account for this payment.
         {
@@ -2115,9 +2117,9 @@ export default class TigerBeetleLedger implements Ledger {
           user_data_128: prepareId,
           ledger: ledgerOperation,
           code: 1,
-          flags: TransferFlags.linked,
+          flags: TransferFlags.linked
         },
-        // Reserve funds for Participant A from Clearing Credit
+        // Reserve funds for Participant A from Clearing Credit.
         {
           ...Helper.createTransferTemplate,
           id: id(),
@@ -2127,7 +2129,8 @@ export default class TigerBeetleLedger implements Ledger {
           user_data_128: prepareId,
           ledger: ledgerOperation,
           code: TransferCode.Clearing_Reserve,
-          flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.balancing_credit,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
+            | TransferFlags.balancing_credit
         },
         // Reserve funds for Participant A from Unrestricted
         {
@@ -2139,12 +2142,13 @@ export default class TigerBeetleLedger implements Ledger {
           user_data_128: prepareId,
           ledger: ledgerOperation,
           code: TransferCode.Clearing_Reserve,
-          flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.balancing_credit,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
+            | TransferFlags.balancing_credit
         },
         // Reserve funds for Participant A from Clearing_Setup
         {
           ...Helper.createTransferTemplate,
-          id: id(),
+          id: prepareId + 3n,
           debit_account_id: accountSpecPayer.clearingSetup,
           credit_account_id: accountSpecPayer.reserved,
           amount: amountTigerBeetle,
@@ -2165,7 +2169,6 @@ export default class TigerBeetleLedger implements Ledger {
           code: 1,
           flags: TransferFlags.balancing_credit
         },
-        
       ]
 
       if (this.deps.config.EXPERIMENTAL.TIGERBEETLE.UNSAFE_SKIP_TIGERBEETLE) {
@@ -2186,6 +2189,17 @@ export default class TigerBeetleLedger implements Ledger {
           switch (error.result) {
             case CreateTransferError.ok:
               return
+            case CreateTransferError.exists: {
+              fatalErrors.push({ type: 'EXISTS', ...error })
+              return
+            }
+            case CreateTransferError.exists_with_different_amount:
+            case CreateTransferError.exists_with_different_debit_account_id:
+            case CreateTransferError.exists_with_different_credit_account_id:
+            case CreateTransferError.exists_with_different_user_data_32: {
+              fatalErrors.push({ type: 'MODIFIED', ...error })
+              return
+            }
             case CreateTransferError.debit_account_already_closed:
               fatalErrors.push({ type: 'PAYER_CLOSED', ...error })
               return
@@ -2200,24 +2214,10 @@ export default class TigerBeetleLedger implements Ledger {
 
         // TODO(LD): need to figure out how the errors changed:
         // specifically idempotency check (need to reinstate derivation from Mojaloop id)
-        if (error.index === 1) {
+        if (error.index === 3) {
           switch (error.result) {
             case CreateTransferError.ok:
               return
-            case CreateTransferError.exists: {
-              fatalErrors.push({ type: 'EXISTS', ...error })
-              return
-            }
-            case CreateTransferError.exists_with_different_amount:
-            case CreateTransferError.exists_with_different_debit_account_id:
-            case CreateTransferError.exists_with_different_credit_account_id: {
-              fatalErrors.push({ type: 'MODIFIED', ...error })
-              return
-            }
-            case CreateTransferError.exceeds_credits: {
-              fatalErrors.push({ type: 'FAIL_LIQUIDITY', ...error })
-              return
-            }
             // Collapse the DFSP deactivated and DFSP account deactivated into the same error
             case CreateTransferError.debit_account_already_closed:
               fatalErrors.push({ type: 'PAYER_CLOSED', ...error })
@@ -2342,14 +2342,20 @@ export default class TigerBeetleLedger implements Ledger {
     logger.debug('TigerBeetleLedger.abort()')
     assert(input.action === Enum.Events.Event.Action.ABORT)
 
-    // Lookup transfer spec to verify authorization
-    const transferSpecResults = await this.deps.specStore.lookupTransferSpec([input.transferId])
-
-    // If transfer exists, verify authorization
-    if (transferSpecResults.length === 1 && transferSpecResults[0].type === 'SpecTransfer') {
+    try {
+      // Lookup transfer spec to verify authorization
+      const transferSpecResults = await this.deps.specStore.lookupTransferSpec([input.transferId])
+      assert(transferSpecResults.length === 1)
       const transferSpec = transferSpecResults[0]
-
-      // Authorization check - only payee can abort
+      if (transferSpec.type !== 'SpecTransfer') {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `payment metadata not found`
+          )
+        }
+      }
       if (input.callerDfspId !== transferSpec.payeeId) {
         return {
           type: FulfilResultType.FAIL_OTHER,
@@ -2359,81 +2365,154 @@ export default class TigerBeetleLedger implements Ledger {
           )
         }
       }
-    }
 
-    const prepareId = Helper.fromMojaloopId(input.transferId)
-
-    // Void the pending transfer
-    const transfers: Array<Transfer> = [
-      {
-        ...Helper.createTransferTemplate,
-        id: id(),
-        debit_account_id: 0n,
-        credit_account_id: 0n,
-        amount: 0n,
-        user_data_128: prepareId,
-        pending_id: prepareId,
-        ledger: 0,
-        code: TransferCode.Clearing_Reserve,
-        flags: TransferFlags.void_pending_transfer,
-      },
-    ]
-    const fatalErrors: Array<FailureResult<AbortFailureType>> = []
-    const createTransferErrors = await this.deps.client.createTransfers(transfers)
-    createTransferErrors.forEach(error => {
-      if (error.index !== 0) {
-        throw new Error(`unhandled transfer error: ${error.index}, ${CreateTransferError[error.result]}`)
-      }
-
-      switch (error.result) {
-        case CreateTransferError.ok:
-          return
-        case CreateTransferError.pending_transfer_not_found:
-          fatalErrors.push({ type: 'NOT_FOUND', ...error })
-          return
-        case CreateTransferError.pending_transfer_already_posted:
-          fatalErrors.push({ type: 'ALREADY_FULFILLED', ...error })
-          return
-        case CreateTransferError.pending_transfer_already_voided:
-          fatalErrors.push({ type: 'ALREADY_ABORTED', ...error })
-          return
-        default:
-          fatalErrors.push({ type: 'UNKNOWN', ...error })
-          return
-      }
-    })
-
-    if (fatalErrors.length > 0) {
-      const firstError = fatalErrors[0]
-      let readableError: string
-      switch (firstError.type) {
-        case 'ALREADY_ABORTED':
-          readableError = 'Payment was already aborted.'
-          break
-        case 'ALREADY_FULFILLED':
-          readableError = 'Payment was already fulfilled.'
-          break
-        case 'NOT_FOUND':
-          readableError = 'Payment could not be found.'
-          break
-        case 'UNKNOWN': {
-          readableError = CreateTransferError[firstError.result]
-          break;
+      const payerAccountSpecResult = await this.deps.specStore.getAccountSpec(transferSpec.payerId, transferSpec.currency)
+      if (payerAccountSpecResult.type === 'SpecAccountNone') {
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `Could not find AccountSpec for dfsp: ${transferSpec.payerId}`
+          )
         }
-        default:
-          throw new Error(`unhandled AbortFailureType: ${firstError.type}`)
       }
+      const payerAccountSpec = payerAccountSpecResult
+      const ledgerOperation = this.currencyManager.getLedgerOperation(transferSpec.currency)
+
+      // Lookup the original transfers from Clearing_Credit -> Setup and Unrestricted -> Setup
+      // and reverse them. 
+      // 
+      // This is serializing reads/writes to TigerBeetle, which could have an adverse effect on 
+      // performance.
+      const lookupTransferResult = await this.lookupTransfer({ transferId: input.transferId })
+      switch (lookupTransferResult.type) {
+        case LookupTransferResultType.FOUND_FINAL: {
+          return {
+            type: FulfilResultType.FAIL_OTHER,
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+              `failed to abort transfer: ${input.transferId} - already fulfilled or aborted`
+            )
+          }
+        }
+        case LookupTransferResultType.NOT_FOUND:
+        case LookupTransferResultType.FAILED:
+          return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `failed to abort transfer: ${input.transferId} - expected state: FOUND_NON_FINAL, found: ${lookupTransferResult.type} `
+          )
+        }
+      }
+      assert(lookupTransferResult.type === LookupTransferResultType.FOUND_NON_FINAL)
+    
+      const prepareId = Helper.fromMojaloopId(input.transferId)
+      const transfers: Array<Transfer> = [
+        // Void the pending transfer
+        // This acts as an atomicity check.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: 0n,
+          credit_account_id: 0n,
+          amount: 0n,
+          user_data_128: prepareId,
+          pending_id: prepareId,
+          ledger: 0,
+          code: TransferCode.Clearing_Active_Check,
+          flags: TransferFlags.linked | TransferFlags.void_pending_transfer,
+        },
+        // Reverse reservation
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: payerAccountSpec.reserved,
+          credit_account_id: payerAccountSpec.clearingCredit,
+          amount: lookupTransferResult.amountClearingCredit,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: TransferCode.Clearing_Reverse,
+          flags: TransferFlags.linked,
+        },
+        // Reverse reservation
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: payerAccountSpec.reserved,
+          credit_account_id: payerAccountSpec.unrestricted,
+          amount: lookupTransferResult.amountUnrestricted,
+          user_data_128: prepareId,
+          ledger: ledgerOperation,
+          code: TransferCode.Clearing_Reverse,
+          flags: 0
+        }
+      ]
+      const fatalErrors: Array<FailureResult<AbortFailureType>> = []
+      const createTransferErrors = await this.deps.client.createTransfers(transfers)
+      createTransferErrors.forEach(error => {
+        // Ignore noisy errors
+        if (error.result === CreateTransferError.linked_event_failed) {
+          return
+        }
+
+        if (error.index === 0) {
+          switch (error.result) {
+            case CreateTransferError.ok:
+              return
+            case CreateTransferError.pending_transfer_not_found:
+              fatalErrors.push({ type: 'NOT_FOUND', ...error })
+              return
+            case CreateTransferError.pending_transfer_already_posted:
+              fatalErrors.push({ type: 'ALREADY_FULFILLED', ...error })
+              return
+            case CreateTransferError.pending_transfer_already_voided:
+              fatalErrors.push({ type: 'ALREADY_ABORTED', ...error })
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...error })
+              return
+          }
+        }
+      })
+
+      if (fatalErrors.length > 0) {
+        const firstError = fatalErrors[0]
+        let readableError: string
+        switch (firstError.type) {
+          case 'ALREADY_ABORTED':
+            readableError = 'Payment was already aborted.'
+            break
+          case 'ALREADY_FULFILLED':
+            readableError = 'Payment was already fulfilled.'
+            break
+          case 'NOT_FOUND':
+            readableError = 'Payment could not be found.'
+            break
+          case 'UNKNOWN': {
+            readableError = CreateTransferError[firstError.result]
+            break;
+          }
+          default:
+            throw new Error(`unhandled AbortFailureType: ${firstError.type}`)
+        }
+        return {
+          type: FulfilResultType.FAIL_OTHER,
+          error: ErrorHandler.Factory.createFSPIOPError(
+            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+            `failed to abort transfer with error: ${readableError}`
+          )
+        }
+      }
+
+      return {
+        type: FulfilResultType.PASS
+      }
+    } catch (err) {
       return {
         type: FulfilResultType.FAIL_OTHER,
-        error: ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
-          `failed to abort transfer with error: ${readableError}`
-        )
+        error: err
       }
-    }
-
-    return {
-      type: FulfilResultType.PASS
     }
   }
 
@@ -2521,9 +2600,6 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      const netDebitCapPayee = await this._getNetDebitCapInternal(
-        accountSpecPayee.currency, accountSpecPayee.dfspId
-      )
       const prepareId = Helper.fromMojaloopId(input.transferId)
 
       // Validate that the fulfilment matches the condition
@@ -2562,20 +2638,18 @@ export default class TigerBeetleLedger implements Ledger {
 
       const idLockTransfer = id()
       const transfers: Array<Transfer> = [
-        // Reserve funds for Participant A.
+        // Ensure both Participants are active
         {
           ...Helper.createTransferTemplate,
           id: id(),
+          pending_id: prepareId,
           debit_account_id: 0n,
           credit_account_id: 0n,
-          // We _could_ just set this to 0, but by setting it to the same amount that we retrieved
-          // from spec store, we can guarantee that the amount hasn't changed between prepare() and
-          // fulfil()
+          // Ensures that the amount didn't get modified between prepare() and fulfil()
           amount: amountTigerBeetle,
           user_data_128: prepareId,
-          pending_id: prepareId,
           ledger: 0,
-          code: TransferCode.Clearing_Reserve,
+          code: 0,
           flags: TransferFlags.linked | TransferFlags.post_pending_transfer,
         },
         // Fulfil payment for Participant A.
@@ -2592,62 +2666,19 @@ export default class TigerBeetleLedger implements Ledger {
         },
         // Note: we always assume Payee Instant Credit is enabled as that is the legacy behaviour
         // Future implementations where the Payee Instant Credit can be disabled should skip the
-        // following transfers
+        // following
 
         // Make credit available for transfers
         {
           ...Helper.createTransferTemplate,
           id: id(),
           debit_account_id: accountSpecPayee.commitedOutgoing,
-          credit_account_id: accountSpecPayee.unrestricted,
+          credit_account_id: accountSpecPayee.clearingCredit,
           amount: amountTigerBeetle,
           user_data_128: prepareId,
           ledger: ledgerOperation,
           code: TransferCode.Clearing_Credit,
-          flags: TransferFlags.linked
-        },
-
-        // If the NDC is unlimited, then we don't even need to do these transfers
-        // although it's probably preferable
-
-        // Move the new NDC amount out to a temporary account.
-        // if the new NDC amount is unlimited, then move all into temporary account.
-        {
-          ...Helper.createTransferTemplate,
-          id: idLockTransfer,
-          debit_account_id: accountSpecPayee.unrestricted,
-          credit_account_id: accountSpecPayee.unrestrictedLock,
-          amount: netDebitCapPayee.type === 'LIMITED' ? 
-            Helper.toTigerBeetleAmount(netDebitCapPayee.amount, assetScale) : amount_max,
-          user_data_128: prepareId,
-          ledger: ledgerOperation,
-          code: TransferCode.Net_Debit_Cap_Lock,
-          flags: TransferFlags.linked | TransferFlags.balancing_debit | TransferFlags.pending
-        },
-        // Sweep whatever remains in Unrestricted to Restricted.
-        {
-          ...Helper.createTransferTemplate,
-          id: id(),
-          debit_account_id: accountSpecPayee.unrestricted,
-          credit_account_id: accountSpecPayee.restricted,
-          amount: amount_max,
-          user_data_128: prepareId,
-          ledger: ledgerOperation,
-          code: TransferCode.Net_Debit_Cap_Sweep_To_Restricted,
-          flags: TransferFlags.linked | TransferFlags.balancing_debit
-        },
-        // Void the pending limit lock transfer.
-        {
-          ...Helper.createTransferTemplate,
-          id: id(),
-          pending_id: idLockTransfer,
-          debit_account_id: 0n,
-          credit_account_id: 0n,
-          amount: 0n,
-          user_data_128: prepareId,
-          ledger: ledgerOperation,
-          code: TransferCode.Net_Debit_Cap_Lock,
-          flags: TransferFlags.void_pending_transfer
+          flags: 0
         },
       ]
 
@@ -2663,7 +2694,10 @@ export default class TigerBeetleLedger implements Ledger {
             case CreateTransferError.ok:
               return
             case CreateTransferError.debit_account_already_closed:
-              fatalErrors.push({ type: 'PAYER_ACCOUNT_CLOSED', ...error })
+              fatalErrors.push({ type: 'PAYER_CLOSED', ...error })
+              return
+            case CreateTransferError.credit_account_already_closed:
+              fatalErrors.push({ type: 'PAYEE_CLOSED', ...error })
               return
             case CreateTransferError.pending_transfer_not_found:
               fatalErrors.push({ type: 'NOT_FOUND', ...error })
@@ -2679,7 +2713,7 @@ export default class TigerBeetleLedger implements Ledger {
               return
           }
         }
-        if (error.index === 2) {
+        if (error.index === 1) {
           switch (error.result) {
             case CreateTransferError.ok:
               return
@@ -2698,6 +2732,10 @@ export default class TigerBeetleLedger implements Ledger {
         const firstError = fatalErrors[0]
         let readableError: string
         switch (firstError.type) {
+          case 'PAYER_CLOSED': readableError = 'Payer is closed.'
+            break;
+          case 'PAYEE_CLOSED': readableError = 'Payee is closed.'
+            break;
           case 'ALREADY_ABORTED': readableError = 'Payment was already aborted.'
             break;
           case 'ALREADY_FULFILLED': readableError = 'Payment was already fulfilled.'
@@ -2736,6 +2774,7 @@ export default class TigerBeetleLedger implements Ledger {
   /**
    * @method lookupTransfer
    */
+  // TODO(LD): have an internal version that exposes the individual amounts for DUPLICATE_NON_FINAL
   public async lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse> {
     const prepareId = Helper.fromMojaloopId(query.transferId)
 
@@ -2758,29 +2797,48 @@ export default class TigerBeetleLedger implements Ledger {
       }
     }
 
-    // should be either 1 (non final - pending only) or 2 (final - voided or posted)
+    // Found < 6   => Error, something was created incorrectly
+    // Found == 6  => Only the prepare transfers have been created
+    // Found > 6   => Prepare + Fulfil transfers or Prepare + Abort transfers have been created
+    const idempotentTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Active_Check)
     const reserveTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Reserve)
-    if (reserveTransfers.length === 1) {
+    const fulfilTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Fulfil)
+    const abortTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Reverse)
+    if (reserveTransfers.length === 3 && fulfilTransfers.length === 0) {
+      // we can deduce this based on the order
+      const amountClearingCredit = reserveTransfers[0].amount
+      const amountUnrestricted = reserveTransfers[1].amount
+      const amountTotal = reserveTransfers[2].amount
+      assert.equal(amountClearingCredit + amountUnrestricted, amountTotal, 'Invalid amounts derived from reserveTransfers')
+
       return {
-        type: LookupTransferResultType.FOUND_NON_FINAL
+        type: LookupTransferResultType.FOUND_NON_FINAL,
+        amountClearingCredit,
+        amountUnrestricted,
       }
     }
 
-    if (reserveTransfers.length > 2) {
-      return {
-        type: LookupTransferResultType.FAILED,
-        error: ErrorHandler.Factory.createInternalServerFSPIOPError(
-          `Found: ${relatedTransfers.length} transfers with code: ${TransferCode.Clearing_Reserve}. Expected at most 2.`
-        )
-      }
-    }
+
+
+    // TODO(LD): need to refactor this for newer transfers
+
+    // if (reserveTransfers.length > 9) {
+    //   return {
+    //     type: LookupTransferResultType.FAILED,
+    //     error: ErrorHandler.Factory.createInternalServerFSPIOPError(
+    //       `Found: ${relatedTransfers.length} transfers with code: ${TransferCode.Clearing_Reserve}. Expected at most 6.`
+    //     )
+    //   }
+    // }
+
+    assert.equal(idempotentTransfers.length, 2, `expected pending + post_pending or pending + void_pending for prepareId: ${prepareId} and code: ${TransferCode.Clearing_Active_Check}`)
 
     let pendingTransfer: Transfer;
     let finalTransfer: Transfer;
-    if (reserveTransfers[0].id === prepareId) {
-      [pendingTransfer, finalTransfer] = reserveTransfers
-    } else if (reserveTransfers[1].id === prepareId) {
-      [finalTransfer, pendingTransfer] = reserveTransfers
+    if (idempotentTransfers[0].pending_id === 0n) {
+      [pendingTransfer, finalTransfer] = idempotentTransfers
+    } else if (idempotentTransfers[1].pending_id === 0n) {
+      [finalTransfer, pendingTransfer] = idempotentTransfers
     } else {
       return {
         type: LookupTransferResultType.FAILED,

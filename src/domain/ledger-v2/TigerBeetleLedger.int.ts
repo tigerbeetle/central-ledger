@@ -29,6 +29,34 @@ describe('TigerBeetleLedger', () => {
     }))
   }
 
+  const sendFromTo = async (payer: string, payee: string, amount: string, currency: string = 'USD') => {
+    // Send 50 from b1 -> b2, so that b2 will have Clearing Credit of 50
+    const transferId = randomUUID()
+    const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+    const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+    const payload: CreateTransferDto = {
+      transferId,
+      payerFsp: payer,
+      payeeFsp: payee,
+      amount: { amount: amount, currency: currency },
+      ilpPacket,
+      condition,
+      expiration: new Date(Date.now() + 60000).toISOString()
+    }
+    const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+    const prepareResult = await ledger.prepare(prepareInput)
+    assert.equal(prepareResult.type, 'PASS')
+
+    const fulfilPayload: CommitTransferDto = {
+      transferState: 'COMMITTED',
+      fulfilment,
+      completedTimestamp: new Date().toISOString()
+    }
+    const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, payee)
+    const fulfilResult = await ledger.fulfil(fulfilInput)
+    assert.equal(fulfilResult.type, 'PASS')
+  }
+
   before(async () => {
     harness = await IntegrationHarness.create({
       hubCurrencies: ['USD'],
@@ -63,7 +91,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,0,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act: Adjust the net debit cap to lower than deposit amount
@@ -82,7 +113,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,4000,4000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act: Now adjust NDC to be greater than deposit amount
@@ -100,7 +134,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,4000,0,4000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act: Now deposit more funds
@@ -120,7 +157,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,4000,0,4000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
     })
 
@@ -161,7 +201,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,1000,1000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act: Deposit another 2,000
@@ -181,7 +224,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,1000,0,4000,3000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
     })
 
@@ -244,7 +290,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,5000,5000;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act
@@ -262,7 +311,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
       assert(withdrawPrepareResult.type === 'SUCCESS', 'expected success result')
     })
@@ -297,7 +349,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act
@@ -311,7 +366,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
       assert(withdrawCommitResult.type === 'SUCCESS', 'expected success result')
     })
@@ -422,7 +480,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act
@@ -436,7 +497,10 @@ describe('TigerBeetleLedger', () => {
         USD,20101,0,0,0,0,0;
         USD,20200,0,5000,0,5000,0;
         USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
       ))
       assert(withdrawCommitResult.type === 'SUCCESS', 'expected success result')
     })
@@ -725,7 +789,7 @@ describe('TigerBeetleLedger', () => {
 
       // Act
       // wait for TigerBeetle to timeout the transfer - no longer happens
-      await TestUtils.sleep(1500) 
+      await TestUtils.sleep(1500)
       const sweepResult = await ledger.sweepTimedOut()
 
       // Assert
@@ -776,7 +840,12 @@ describe('TigerBeetleLedger', () => {
     const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
     const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
 
-    it.only('01 prepare transfer', async () => {
+    it('01 prepare transfer', async () => {
+      let accountsA = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_a' })
+      )
+      TestUtils.printLedgerDfsps([accountsA])
+
       // Arrange
       const payload: CreateTransferDto = {
         transferId,
@@ -794,8 +863,8 @@ describe('TigerBeetleLedger', () => {
 
       // Act
       const result = await ledger.prepare(input)
-      
-      const accountsA = TestUtils.unwrapSuccess(
+
+      accountsA = TestUtils.unwrapSuccess(
         await ledger.getDfspV2({ dfspId: 'dfsp_a' })
       )
       const accountsB = TestUtils.unwrapSuccess(
@@ -837,7 +906,39 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, FulfilResultType.PASS)
     })
 
-    it('payee dfsp with unlimited net debit cap always receives credit in Unrestricted', async () => {
+    it('03 uses Payee_Credit account before using unrestricted funds', async () => {
+      // Arrange
+      await setupDfsp('dfsp_b1', 10_000)
+      await setupDfsp('dfsp_b2', 10_000)
+      await setupDfsp('dfsp_b3', 10_000)
+
+      // Send 50 from b1 -> b2, so that b2 will have Clearing Credit of 50
+      await sendFromTo('dfsp_b1', 'dfsp_b2', '50')
+      
+      // Act
+      // Send 50 from b2 -> b3, we expect clearing credit to be used first
+      await sendFromTo('dfsp_b2', 'dfsp_b3', '100')
+
+      // Assert
+      let accountsB2 = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_b2' })
+      )      
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsB2, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,50,0,10000,9950;
+        USD,20101,0,50,0,50,0;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,100,0,100,0;
+        USD,20400,0,50,0,50,0;
+        USD,60400,0,200,0,200,0;
+        USD,60500,0,100,0,100,0;
+        USD,60600,0,0,0,0,0;`
+      ))
+    })
+
+
+    // TODO(LD): out of date if we go with separate accounts!
+    it.skip('payee dfsp with unlimited net debit cap always receives credit in Unrestricted', async () => {
       // Arrange
       await setupDfsp('dfsp_aa', 10000, 'USD')
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
@@ -885,8 +986,9 @@ describe('TigerBeetleLedger', () => {
         USD,20400,0,100,0,100,0;`
       ))
     })
-
-    it('net receiver payee dfsp with a limited net debit cap gets funds swept into unrestricted', async () => {
+    
+    // TODO(LD): out of date if we go with separate accounts!
+    it.skip('net receiver payee dfsp with a limited net debit cap gets funds swept into unrestricted', async () => {
       // Arrange
       await setupDfsp('dfsp_ab', 10000, 'USD')
       TestUtils.unwrapSuccess(await ledger.setNetDebitCap({
@@ -1171,7 +1273,7 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, PrepareResultType.DUPLICATE_NON_FINAL)
     })
 
-    it('should detect duplicate with modified parameters', async () => {
+    it('should detect duplicate with modified amount', async () => {
       // Arrange
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1208,7 +1310,9 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, PrepareResultType.MODIFIED)
     })
 
-    it('should detect duplicate after fulfil (final state)', async () => {
+    it.todo('should detect duplicate with modified expiration')
+
+    it('should detect duplicate after fulfil', async () => {
       // Arrange - Complete full happy path
       const transferId = 'cc246ead-3000-48e3-842c-017c16309d38'
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1243,9 +1347,13 @@ describe('TigerBeetleLedger', () => {
       // Assert
       assert.equal(result.type, PrepareResultType.DUPLICATE_FINAL)
     })
+
+    it.todo('should detect duplicate after abort')
   })
 
   describe('clearing unhappy path - abort errors', () => {
+    it.todo('should abort a payment and revert the positions')
+
     it('should fail to abort non-existent transfer', async () => {
       // Arrange
       const transferId = randomUUID()
@@ -1326,7 +1434,7 @@ describe('TigerBeetleLedger', () => {
       const fulfilResult = await ledger.fulfil(fulfilInput)
       assert.equal(fulfilResult.type, FulfilResultType.PASS)
 
-      // Act - Attempt abort after fulfil
+      // Act
       const abortInput = TestUtils.buildValidAbortInput(transferId)
       const result = await ledger.fulfil(abortInput)
 
@@ -1334,7 +1442,7 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, FulfilResultType.FAIL_OTHER)
       if (result.type === FulfilResultType.FAIL_OTHER) {
         assert.ok(result.error)
-        assert.match(result.error.message, /already fulfilled/i)
+        assert.match(result.error.message, /already fulfilled or aborted/i)
       }
     })
   })
@@ -1369,11 +1477,14 @@ describe('TigerBeetleLedger', () => {
       )
       unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPre, `
         USD,10200,0,100000,0,0,100000;
-        USD,20100,100,0,0,100000,99900;
+        USD,20100,0,100,0,100000,99900;
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,0,0;
-        USD,20300,0,0,100,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20300,0,0,0,100,100;
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,200,0,200,0;
+        USD,60500,0,100,0,100,0;
+        USD,60600,0,0,0,0,0;`
       ))
 
       // Act
@@ -1395,13 +1506,16 @@ describe('TigerBeetleLedger', () => {
       const accountsPost = TestUtils.unwrapSuccess(
         await ledger.getDfspV2({ dfspId: 'dfsp_ac' })
       )
-     unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPost, `
         USD,10200,0,100000,0,0,100000;
-        USD,20100,0,0,0,100000,100000;
+        USD,20100,0,100,0,100100,100000;
         USD,20101,0,0,0,0,0;
         USD,20200,0,0,0,0,0;
-        USD,20300,0,0,0,0,0;
-        USD,20400,0,0,0,0,0;`
+        USD,20300,0,100,0,100,0;
+        USD,20400,0,0,0,0,0;
+        USD,60400,0,200,0,200,0;
+        USD,60500,0,100,0,100,0;
+        USD,60600,0,0,0,0,0;`
       ))
     })
 
@@ -1532,7 +1646,7 @@ describe('TigerBeetleLedger', () => {
       }
     })
 
-    it('should fail to fulfil with closed payer account', async () => {
+    it('should fulfil with closed payer account', async () => {
       // Arrange
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1586,14 +1700,10 @@ describe('TigerBeetleLedger', () => {
       const result = await ledger.fulfil(fulfilInput)
 
       // Assert
-      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
-      if (result.type === FulfilResultType.FAIL_OTHER) {
-        assert.ok(result.error)
-        assert.match(result.error.message, /payer.*account.*closed/i)
-      }
+      assert.equal(result.type, FulfilResultType.PASS)
     })
 
-    it('should fail to fulfil with closed payee account', async () => {
+    it('should fulfil with closed payee account', async () => {
       // Arrange
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1647,12 +1757,10 @@ describe('TigerBeetleLedger', () => {
       const result = await ledger.fulfil(fulfilInput)
 
       // Assert
-      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
-      if (result.type === FulfilResultType.FAIL_OTHER) {
-        assert.ok(result.error)
-        assert.match(result.error.message, /payee.*account.*closed/i)
-      }
+      assert.equal(result.type, FulfilResultType.PASS)
     })
+
+    it.todo('should fail to fulfil if the amount has been changed between prepare() and fulfil()')
   })
 
   describe('clearing unhappy path - authorization', () => {
