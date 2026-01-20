@@ -762,9 +762,8 @@ describe('TigerBeetleLedger', () => {
 
   })
 
-  // TODO(LD): come back to these next week!
-  describe.skip('timeout handling', () => {
-    it('prepares a transfer, waits for timeout, and sweeps', async () => {
+  describe('timeout handling', () => {
+    it.only('prepares a transfer, waits for timeout, and sweeps', async () => {
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
       const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
@@ -795,7 +794,7 @@ describe('TigerBeetleLedger', () => {
       // Assert
       assert(sweepResult.type === 'SUCCESS')
       const ids = sweepResult.transfers.map(t => t.id)
-      assert(ids.includes(transferId))
+      assert(ids.includes(transferId), `expected transferId: ${transferId} to have been swept`)
     })
 
     it('once a transfer is swept, it cannot be swept again', async () => {

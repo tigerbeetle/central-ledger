@@ -185,9 +185,9 @@ export class IntegrationHarness implements Harness {
         memorySize: '256m',
         port: 3307,
         migration: {
-          // type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql')
+          type: 'sql', sqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql')
           // uncomment to update the checkpoint file
-          type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql')
+          // type: 'knex', updateSqlFilePath: path.join(projectRoot, 'ddl/central_ledger.checkpoint.sql')
         },
         ...this.harnessConfig.database
       };
