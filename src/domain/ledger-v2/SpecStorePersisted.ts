@@ -28,6 +28,7 @@ interface SpecRecordTransfer {
   id: string
   currency: string
   amount: string
+  expiration: string
   payerId: string
   payeeId: string
   ilpCondition: string
@@ -356,6 +357,7 @@ export class PersistedSpecStore implements SpecStore {
         id: record.id,
         currency: record.currency,
         amount: record.amount,
+        expiration: record.expiration,
         payerId: record.payerId,
         payeeId: record.payeeId,
         condition: record.ilpCondition,
@@ -374,6 +376,7 @@ export class PersistedSpecStore implements SpecStore {
           id: m.id,
           currency: m.currency,
           amount: m.amount,
+          expiration: m.expiration,
           payerId: m.payerId,
           payeeId: m.payeeId,
           ilpCondition: m.condition,

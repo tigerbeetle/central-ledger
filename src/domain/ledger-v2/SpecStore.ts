@@ -51,6 +51,7 @@ export interface SpecTransfer {
   // can't afford the performance hit to lookup the prepared payment in TigerBeetle
   amount: string,
   currency: string,
+  expiration: string,
   payerId: string,
   payeeId: string,
   condition: string,

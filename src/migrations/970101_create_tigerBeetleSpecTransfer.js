@@ -37,6 +37,7 @@ exports.up = async (knex) => {
         t.text('ilpPacket').notNullable()
         t.string('amount', 16).notNullable()
         t.string('currency', 3).notNullable()
+        t.dateTime('expiration').notNullable()
         t.string('fulfilment', 256)
       })
     }

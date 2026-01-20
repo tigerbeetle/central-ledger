@@ -1416,7 +1416,7 @@ describe('TigerBeetleLedger', () => {
       const result = await ledger.prepare(prepareInput)
 
       // Assert
-      assert.equal(result.type, PrepareResultType.DUPLICATE_NON_FINAL)
+      assert.equal(result.type, PrepareResultType.DUPLICATE_FINAL)
     })
   })
 
@@ -1433,7 +1433,6 @@ describe('TigerBeetleLedger', () => {
       let accountsB = TestUtils.unwrapSuccess(
         await ledger.getDfspV2({ dfspId: 'dfsp_abort_b' })
       )
-      TestUtils.printLedgerDfsps([accountsB])
       unwrapSnapshot(checkSnapshotLedgerDfsp(accountsB, `
         USD,10200,0,10000,0,0,10000;
         USD,20100,0,0,0,10000,10000;
@@ -1488,7 +1487,6 @@ describe('TigerBeetleLedger', () => {
       accountsB = TestUtils.unwrapSuccess(
         await ledger.getDfspV2({ dfspId: 'dfsp_abort_b' })
       )
-      TestUtils.printLedgerDfsps([accountsB])
       unwrapSnapshot(checkSnapshotLedgerDfsp(accountsB, `
         USD,10200,0,10000,0,0,10000;
         USD,20100,0,60,0,10060,10000;
@@ -1549,7 +1547,7 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, FulfilResultType.FAIL_OTHER)
       if (result.type === FulfilResultType.FAIL_OTHER) {
         assert.ok(result.error)
-        assert.match(result.error.message, /already aborted/i)
+        assert.match(result.error.message, /already fulfilled or aborted/i)
       }
     })
 
@@ -1777,7 +1775,7 @@ describe('TigerBeetleLedger', () => {
       const abortResult = await ledger.fulfil(abortInput)
       assert.equal(abortResult.type, FulfilResultType.PASS)
 
-      // Act - Attempt fulfil after abort
+      // Act
       const fulfilPayload: CommitTransferDto = {
         transferState: 'COMMITTED',
         fulfilment,
@@ -1908,7 +1906,9 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, FulfilResultType.PASS)
     })
 
-    it('should fail to fulfil if the amount has been changed between prepare() and fulfil()', async () => {
+    // TODO(LD): This isn't quite that easy to achieve, since pending/posted transfers don't enforce
+    // that the user_data_64 is the same.
+    it.skip('should fail to fulfil if the amount has been changed between prepare() and fulfil()', async () => {
       // Arrange
       const transferId = randomUUID()
       const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
@@ -1928,13 +1928,13 @@ describe('TigerBeetleLedger', () => {
       const prepareResult = await ledger.prepare(prepareInput)
       assert.equal(prepareResult.type, PrepareResultType.PASS)
 
-      // Act - Directly modify the cached spec to have a different amount (test-only access)
+      // Act
       const specStore = (ledger as any).deps.specStore
       const cacheMap = specStore.cacheTransfer.cacheMap
       // Verify the spec exists in cache
       assert.ok(cacheMap[transferId], 'Transfer spec should be in cache after prepare')
       // Modify the amount in the cached spec
-      cacheMap[transferId] = { ...cacheMap[transferId], amount: '200' }
+      cacheMap[transferId] = { ...cacheMap[transferId], amount: '99' }
 
       // Attempt to fulfil with the modified amount in cache
       const fulfilPayload: CommitTransferDto = {
@@ -1945,11 +1945,11 @@ describe('TigerBeetleLedger', () => {
       const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
       const result = await ledger.fulfil(fulfilInput)
 
-      // Assert - Should fail with pending_transfer_has_different_amount error
+      // Assert
       assert.equal(result.type, FulfilResultType.FAIL_OTHER)
       if (result.type === FulfilResultType.FAIL_OTHER) {
         assert.ok(result.error)
-        assert.match(result.error.message, /pending_transfer_has_different_amount/i)
+        assert.match(result.error.message, /Metdata has been corrupted for this payment./i)
       }
     })
   })

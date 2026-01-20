@@ -68,7 +68,7 @@ type PrepareFailureType = 'FAIL_LIQUIDITY' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | '
   'EXISTS' | 'UNKNOWN'
 type AbortFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' | 'UNKNOWN'
 type FulfilFailureType = 'ALREADY_ABORTED' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'ALREADY_FULFILLED'
-  | 'NOT_FOUND' | 'PAYER_ACCOUNT_CLOSED' | 'PAYEE_ACCOUNT_CLOSED' | 'UNKNOWN'
+  | 'NOT_FOUND' | 'PAYER_ACCOUNT_CLOSED' | 'PAYEE_ACCOUNT_CLOSED' | 'METADATA_CORRUPTED' | 'UNKNOWN'
 type WithdrawPrepareFailureType = 'ACCOUNT_CLOSED' | 'TRANSFER_ID_REUSED' | 'INSUFFICIENT_FUNDS' |
   'UNKNOWN'
 type WithdrawCommitFailureType = 'NOT_FOUND' | 'UNKNOWN'
@@ -2082,6 +2082,7 @@ export default class TigerBeetleLedger implements Ledger {
           id: input.payload.transferId,
           amount: amountStr,
           currency: currency,
+          expiration: input.payload.expiration,
           payerId: payer,
           payeeId: payee,
           condition: input.payload.condition,
@@ -2643,7 +2644,15 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ])
 
-      const idLockTransfer = id()
+      const transferHash = Helper.hashTransferProperties({
+        amount: transferSpec.amount,
+        currency: transferSpec.currency,
+        expiration: transferSpec.expiration,
+        payeeFsp: transferSpec.payeeId,
+        payerFsp: transferSpec.payerId,
+        condition: transferSpec.condition,
+        ilpPacket: transferSpec.ilpPacket,
+      })
       const transfers: Array<Transfer> = [
         // Ensure both Participants are active
         {
@@ -2652,9 +2661,8 @@ export default class TigerBeetleLedger implements Ledger {
           pending_id: prepareId,
           debit_account_id: 0n,
           credit_account_id: 0n,
-          // Ensures that the amount didn't get modified between prepare() and fulfil()
-          amount: amountTigerBeetle,
           user_data_128: prepareId,
+          amount: 0n,
           ledger: 0,
           code: 0,
           flags: TransferFlags.linked | TransferFlags.post_pending_transfer,
@@ -2739,6 +2747,8 @@ export default class TigerBeetleLedger implements Ledger {
         const firstError = fatalErrors[0]
         let readableError: string
         switch (firstError.type) {
+          case 'METADATA_CORRUPTED': readableError = 'Metdata has been corrupted for this payment.'
+            break;
           case 'PAYER_CLOSED': readableError = 'Payer is closed.'
             break;
           case 'PAYEE_CLOSED': readableError = 'Payee is closed.'
@@ -2804,14 +2814,11 @@ export default class TigerBeetleLedger implements Ledger {
       }
     }
 
-    // Found < 6   => Error, something was created incorrectly
-    // Found == 6  => Only the prepare transfers have been created
-    // Found > 6   => Prepare + Fulfil transfers or Prepare + Abort transfers have been created
     const idempotentTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Active_Check)
     const reserveTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Reserve)
     const fulfilTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Fulfil)
     const abortTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Reverse)
-    if (reserveTransfers.length === 3 && fulfilTransfers.length === 0) {
+    if (reserveTransfers.length === 3 && fulfilTransfers.length === 0 && abortTransfers.length === 0) {
       // we can deduce this based on the order
       const amountClearingCredit =reserveTransfers[0].amount
       const amountUnrestricted = reserveTransfers[1].amount
@@ -2824,19 +2831,6 @@ export default class TigerBeetleLedger implements Ledger {
         amountUnrestricted,
       }
     }
-
-
-
-    // TODO(LD): need to refactor this for newer transfers
-
-    // if (reserveTransfers.length > 9) {
-    //   return {
-    //     type: LookupTransferResultType.FAILED,
-    //     error: ErrorHandler.Factory.createInternalServerFSPIOPError(
-    //       `Found: ${relatedTransfers.length} transfers with code: ${TransferCode.Clearing_Reserve}. Expected at most 6.`
-    //     )
-    //   }
-    // }
 
     assert.equal(idempotentTransfers.length, 2, `expected pending + post_pending or pending + void_pending for prepareId: ${prepareId} and code: ${TransferCode.Clearing_Active_Check}`)
 
