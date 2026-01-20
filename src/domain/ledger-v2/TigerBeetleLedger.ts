@@ -840,6 +840,7 @@ export default class TigerBeetleLedger implements Ledger {
           ledger: ledgerOperation,
           code: TransferCode.Deposit,
           flags: TransferFlags.linked
+
         },
         // Sweep total balance from Restricted to Unrestricted
         {
@@ -2110,7 +2111,8 @@ export default class TigerBeetleLedger implements Ledger {
           credit_account_id: dfspSpecPayee.accountId,
           amount: amountTigerBeetle,
           user_data_128: prepareId,
-          user_data_64: transferHash,
+          user_data_64: BigInt(expirationMs),
+          user_data_32: transferHash,
           ledger: Helper.ledgerIds.globalControl,
           code: TransferCode.Clearing_Active_Check,
           flags: TransferFlags.linked | TransferFlags.pending,
@@ -2204,7 +2206,8 @@ export default class TigerBeetleLedger implements Ledger {
             case CreateTransferError.exists_with_different_amount:
             case CreateTransferError.exists_with_different_debit_account_id:
             case CreateTransferError.exists_with_different_credit_account_id:
-            case CreateTransferError.exists_with_different_user_data_64: {
+            case CreateTransferError.exists_with_different_user_data_64:
+            case CreateTransferError.exists_with_different_user_data_32: {
               fatalErrors.push({ type: 'MODIFIED', ...error })
               return
             }
@@ -2941,7 +2944,7 @@ export default class TigerBeetleLedger implements Ledger {
         user_data_64: 0n,
         user_data_32: 0,
         ledger: 0,
-        code: 1,
+        code: TransferCode.Clearing_Active_Check,
         timestamp_min: openingBookmarkTimestamp,
         timestamp_max: 0n,
         limit: MAX_TRANSFERS_IN_PAGE,
@@ -3014,11 +3017,18 @@ export default class TigerBeetleLedger implements Ledger {
       // OR we could look at TransferSpec and do a query based on timeouts, to get the possible
       // timed out transfers, and abort them accordingly. (that would be the simpler approach)
       //
-      const nowNs = BigInt(new Date().getTime()) * 1_000_000n
+      const nowMs = BigInt((new Date()).getTime())
+
+      // Prune timed out transfers
       Object.keys(maybeTimedOutTransfers).forEach(key => {
         const transfer = maybeTimedOutTransfers[key]
-        const timeoutNs = BigInt(transfer.timeout) * NS_PER_SECOND
-        if ((transfer.timestamp + timeoutNs) > nowNs) {
+        // expiration time is in user_data_64
+        if (transfer.user_data_64 === 0n) {
+          delete maybeTimedOutTransfers[key]
+        }
+
+        // expires in the future
+        if (transfer.user_data_64 > nowMs) {
           delete maybeTimedOutTransfers[key]
         }
       })

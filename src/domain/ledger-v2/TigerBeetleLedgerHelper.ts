@@ -80,7 +80,7 @@ export default class TigerBeetleLedgerHelper {
 
   /**
    * Hash transfer properties to detect modifications
-   * Returns a 64-bit BigInt hash for use in user_data_64
+   * Returns a 32-bit integer hash for use in user_data_64
    *
    * Hashes: amount, currency, expiration, payee, payer, condition, ilpPacket
    */
@@ -92,7 +92,7 @@ export default class TigerBeetleLedgerHelper {
     payerFsp: string,
     condition: string,
     ilpPacket: string
-  }): bigint {
+  }): number {
     // Create a deterministic string representation of the transfer
     const transferString = [
       props.amount,
@@ -104,13 +104,10 @@ export default class TigerBeetleLedgerHelper {
       props.ilpPacket
     ].join('|')
 
-    // Hash with SHA-256 and take first 64 bits
+    // Hash with SHA-256 and take first 32 bits
     const hash = crypto.createHash('sha256').update(transferString).digest()
-
-    // Convert first 8 bytes to BigInt
-    const hash64 = hash.readBigUInt64BE(0)
-
-    return hash64
+    const hash32 = hash.readInt32BE(0)
+    return hash32
   }
 
   public static async safeLookupAccounts(client: Client, accountIds: Array<bigint>):
@@ -279,5 +276,34 @@ export default class TigerBeetleLedgerHelper {
     }
 
     return Number(realAmount)
+  }
+
+  /**
+   * Convert an absolute FSPIOP expiration time to a TigerBeetle-compatible
+   * seconds timeout
+   */
+  public static toTigerBeetleTimeout(now: Date, expiration: string):
+     'INVALID' | 'ALREADY_EXPIRED' | 'ROUNDED_DOWN_TO_ZERO' | number 
+    {
+    const nowMs = (now).getTime()
+    const expirationMs = Date.parse(expiration)
+    if (isNaN(expirationMs)) {
+      return 'INVALID'
+    }
+
+    if (nowMs > expirationMs) {
+      return 'ALREADY_EXPIRED'
+    }
+
+    // TigerBeetle timeouts are specified in seconds. I'm not sure if we should round this up or
+    // down. For now, let's be pessimistic and round down.
+    const timeoutMs = expirationMs - nowMs
+    assert(timeoutMs > 0)
+    const timeoutSeconds = Math.floor(timeoutMs / 1000)
+    if (timeoutSeconds === 0) {
+      return 'ROUNDED_DOWN_TO_ZERO'
+    }
+
+    return timeoutSeconds
   }
 }

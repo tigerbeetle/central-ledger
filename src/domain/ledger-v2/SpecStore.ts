@@ -51,6 +51,8 @@ export interface SpecTransfer {
   // can't afford the performance hit to lookup the prepared payment in TigerBeetle
   amount: string,
   currency: string,
+
+  // TODO(LD): Remove this if possible, we only added it for the hash calculation
   expiration: string,
   payerId: string,
   payeeId: string,
