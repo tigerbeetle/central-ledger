@@ -2813,7 +2813,7 @@ export default class TigerBeetleLedger implements Ledger {
     const abortTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Reverse)
     if (reserveTransfers.length === 3 && fulfilTransfers.length === 0) {
       // we can deduce this based on the order
-      const amountClearingCredit = reserveTransfers[0].amount
+      const amountClearingCredit =reserveTransfers[0].amount
       const amountUnrestricted = reserveTransfers[1].amount
       const amountTotal = reserveTransfers[2].amount
       assert.equal(amountClearingCredit + amountUnrestricted, amountTotal, 'Invalid amounts derived from reserveTransfers')

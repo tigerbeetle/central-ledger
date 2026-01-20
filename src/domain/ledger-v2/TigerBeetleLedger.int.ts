@@ -1423,12 +1423,28 @@ describe('TigerBeetleLedger', () => {
   describe('clearing unhappy path - abort errors', () => {
     it('should abort a payment and revert the positions', async () => {
       // Arrange - Create fresh DFSPs
-      await setupDfsp('dfsp_abort_sender', 10000)
-      await setupDfsp('dfsp_abort_test', 10000)
-      await setupDfsp('dfsp_abort_payee', 10000)
+      await setupDfsp('dfsp_abort_a', 10000)
+      await setupDfsp('dfsp_abort_b', 10000)
+      await setupDfsp('dfsp_abort_c', 10000)
 
-      // Send 50 from sender -> abort_test, so abort_test has Clearing Credit of 50
-      await sendFromTo('dfsp_abort_sender', 'dfsp_abort_test', '50')
+      // Send 40 from a -> b, so b has Clearing Credit of 40
+      await sendFromTo('dfsp_abort_a', 'dfsp_abort_b', '40')
+      
+      let accountsB = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_abort_b' })
+      )
+      TestUtils.printLedgerDfsps([accountsB])
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsB, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,0,0,10000,10000;
+        USD,20101,0,0,0,40,40;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,0,0,0,0;
+        USD,20400,0,40,0,40,0;
+        USD,60400,0,0,0,0,0;
+        USD,60500,0,0,0,0,0;
+        USD,60600,0,0,0,0,0;`
+      ))
 
       // Prepare a transfer from abort_test -> abort_payee for 100
       const transferId = randomUUID()
@@ -1436,8 +1452,8 @@ describe('TigerBeetleLedger', () => {
       const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
       const payload: CreateTransferDto = {
         transferId,
-        payerFsp: 'dfsp_abort_test',
-        payeeFsp: 'dfsp_abort_payee',
+        payerFsp: 'dfsp_abort_b',
+        payeeFsp: 'dfsp_abort_c',
         amount: { amount: '100', currency: 'USD' },
         ilpPacket,
         condition,
@@ -1448,41 +1464,38 @@ describe('TigerBeetleLedger', () => {
       const prepareResult = await ledger.prepare(prepareInput)
       assert.equal(prepareResult.type, PrepareResultType.PASS)
 
-      // Assert - Check accounts after prepare
-      let accountsPayer = TestUtils.unwrapSuccess(
-        await ledger.getDfspV2({ dfspId: 'dfsp_abort_test' })
+      accountsB = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_abort_b' })
       )
-      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPayer, `
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsB, `
         USD,10200,0,10000,0,0,10000;
-        USD,20100,0,50,0,10000,9950;
-        USD,20101,0,50,0,50,0;
+        USD,20100,0,60,0,10000,9940;
+        USD,20101,0,40,0,40,0;
         USD,20200,0,0,0,0,0;
         USD,20300,0,0,0,100,100;
-        USD,20400,0,50,0,50,0;
+        USD,20400,0,40,0,40,0;
         USD,60400,0,200,0,200,0;
         USD,60500,0,100,0,100,0;
         USD,60600,0,0,0,0,0;`
       ))
 
-      // Act - Abort the transfer (payee is the caller)
-      const abortInput = TestUtils.buildValidAbortInput(transferId, 'dfsp_abort_payee')
+      // Act
+      const abortInput = TestUtils.buildValidAbortInput(transferId, 'dfsp_abort_c')
       const abortResult = await ledger.fulfil(abortInput)
-      if (abortResult.type !== FulfilResultType.PASS) {
-        console.log('Abort failed:', abortResult)
-      }
       assert.equal(abortResult.type, FulfilResultType.PASS)
 
-      // Assert - Check accounts after abort (funds should be reverted)
-      accountsPayer = TestUtils.unwrapSuccess(
-        await ledger.getDfspV2({ dfspId: 'dfsp_abort_test' })
+      // Assert
+      accountsB = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_abort_b' })
       )
-      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPayer, `
+      TestUtils.printLedgerDfsps([accountsB])
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsB, `
         USD,10200,0,10000,0,0,10000;
-        USD,20100,0,0,0,10050,10000;
-        USD,20101,0,50,0,100,50;
+        USD,20100,0,60,0,10060,10000;
+        USD,20101,0,40,0,80,40;
         USD,20200,0,0,0,0,0;
         USD,20300,0,100,0,100,0;
-        USD,20400,0,50,0,50,0;
+        USD,20400,0,40,0,40,0;
         USD,60400,0,200,0,200,0;
         USD,60500,0,100,0,100,0;
         USD,60600,0,0,0,0,0;`
