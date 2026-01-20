@@ -78,6 +78,41 @@ export default class TigerBeetleLedgerHelper {
     pending_id: 0n,
   }
 
+  /**
+   * Hash transfer properties to detect modifications
+   * Returns a 64-bit BigInt hash for use in user_data_64
+   *
+   * Hashes: amount, currency, expiration, payee, payer, condition, ilpPacket
+   */
+  public static hashTransferProperties(props: {
+    amount: string,
+    currency: string,
+    expiration: string,
+    payeeFsp: string,
+    payerFsp: string,
+    condition: string,
+    ilpPacket: string
+  }): bigint {
+    // Create a deterministic string representation of the transfer
+    const transferString = [
+      props.amount,
+      props.currency,
+      props.expiration,
+      props.payeeFsp,
+      props.payerFsp,
+      props.condition,
+      props.ilpPacket
+    ].join('|')
+
+    // Hash with SHA-256 and take first 64 bits
+    const hash = crypto.createHash('sha256').update(transferString).digest()
+
+    // Convert first 8 bytes to BigInt
+    const hash64 = hash.readBigUInt64BE(0)
+
+    return hash64
+  }
+
   public static async safeLookupAccounts(client: Client, accountIds: Array<bigint>):
     Promise<QueryResult<Array<Account>>> {
     if (accountIds.length === 0) {

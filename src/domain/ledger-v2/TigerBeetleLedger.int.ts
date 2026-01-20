@@ -1310,7 +1310,47 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, PrepareResultType.MODIFIED)
     })
 
-    it.todo('should detect duplicate with modified expiration')
+    it('should detect duplicate with modified expiration', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const expiration1 = new Date(Date.now() + 60000)
+      const mockQuoteResponse1 = TestUtils.generateMockQuoteILPResponse(transferId, expiration1)
+      const { ilpPacket: ilpPacket1, condition: condition1 } = TestUtils.generateQuoteILPResponse(mockQuoteResponse1)
+
+      // Prepare with expiration at T+60000
+      const payload1: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket: ilpPacket1,
+        condition: condition1,
+        expiration: expiration1.toISOString()
+      }
+      const input1 = TestUtils.buildValidPrepareInput(transferId, payload1)
+      const firstResult = await ledger.prepare(input1)
+      assert.equal(firstResult.type, PrepareResultType.PASS)
+
+      // Act - Prepare again with different expiration
+      const expiration2 = new Date(Date.now() + 120000)
+      const mockQuoteResponse2 = TestUtils.generateMockQuoteILPResponse(transferId, expiration2)
+      const { ilpPacket: ilpPacket2, condition: condition2 } = TestUtils.generateQuoteILPResponse(mockQuoteResponse2)
+
+      const payload2: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket: ilpPacket2,
+        condition: condition2,
+        expiration: expiration2.toISOString()
+      }
+      const input2 = TestUtils.buildValidPrepareInput(transferId, payload2)
+      const result = await ledger.prepare(input2)
+
+      // Assert
+      assert.equal(result.type, PrepareResultType.MODIFIED)
+    })
 
     it('should detect duplicate after fulfil', async () => {
       // Arrange - Complete full happy path
@@ -1348,11 +1388,106 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, PrepareResultType.DUPLICATE_FINAL)
     })
 
-    it.todo('should detect duplicate after abort')
+    it('should detect duplicate after abort', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      // Prepare and abort
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      const abortInput = TestUtils.buildValidAbortInput(transferId)
+      const abortResult = await ledger.fulfil(abortInput)
+      assert.equal(abortResult.type, FulfilResultType.PASS)
+
+      // Act - Try to prepare again after abort
+      const result = await ledger.prepare(prepareInput)
+
+      // Assert
+      assert.equal(result.type, PrepareResultType.DUPLICATE_NON_FINAL)
+    })
   })
 
   describe('clearing unhappy path - abort errors', () => {
-    it.todo('should abort a payment and revert the positions')
+    it('should abort a payment and revert the positions', async () => {
+      // Arrange - Create fresh DFSPs
+      await setupDfsp('dfsp_abort_sender', 10000)
+      await setupDfsp('dfsp_abort_test', 10000)
+      await setupDfsp('dfsp_abort_payee', 10000)
+
+      // Send 50 from sender -> abort_test, so abort_test has Clearing Credit of 50
+      await sendFromTo('dfsp_abort_sender', 'dfsp_abort_test', '50')
+
+      // Prepare a transfer from abort_test -> abort_payee for 100
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_abort_test',
+        payeeFsp: 'dfsp_abort_payee',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      // Assert - Check accounts after prepare
+      let accountsPayer = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_abort_test' })
+      )
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPayer, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,50,0,10000,9950;
+        USD,20101,0,50,0,50,0;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,0,0,100,100;
+        USD,20400,0,50,0,50,0;
+        USD,60400,0,200,0,200,0;
+        USD,60500,0,100,0,100,0;
+        USD,60600,0,0,0,0,0;`
+      ))
+
+      // Act - Abort the transfer (payee is the caller)
+      const abortInput = TestUtils.buildValidAbortInput(transferId, 'dfsp_abort_payee')
+      const abortResult = await ledger.fulfil(abortInput)
+      if (abortResult.type !== FulfilResultType.PASS) {
+        console.log('Abort failed:', abortResult)
+      }
+      assert.equal(abortResult.type, FulfilResultType.PASS)
+
+      // Assert - Check accounts after abort (funds should be reverted)
+      accountsPayer = TestUtils.unwrapSuccess(
+        await ledger.getDfspV2({ dfspId: 'dfsp_abort_test' })
+      )
+      unwrapSnapshot(checkSnapshotLedgerDfsp(accountsPayer, `
+        USD,10200,0,10000,0,0,10000;
+        USD,20100,0,0,0,10050,10000;
+        USD,20101,0,50,0,100,50;
+        USD,20200,0,0,0,0,0;
+        USD,20300,0,100,0,100,0;
+        USD,20400,0,50,0,50,0;
+        USD,60400,0,200,0,200,0;
+        USD,60500,0,100,0,100,0;
+        USD,60600,0,0,0,0,0;`
+      ))
+    })
 
     it('should fail to abort non-existent transfer', async () => {
       // Arrange
@@ -1760,7 +1895,50 @@ describe('TigerBeetleLedger', () => {
       assert.equal(result.type, FulfilResultType.PASS)
     })
 
-    it.todo('should fail to fulfil if the amount has been changed between prepare() and fulfil()')
+    it('should fail to fulfil if the amount has been changed between prepare() and fulfil()', async () => {
+      // Arrange
+      const transferId = randomUUID()
+      const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+      const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+
+      // Prepare with amount 100
+      const payload: CreateTransferDto = {
+        transferId,
+        payerFsp: 'dfsp_a',
+        payeeFsp: 'dfsp_b',
+        amount: { amount: '100', currency: 'USD' },
+        ilpPacket,
+        condition,
+        expiration: new Date(Date.now() + 60000).toISOString()
+      }
+      const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+      const prepareResult = await ledger.prepare(prepareInput)
+      assert.equal(prepareResult.type, PrepareResultType.PASS)
+
+      // Act - Directly modify the cached spec to have a different amount (test-only access)
+      const specStore = (ledger as any).deps.specStore
+      const cacheMap = specStore.cacheTransfer.cacheMap
+      // Verify the spec exists in cache
+      assert.ok(cacheMap[transferId], 'Transfer spec should be in cache after prepare')
+      // Modify the amount in the cached spec
+      cacheMap[transferId] = { ...cacheMap[transferId], amount: '200' }
+
+      // Attempt to fulfil with the modified amount in cache
+      const fulfilPayload: CommitTransferDto = {
+        transferState: 'COMMITTED',
+        fulfilment,
+        completedTimestamp: new Date().toISOString()
+      }
+      const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload)
+      const result = await ledger.fulfil(fulfilInput)
+
+      // Assert - Should fail with pending_transfer_has_different_amount error
+      assert.equal(result.type, FulfilResultType.FAIL_OTHER)
+      if (result.type === FulfilResultType.FAIL_OTHER) {
+        assert.ok(result.error)
+        assert.match(result.error.message, /pending_transfer_has_different_amount/i)
+      }
+    })
   })
 
   describe('clearing unhappy path - authorization', () => {

@@ -2089,9 +2089,16 @@ export default class TigerBeetleLedger implements Ledger {
         }
       ])
 
-      // TODO: Can we hash the key properties of the transfer for our idempotency check?
-      // or is it already contained in the condition or ilppacket somewhere?
-      const transferHash = 0n
+      // Hash key properties of the transfer for idempotency/modification detection
+      const transferHash = Helper.hashTransferProperties({
+        amount: amountStr,
+        currency: currency,
+        expiration: input.payload.expiration,
+        payeeFsp: payee,
+        payerFsp: payer,
+        condition: input.payload.condition,
+        ilpPacket: input.payload.ilpPacket
+      })
 
       const transfers: Array<Transfer> = [
         // Ensure both Participants are active
@@ -2196,7 +2203,7 @@ export default class TigerBeetleLedger implements Ledger {
             case CreateTransferError.exists_with_different_amount:
             case CreateTransferError.exists_with_different_debit_account_id:
             case CreateTransferError.exists_with_different_credit_account_id:
-            case CreateTransferError.exists_with_different_user_data_32: {
+            case CreateTransferError.exists_with_different_user_data_64: {
               fatalErrors.push({ type: 'MODIFIED', ...error })
               return
             }
