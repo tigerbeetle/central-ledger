@@ -1,7 +1,7 @@
 import assert from "assert";
 import { Knex } from "knex";
 import { logger } from '../../shared/logger';
-import { AttachTransferSpecFulfilment, DfspAccountIds, FundingAction, GetSpecNetDebitCapResult, SaveFundingSpecCommand, SaveSpecFundingResult, SaveSpecNetDebitCapResult, SaveSpecTransferResult, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SpecNetDebitCap, SpecStore, SpecTransfer, SpecTransferNone } from "./SpecStore";
+import { AttachTransferSpecFulfilment, DfspAccountIds, FundingAction, GetSpecNetDebitCapResult, SaveFundingSpecCommand, SaveSpecFundingResult, SaveSpecNetDebitCapResult, SaveSpecTransferResult, SaveTransferSpecCommand, SpecAccount, SpecAccountNone, SpecDfsp, SpecDfspNone, SpecFunding, SpecFundingNone, SpecNetDebitCap, SpecStore, SpecTransfer, SpecTransferNone, ValidateParticipantsResult } from "./SpecStore";
 import { SpecStoreCacheDfsp } from "./SpecStoreCacheDfsp";
 import { SpecStoreCacheTransfer } from "./SpecStoreCacheTransfer";
 import { SpecStoreCacheAccount } from "./StoreCacheAccount";
@@ -627,6 +627,63 @@ export class PersistedSpecStore implements SpecStore {
         query,
         error: err instanceof Error ? err : new Error(String(err))
       }))
+    }
+  }
+
+  async validateTransferParticipants(params: {
+    payerId: string
+    payeeId: string
+    currency: string
+  }): Promise<ValidateParticipantsResult> {
+    // Perform sequential lookups with early exit on first failure
+
+    // Check payer DFSP
+    const dfspSpecPayer = await this.queryDfsp(params.payerId)
+    if (dfspSpecPayer.type === 'SpecDfspNone') {
+      return {
+        type: 'error',
+        entity: 'dfsp_payer',
+        participantId: params.payerId
+      }
+    }
+
+    // Check payee DFSP
+    const dfspSpecPayee = await this.queryDfsp(params.payeeId)
+    if (dfspSpecPayee.type === 'SpecDfspNone') {
+      return {
+        type: 'error',
+        entity: 'dfsp_payee',
+        participantId: params.payeeId
+      }
+    }
+
+    // Check payer account
+    const accountSpecPayer = await this.getAccountSpec(params.payerId, params.currency)
+    if (accountSpecPayer.type === 'SpecAccountNone') {
+      return {
+        type: 'error',
+        entity: 'account_payer',
+        participantId: params.payerId
+      }
+    }
+
+    // Check payee account
+    const accountSpecPayee = await this.getAccountSpec(params.payeeId, params.currency)
+    if (accountSpecPayee.type === 'SpecAccountNone') {
+      return {
+        type: 'error',
+        entity: 'account_payee',
+        participantId: params.payeeId
+      }
+    }
+
+    // All validations passed
+    return {
+      type: 'success',
+      dfspSpecPayer,
+      dfspSpecPayee,
+      accountSpecPayer,
+      accountSpecPayee
     }
   }
 }

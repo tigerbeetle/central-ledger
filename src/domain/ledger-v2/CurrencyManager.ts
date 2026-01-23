@@ -10,7 +10,7 @@ export class CurrencyManager {
     }, {} as Record<string, CurrencyLedgerConfig>)
   }
 
-  private get(curreny: string): CurrencyLedgerConfig {
+  public get(curreny: string): CurrencyLedgerConfig {
     const config = this.currencyMap[curreny]
     if (!config) {
       throw new Error(`CurrencyManager.get() - no currency defined: ${curreny}`)

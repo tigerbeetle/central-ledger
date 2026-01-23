@@ -17,6 +17,9 @@ export interface SpecAccount extends DfspAccountIds {
   readonly type: 'SpecAccount'
   dfspId: string,
   currency: string,
+  // TODO: get from a join
+  participantId: number,
+
 }
 
 /**
@@ -125,6 +128,8 @@ export interface SpecDfsp {
   readonly type: 'SpecDfsp'
   dfspId: string,
   accountId: bigint
+
+  // TODO(LD): add the participantId in as well?
 }
 
 export interface SpecDfspNone {
@@ -147,6 +152,23 @@ export interface SaveSpecTransferResultFailure {
 }
 
 export type SaveSpecTransferResult = SaveSpecTransferResultSuccess | SaveSpecTransferResultFailure
+
+/**
+ * Result type for validateTransferParticipants
+ */
+export type ValidateParticipantsResult =
+  | {
+      type: 'success'
+      dfspSpecPayer: SpecDfsp
+      dfspSpecPayee: SpecDfsp
+      accountSpecPayer: SpecAccount
+      accountSpecPayee: SpecAccount
+    }
+  | {
+      type: 'error'
+      entity: 'dfsp_payer' | 'dfsp_payee' | 'account_payer' | 'account_payee'
+      participantId: string
+    }
 
 export interface SpecStore {
 
@@ -226,4 +248,16 @@ export interface SpecStore {
    * Gets the net debit caps
    */
   getSpecNetDebitCaps(dfspCurrencies: Array<{dfspId: string, currency: string}>): Promise<Array<GetSpecNetDebitCapResult>>
+
+  /**
+   * Validates that both participants exist and have accounts for the given currency.
+   * Performs sequential lookups with early exit on first failure.
+   *
+   * @returns Success with all 4 validated specs, or error with details for caller
+   */
+  validateTransferParticipants(params: {
+    payerId: string
+    payeeId: string
+    currency: string
+  }): Promise<ValidateParticipantsResult>
 }

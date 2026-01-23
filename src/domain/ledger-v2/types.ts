@@ -1,4 +1,5 @@
 import { FSPIOPError } from '@mojaloop/central-services-error-handling'
+import { Transfer } from 'tigerbeetle-node'
 
 
 // ============================================================================
@@ -118,6 +119,7 @@ export interface LedgerAccount {
 }
 
 export enum AccountCode {
+  // TODO: rename - we should save Settlement* for accounts that get used in settlement
   Settlement_Balance = 10100,
   Deposit = 10200,
   Unrestricted = 20100,
@@ -132,6 +134,8 @@ export enum AccountCode {
   Clearing_Setup = 60400,
   Clearing_Limit = 60500,
   Unrestricted_Lock = 60600,
+  Settlement_Outgoing = 60701,
+  Settlement_Incoming = 60702,
 
   // TODO(LD): remove me! 
   TIMEOUT = 9000,
@@ -638,4 +642,93 @@ export interface SweepResultSuccess {
 export interface SweepResultFailure {
   type: 'FAILURE'
   error: Error
+}
+
+// ============================================================================
+// Settlement 
+// ============================================================================
+
+export type SettlementPrepareCommand = {
+
+  /**
+   * Unique id (64 bit bigint) to represent the settlement
+   */
+  settlementId: bigint,
+
+  /**
+   * Currency to be settled
+   */
+  currency: string,
+
+  /**
+   * The selector used to select Payments to be settled
+   */
+  selector: SettlementSelector
+}
+
+export type SettlementSelector = {
+  type: 'LEDGER_TIMERANGE',
+
+  /**
+   * The minimum Ledger creation timestamp to include in the Settlement
+   * inclusive range.
+   */
+  timestampMin: number,
+
+  /**
+   * The maximum Ledger creation timestamp to include in the Settlement
+   * inclusive range.
+   */
+  timestampMax: number
+} | {
+  type: 'TRANSFER_ID',
+  transferIds: Array<string>
+}
+
+// could also be batchId, time range from Dfsp's perspective?
+
+export type SettlementReport = {
+  // TODO(LD): This should be Logical Transfers
+  payments: Array<Payment>
+  currency: string
+  participants: Array<string>
+  netMoneyMovements: Record<string, NetMoneyMovement>
+}
+
+export type SettlementPrepareResult = {
+  type: 'SUCCESS',
+  report: SettlementReport
+} | {
+  // failure during the setup
+  type: 'SETUP_FAILURE'
+  error: Error
+} | {
+  type: 'UNKNOWN_FAILURE',
+  error: Error
+}
+
+
+// Internal representation of a payment
+type Payment = {
+  status: 'CREATED' | 'ABORTED' | 'FULFILLED' | 'SETTLED'
+  amount: number
+  currency: string,
+  payer: string,
+  payee: string,
+  // could do even better and have this as a dict based on the status
+  transfers: Array<Transfer>
+}
+
+type NetMoneyMovement = {
+  participant: string,
+  currency: string,
+  owingGross: number
+  owedGross: number
+  net: {
+    direction: 'OWING',
+    amount: number
+  } | {
+    direction: 'OWED',
+    amount: number
+  }
 }

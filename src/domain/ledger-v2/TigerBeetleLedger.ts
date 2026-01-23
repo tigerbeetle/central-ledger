@@ -5,14 +5,13 @@ import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { ApplicationConfig } from "src/shared/config";
 import { QueryResult } from 'src/shared/results';
-import { Account, AccountFilterFlags, AccountFlags, amount_max, Client, CreateAccountError, CreateTransferError, CreateTransfersError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
+import { Account, AccountFilterFlags, AccountFlags, amount_max, Client, CreateAccountError, CreateAccountsError, CreateTransferError, CreateTransfersError, id, QueryFilter, QueryFilterFlags, Transfer, TransferFlags } from 'tigerbeetle-node';
 import { convertBigIntToNumber } from "../../shared/config/util";
 import { logger } from '../../shared/logger';
 import { CurrencyManager } from './CurrencyManager';
 import { Ledger } from "./Ledger";
 import { DfspAccountIds, SpecAccount, SpecDfsp, SpecNetDebitCap, SpecStore } from "./SpecStore";
 import Helper from './TigerBeetleLedgerHelper';
-import { TransferBatcher } from "./TransferBatcher";
 import {
   AnyQuery,
   CommandResult,
@@ -53,15 +52,20 @@ import {
   WithdrawAbortResponse,
   AccountCode,
   TransferCode,
+  SettlementSelector,
+  SettlementReport,
+  SettlementPrepareCommand,
 } from "./types";
 
 const NS_PER_MS = 1_000_000n
-const NS_PER_SECOND = NS_PER_MS * 1_000n
 
 /**
  * Internal mapping of TigerBeetle errors 
  */
-type FailureResult<T> = CreateTransfersError & {
+type AccountFailureResult<T> = CreateAccountsError & {
+  type: T
+}
+type TransferFailureResult<T> = CreateTransfersError & {
   type: T
 }
 type PrepareFailureType = 'FAIL_LIQUIDITY' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'MODIFIED' |
@@ -78,6 +82,7 @@ type SetNetDebitCapFailureType = 'UNKNOWN'
 type CloseDfspMasterAccountFailureType = 'DEBIT_ACCOUNT_NOT_FOUND' | 'ALREADY_CLOSED' | 'UNKNOWN'
 type EnableDfspAccountFailureType = 'ALREADY_ENABLED' | 'UNKNOWN'
 type DisableDfspAccountFailureType = 'ALREADY_CLOSED' | 'UNKNOWN'
+type SettlementPrepareCreateAccountsFailureType = 'UNKNOWN'
 
 /**
  * An internal representation of an Account, combined with Spec
@@ -500,7 +505,7 @@ export default class TigerBeetleLedger implements Ledger {
       flags: TransferFlags.closing_credit | TransferFlags.pending,
     }
     const transferErrors = await this.deps.client.createTransfers([closingTransfer])
-    const fatalErrors: Array<FailureResult<CloseDfspMasterAccountFailureType>> = []
+    const fatalErrors: Array<TransferFailureResult<CloseDfspMasterAccountFailureType>> = []
 
     transferErrors.forEach(error => {
       if (error.index === 0) {
@@ -623,7 +628,7 @@ export default class TigerBeetleLedger implements Ledger {
         flags: TransferFlags.void_pending_transfer
       }
       const transferErrors = await this.deps.client.createTransfers([voidClosingTransfer])
-      const fatalErrors: Array<FailureResult<EnableDfspAccountFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<EnableDfspAccountFailureType>> = []
 
       transferErrors.forEach(error => {
         if (error.index === 0) {
@@ -737,7 +742,7 @@ export default class TigerBeetleLedger implements Ledger {
         flags: TransferFlags.closing_credit | TransferFlags.pending,
       }
       const transferErrors = await this.deps.client.createTransfers([closingTransfer])
-      const fatalErrors: Array<FailureResult<DisableDfspAccountFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<DisableDfspAccountFailureType>> = []
 
       transferErrors.forEach(error => {
         if (error.index === 0) {
@@ -890,7 +895,7 @@ export default class TigerBeetleLedger implements Ledger {
       ]
 
       const createTransfersResults = await this.deps.client.createTransfers(transfers)
-      const fatalErrors: Array<FailureResult<DepositFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<DepositFailureType>> = []
 
       createTransfersResults.forEach(error => {
         // Ignore noisy errors
@@ -1058,7 +1063,7 @@ export default class TigerBeetleLedger implements Ledger {
       ]
 
       const createTransfersResults = await this.deps.client.createTransfers(transfers)
-      const fatalErrors: Array<FailureResult<WithdrawPrepareFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<WithdrawPrepareFailureType>> = []
 
       createTransfersResults.forEach(error => {
         // Ignore noisy errors
@@ -1172,7 +1177,7 @@ export default class TigerBeetleLedger implements Ledger {
       ]
 
       const createTransfersResult = await this.deps.client.createTransfers(transfers)
-      const fatalErrors: Array<FailureResult<WithdrawCommitFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<WithdrawCommitFailureType>> = []
 
       createTransfersResult.forEach(error => {
         // Ignore noisy errors
@@ -1244,7 +1249,7 @@ export default class TigerBeetleLedger implements Ledger {
       ]
 
       const createTransfersResult = await this.deps.client.createTransfers(transfers)
-      const fatalErrors: Array<FailureResult<WithdrawAbortFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<WithdrawAbortFailureType>> = []
 
       createTransfersResult.forEach(error => {
         if (error.index === 0) {
@@ -1385,7 +1390,7 @@ export default class TigerBeetleLedger implements Ledger {
       },
     ]
     const createTransfersResults = await this.deps.client.createTransfers(transfers)
-    const fatalErrors: Array<FailureResult<SetNetDebitCapFailureType>> = []
+    const fatalErrors: Array<TransferFailureResult<SetNetDebitCapFailureType>> = []
 
     createTransfersResults.forEach(error => {
       // Ignore noisy errors
@@ -1997,49 +2002,32 @@ export default class TigerBeetleLedger implements Ledger {
       const payer = input.payload.payerFsp
       const payee = input.payload.payeeFsp
 
-      // Lookup the Dfsp and Account Specs
+      // Lookup and validate the Dfsp and Account Specs
+      const validationResult = await this.deps.specStore.validateTransferParticipants({
+        payerId: payer,
+        payeeId: payee,
+        currency
+      })
 
-      // TODO(LD): switch the interface to array based!
-      const dfspSpecPayer = await this.deps.specStore.queryDfsp(payer)
-      const dfspSpecPayee = await this.deps.specStore.queryDfsp(payee)
-      const accountSpecPayer = await this.deps.specStore.getAccountSpec(payer, currency)
-      const accountSpecPayee = await this.deps.specStore.getAccountSpec(payee, currency)
-      if (dfspSpecPayer.type === 'SpecDfspNone') {
+      if (validationResult.type === 'error') {
+        const errorMessages = {
+          dfsp_payer: `payer fsp: ${payer} not found`,
+          dfsp_payee: `payee fsp: ${payee} not found`,
+          account_payer: `payer fsp: ${payer} not found`,
+          account_payee: `payee fsp: ${payee} not found`,
+        }
+
         return {
           type: PrepareResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payer fsp: ${payer} not found`
+            errorMessages[validationResult.entity]
           ),
         }
       }
-      if (dfspSpecPayee.type === 'SpecDfspNone') {
-        return {
-          type: PrepareResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payee fsp: ${payee} not found`
-          ),
-        }
-      }
-      if (accountSpecPayer.type === 'SpecAccountNone') {
-        return {
-          type: PrepareResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payer fsp: ${payer} not found`
-          ),
-        }
-      }
-      if (accountSpecPayee.type === 'SpecAccountNone') {
-        return {
-          type: PrepareResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payee fsp: ${payee} not found`
-          ),
-        }
-      }
+
+      // Extract validated specs
+      const { dfspSpecPayer, dfspSpecPayee, accountSpecPayer, accountSpecPayee } = validationResult
 
       const prepareId = Helper.fromMojaloopId(input.payload.transferId)
       const ledgerOperation = this.currencyManager.getLedgerOperation(currency)
@@ -2187,7 +2175,7 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
-      const fatalErrors: Array<FailureResult<PrepareFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<PrepareFailureType>> = []
       const createTransferErrors = await this.deps.client.createTransfers(transfers)
       createTransferErrors.forEach(error => {
         // Ignore noisy errors
@@ -2409,15 +2397,15 @@ export default class TigerBeetleLedger implements Ledger {
         case LookupTransferResultType.NOT_FOUND:
         case LookupTransferResultType.FAILED:
           return {
-          type: FulfilResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
-            `failed to abort transfer: ${input.transferId} - expected state: FOUND_NON_FINAL, found: ${lookupTransferResult.type} `
-          )
-        }
+            type: FulfilResultType.FAIL_OTHER,
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+              `failed to abort transfer: ${input.transferId} - expected state: FOUND_NON_FINAL, found: ${lookupTransferResult.type} `
+            )
+          }
       }
       assert(lookupTransferResult.type === LookupTransferResultType.FOUND_NON_FINAL)
-    
+
       const prepareId = Helper.fromMojaloopId(input.transferId)
       const transfers: Array<Transfer> = [
         // Void the pending transfer
@@ -2459,7 +2447,7 @@ export default class TigerBeetleLedger implements Ledger {
           flags: 0
         }
       ]
-      const fatalErrors: Array<FailureResult<AbortFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<AbortFailureType>> = []
       const createTransferErrors = await this.deps.client.createTransfers(transfers)
       createTransferErrors.forEach(error => {
         // Ignore noisy errors
@@ -2570,46 +2558,32 @@ export default class TigerBeetleLedger implements Ledger {
       const assetScale = this.currencyManager.getAssetScale(transferSpec.currency)
       const amountTigerBeetle = Helper.fromMojaloopAmount(transferSpec.amount, assetScale)
 
-      const dfspSpecPayer = await this.deps.specStore.queryDfsp(transferSpec.payerId)
-      const dfspSpecPayee = await this.deps.specStore.queryDfsp(transferSpec.payeeId)
-      const accountSpecPayer = await this.deps.specStore.getAccountSpec(transferSpec.payerId, transferSpec.currency)
-      const accountSpecPayee = await this.deps.specStore.getAccountSpec(transferSpec.payeeId, transferSpec.currency)
-      if (dfspSpecPayer.type === 'SpecDfspNone') {
+      // Lookup and validate the Dfsp and Account Specs
+      const validationResult = await this.deps.specStore.validateTransferParticipants({
+        payerId: transferSpec.payerId,
+        payeeId: transferSpec.payeeId,
+        currency: transferSpec.currency
+      })
+
+      if (validationResult.type === 'error') {
+        const errorMessages = {
+          dfsp_payer: `payer fsp: ${transferSpec.payerId} not found`,
+          dfsp_payee: `payee fsp: ${transferSpec.payeeId} not found`,
+          account_payer: `payer fsp: ${transferSpec.payerId} not found`,
+          account_payee: `payee fsp: ${transferSpec.payeeId} not found`,
+        }
+
         return {
           type: FulfilResultType.FAIL_OTHER,
           error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payer fsp: ${transferSpec.payerId} not found`
+            errorMessages[validationResult.entity]
           ),
         }
       }
-      if (dfspSpecPayee.type === 'SpecDfspNone') {
-        return {
-          type: FulfilResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payee fsp: ${transferSpec.payeeId} not found`
-          ),
-        }
-      }
-      if (accountSpecPayer.type === 'SpecAccountNone') {
-        return {
-          type: FulfilResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payer fsp: ${transferSpec.payerId} not found`
-          ),
-        }
-      }
-      if (accountSpecPayee.type === 'SpecAccountNone') {
-        return {
-          type: FulfilResultType.FAIL_OTHER,
-          error: ErrorHandler.Factory.createFSPIOPError(
-            ErrorHandler.Enums.FSPIOPErrorCodes.PARTY_NOT_FOUND,
-            `payee fsp: ${transferSpec.payeeId} not found`
-          ),
-        }
-      }
+
+      // Extract validated specs
+      const { dfspSpecPayer, dfspSpecPayee, accountSpecPayer, accountSpecPayee } = validationResult
 
       const prepareId = Helper.fromMojaloopId(input.transferId)
 
@@ -2673,11 +2647,15 @@ export default class TigerBeetleLedger implements Ledger {
         // Fulfil payment for Participant A.
         {
           ...Helper.createTransferTemplate,
+          // TODO(LD): Settlement: if this id is derived from the Mojaloop Id
+          // MojaloopId + 1, we can use that to fetch all records we need for
+          // settlement efficently from TigerBeetle
           id: id(),
           debit_account_id: accountSpecPayer.reserved,
           credit_account_id: accountSpecPayee.commitedOutgoing,
           amount: amountTigerBeetle,
           user_data_128: prepareId,
+          // TODO(LD): Settlement: attach the current batch id here I think
           ledger: ledgerOperation,
           code: TransferCode.Clearing_Fulfil,
           flags: TransferFlags.linked
@@ -2700,7 +2678,7 @@ export default class TigerBeetleLedger implements Ledger {
         },
       ]
 
-      const fatalErrors: Array<FailureResult<FulfilFailureType>> = []
+      const fatalErrors: Array<TransferFailureResult<FulfilFailureType>> = []
       const createTransferErrors = await this.deps.client.createTransfers(transfers)
       createTransferErrors.forEach(error => {
         // Ignore noisy errors
@@ -2823,7 +2801,7 @@ export default class TigerBeetleLedger implements Ledger {
     const abortTransfers = relatedTransfers.filter(t => t.code === TransferCode.Clearing_Reverse)
     if (reserveTransfers.length === 3 && fulfilTransfers.length === 0 && abortTransfers.length === 0) {
       // we can deduce this based on the order
-      const amountClearingCredit =reserveTransfers[0].amount
+      const amountClearingCredit = reserveTransfers[0].amount
       const amountUnrestricted = reserveTransfers[1].amount
       const amountTotal = reserveTransfers[2].amount
       assert.equal(amountClearingCredit + amountUnrestricted, amountTotal, 'Invalid amounts derived from reserveTransfers')
@@ -3187,9 +3165,145 @@ export default class TigerBeetleLedger implements Ledger {
     throw new Error('not implemented')
   }
 
-  /**
-   * Private Methods
-   */
+  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<SettlementPrepareResult> {
+    // Each Physical Transfer is 128 bytes
+    // MAX_TRANSFERS = 100k: (128 * 100000) / 1024 / 1024   = 12   MB
+    // MAX_TRANSFERS = 1M:   (128 * 1000000) / 1024 / 1024  = 128  MB
+    // MAX_TRANSFERS = 10M:  (128 * 10000000) / 1024 / 1024 = 1280 MB
+    const MAX_TRANSFERS = 100_000
+    assert(cmd.settlementId)
+    assert(cmd.settlementId <= (2 ** 64 - 1), 'Settlement id must be a 64 bit bigint')
+    assert(cmd.currency)
+    assert(cmd.selector)
+
+    try {
+      const currency = cmd.currency
+      const { ledgerControl, ledgerOperation } = this.currencyManager.get(currency)
+      const dfspAndIds: Array<{
+        dfspId: string,
+        participantId: number,
+        accountIdOutgoing: bigint,
+        accountIdIncoming: bigint,
+
+      }> = (await this.deps.specStore.queryAccountsAll())
+        .filter(accounts => accounts.currency === currency)
+        .map(accounts => ({
+          dfspId: accounts.dfspId,
+          participantId: accounts.participantId,
+          // TODO(LD): double check these!
+          accountIdOutgoing: cmd.settlementId * 10n ** 64n + 1n * 10n ** 32n + BigInt(accounts.participantId),
+          accountIdIncoming: cmd.settlementId * 10n ** 64n + 2n * 10n ** 32n + BigInt(accounts.participantId)
+        }))
+
+      const accounts: Array<Account> = dfspAndIds.flatMap((dfspAndId) => {
+        return [{
+          ...Helper.createAccountTemplate,
+          id: dfspAndId.accountIdOutgoing,
+          ledger: ledgerControl,
+          code: AccountCode.Settlement_Outgoing,
+          flags: 0
+        }, {
+          ...Helper.createAccountTemplate,
+          id: dfspAndId.accountIdIncoming,
+          ledger: ledgerControl,
+          code: AccountCode.Settlement_Incoming,
+          flags: 0
+        }]
+      })
+      const fatalErrors: Array<AccountFailureResult<SettlementPrepareCreateAccountsFailureType>> = []
+      const createAccountsResults = await this.deps.client.createAccounts(accounts)
+      createAccountsResults.forEach(result => {
+        switch (result.result) {
+          case CreateAccountError.ok:
+          case CreateAccountError.exists:
+            return
+          default:
+            fatalErrors.push({ type: 'UNKNOWN', ...result })
+        }
+      })
+      if (fatalErrors.length > 0) {
+        const errorMessage = fatalErrors.map(error => `account at index: ${error.index} \
+          ${CreateAccountError[error.result]}`)
+          .join(';')
+        return {
+          type: 'SETUP_FAILURE',
+          error: new Error(`settlementPrepare failed when creating accounts with errors: \
+            ${errorMessage}`)
+        }
+      }
+
+      // Look up all of the transfers matching the selector
+      assert(cmd.selector.type === 'LEDGER_TIMERANGE', 'Only LEDGER_TIMERANGE currently supported')
+      const transferFilter: QueryFilter = {
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        ledger: ledgerOperation,
+        code: TransferCode.Clearing_Fulfil,
+        timestamp_min: BigInt(cmd.selector.timestampMin),
+        timestamp_max: BigInt(cmd.selector.timestampMax),
+        limit: Helper.maxBatchSize,
+        flags: 0
+      }
+      const fulfilledTransfers = await this.deps.client.queryTransfers(transferFilter)
+      let keepPaging = fulfilledTransfers.length === Helper.maxBatchSize
+      // Keep paging
+      while (fulfilledTransfers.length < MAX_TRANSFERS && keepPaging === true) {
+        const nextPage = await this.deps.client.queryTransfers({
+          ...transferFilter,
+          timestamp_min: fulfilledTransfers.at(-1).timestamp
+        })
+        keepPaging = nextPage.length === Helper.maxBatchSize
+        fulfilledTransfers.push(...nextPage)
+      }
+      logger.debug(`settlementPrepare(): found ${fulfilledTransfers.length} fulfilled Transfers`)
+
+      // Map from the account => dfspId => settlement calculation account
+      const mapDebitAccount = (debitAccountId: bigint): bigint => {
+        return 0n
+      }
+      const mapCreditAccount = (debitAccountId: bigint): bigint => {
+        return 0n
+      } 
+      // For each fulfilled transfer, create a new transfer on the Control Ledger
+      const transfers = fulfilledTransfers.map(transfer => {
+        return {
+          ...transfer,
+          id: transfer.user_data_128 + 1n,
+          // need to map from these 
+          debit_account_id: mapDebitAccount(transfer.debit_account_id),
+          credit_account_id: mapCreditAccount(transfer.credit_account_id),
+          timestamp: 0n
+        }
+      })
+
+
+
+    } catch (err) {
+      return {
+        type: 'UNKNOWN_FAILURE',
+        error: err
+      }
+    }
+
+  }
+
+  public async querySettlementReport(selector: SettlementSelector): Promise<QueryResult<SettlementReport>> {
+
+    // lookup all of the transferIds based on the selector
+    // lookup all the payments in TigerBeetle based on the transferIds
+    // this may be sub optimal, since  
+
+
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
+  }
+
+  // ============================================================================
+  // TigerBeetleLedger Specific Extensions
+  // ============================================================================
 
   /**
    * Get the last N transfers from TigerBeetle

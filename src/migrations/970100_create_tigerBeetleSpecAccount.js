@@ -31,6 +31,8 @@ exports.up = async (knex) => {
         t.bigIncrements('id').primary().notNullable()
         t.string('dfspId', 256).notNullable()
         t.foreign('dfspId').references('name').inTable('participant')
+
+        // TODO(LD): I think these should be numerics!
         t.string('currency', 3).notNullable()
         t.string('deposit', 64).notNullable()
         t.string('unrestricted', 64).notNullable()

@@ -44,17 +44,15 @@ export default class TigerBeetleLedgerHelper {
     timeoutHandler: 9001,
   }
 
-  // TODO
+  /**
+   * @deprecated
+   */
   public static transferCodes = {
     unknown: 1,
     timeoutBookmark: 9000,
   }
 
-  /**
-   * If the Net Debit Cap account's net credits are beyond this number,
-   * we consider the Net Debits to be uncapped.
-   */
-  public static netDebitCapEventHorizon = BigInt(2 ** 64)
+  public static maxBatchSize = 8189
 
   public static createAccountTemplate = {
     debits_pending: 0n,
@@ -80,9 +78,8 @@ export default class TigerBeetleLedgerHelper {
 
   /**
    * Hash transfer properties to detect modifications
-   * Returns a 32-bit integer hash for use in user_data_64
+   * Returns a 32-bit integer hash for use in user_data
    *
-   * Hashes: amount, currency, expiration, payee, payer, condition, ilpPacket
    */
   public static hashTransferProperties(props: {
     amount: string,
@@ -281,6 +278,7 @@ export default class TigerBeetleLedgerHelper {
   /**
    * Convert an absolute FSPIOP expiration time to a TigerBeetle-compatible
    * seconds timeout
+   * @deprecated
    */
   public static toTigerBeetleTimeout(now: Date, expiration: string):
      'INVALID' | 'ALREADY_EXPIRED' | 'ROUNDED_DOWN_TO_ZERO' | number 
