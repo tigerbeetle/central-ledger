@@ -90,6 +90,8 @@ function hydrateSpecAccount(result: any): SpecAccount {
     clearingCredit: BigInt(record.clearingCredit),
     clearingSetup: BigInt(record.clearingSetup),
     clearingLimit: BigInt(record.clearingLimit),
+    // TODO(LD): load from database/join
+    participantId: 1,
   }
 
   return spec
@@ -244,6 +246,7 @@ export class PersistedSpecStore implements SpecStore {
       type: 'SpecAccount',
       dfspId,
       currency,
+      participantId: 1,
       ...accounts,
     })
     await this.db.from(TABLE_ACCOUNT).insert({
