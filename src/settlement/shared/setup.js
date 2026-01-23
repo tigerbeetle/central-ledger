@@ -81,17 +81,18 @@ const createServer = async function (port, modules) {
           output: 'stream'
         }
       },
-      cache: [
-        {
-          provider: {
-            constructor: require('@hapi/catbox-memory'),
-            options: {
-              partition: 'cache'
-            }
-          },
-          name: 'memCache'
-        }
-      ]
+      // this is not compatible with @hapi/catbox-memory:6.0.2
+      // cache: [
+      //   {
+      //     provider: {
+      //       constructor: require('@hapi/catbox-memory'),
+      //       options: {
+      //         partition: 'cache'
+      //       }
+      //     },
+      //     name: 'memCache'
+      //   }
+      // ]
     })
     measurements.push(performance.now())
     step += 1
@@ -108,11 +109,12 @@ const createServer = async function (port, modules) {
       name: 'enums',
       method: getEnums,
       options: {
-        cache: {
-          cache: 'memCache',
-          expiresIn: 20 * 1000,
-          generateTimeout: 30 * 1000
-        }
+        
+        // cache: {
+        //   cache: 'memCache',
+        //   expiresIn: 20 * 1000,
+        //   generateTimeout: 30 * 1000
+        // }
       }
     })
 

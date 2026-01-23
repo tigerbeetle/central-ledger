@@ -34,7 +34,7 @@
 const HealthCheck = require('@mojaloop/central-services-shared').HealthCheck.HealthCheck
 const { defaultHealthHandler } = require('@mojaloop/central-services-health')
 
-const packageJson = require('../../../package.json')
+const packageJson = require('../../../../package.json')
 const {
   getSubServiceHealthDatastore,
   getSubServiceHealthBroker
