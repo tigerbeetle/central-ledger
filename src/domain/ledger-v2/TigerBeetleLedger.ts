@@ -55,6 +55,7 @@ import {
   SettlementSelector,
   SettlementReport,
   SettlementPrepareCommand,
+  SettlementPrepareResult,
 } from "./types";
 
 const NS_PER_MS = 1_000_000n
@@ -3167,8 +3168,8 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<SettlementPrepareResult> {
     // Each Physical Transfer is 128 bytes
-    // MAX_TRANSFERS = 100k: (128 * 100000) / 1024 / 1024   = 12   MB
-    // MAX_TRANSFERS = 1M:   (128 * 1000000) / 1024 / 1024  = 128  MB
+    // MAX_TRANSFERS = 100k: (128 * 100000)   / 1024 / 1024 = 12   MB
+    // MAX_TRANSFERS = 1M:   (128 * 1000000)  / 1024 / 1024 = 128  MB
     // MAX_TRANSFERS = 10M:  (128 * 10000000) / 1024 / 1024 = 1280 MB
     const MAX_TRANSFERS = 100_000
     assert(cmd.settlementId)
