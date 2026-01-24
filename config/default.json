@@ -519,7 +519,7 @@
       }
     }
   },
-  "SERVER_PRINT_ROUTES_ON_STARTUP": false,
+  "SERVER_PRINT_ROUTES_ON_STARTUP": true,
   "EXPERIMENTAL": {
     "LEDGER": {
       "PRIMARY": "LEGACY",

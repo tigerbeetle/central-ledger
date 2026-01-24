@@ -83,7 +83,7 @@ const registerPlugins = async (server) => {
   // })
 
   if (Config.SERVER_PRINT_ROUTES_ON_STARTUP) {
-    // await server.register([Blipp])
+    await server.register([Blipp])
   }
 
   await server.register([Inert, Vision, ErrorHandling])

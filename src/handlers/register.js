@@ -58,6 +58,7 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
 const registerAllHandlers = async () => {
   try {
+    // TODO(LD): refactor to remove require-glob!
     const modules = await requireGlob(['./**/handler.js'])
     for (const key in modules) {
       Logger.isInfoEnabled && Logger.info(`Registering handler module[${key}]: ${JSON.stringify(modules[key])}`)
