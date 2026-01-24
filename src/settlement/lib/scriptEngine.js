@@ -30,7 +30,9 @@
  ******/
 const MLNumber = require('@mojaloop/ml-number')
 const Transaction = require('../domain/transactions/index')
-const BigNumber = require('bignumber.js')
+// TODO(LD): Can we get
+
+
 const Logger = require('@mojaloop/central-services-logger')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Config = require('./config')
@@ -49,7 +51,10 @@ async function getTransferFromCentralLedger (transferId) {
 }
 
 function multiply (number1, number2, decimalPlaces) {
-  const result = new MLNumber(number1).multiply(number2).toFixed(decimalPlaces, BigNumber.ROUND_HALF_UP)
+  // Rounds towards nearest neighbour. If equidistant, rounds away from zero
+  // magic number from Bignumber.js
+  const ROUND_HALF_UP = 4
+  const result = new MLNumber(number1).multiply(number2).toFixed(decimalPlaces, ROUND_HALF_UP)
   return result
 }
 

@@ -40,6 +40,7 @@ const EventSdk = require('@mojaloop/event-sdk')
 const Kafka = require('@mojaloop/central-services-shared').Util.Kafka
 const Logger = require('@mojaloop/central-services-logger')
 const Producer = require('@mojaloop/central-services-stream').Util.Producer
+// TODO(LD): vendor this dependency
 const retry = require('async-retry')
 const SettlementWindowService = require('../../domain/settlementWindow')
 const Utility = require('@mojaloop/central-services-shared').Util

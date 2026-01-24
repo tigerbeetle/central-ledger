@@ -1,5 +1,4 @@
 import assert from 'assert';
-import { randomUUID } from 'crypto';
 import { after, before, describe, it } from 'node:test';
 import { Ledger } from '../../../domain/ledger-v2/Ledger';
 import { IntegrationHarness } from '../../../testing/harness/harness';

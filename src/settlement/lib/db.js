@@ -28,4 +28,3 @@
  ******/
 'use strict'
 throw new Error('this file is deprecated! use src/lib/db.js instead!')
-module.exports = require('@mojaloop/database-lib').Db

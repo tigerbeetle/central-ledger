@@ -37,7 +37,6 @@
  */
 
 const Config = require('./config')
-const Mustache = require('mustache')
 const KafkaConfig = Config.KAFKA_CONFIG
 const Logger = require('@mojaloop/central-services-logger')
 const idGenerator = require('@mojaloop/central-services-shared').Util.id
@@ -182,7 +181,9 @@ const updateMessageProtocolMetadata = (messageProtocol, metadataType, metadataAc
  */
 const generalTopicTemplate = (functionality, action) => {
   try {
-    return Mustache.render(Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE, { functionality, action })
+    return Config.KAFKA_CONFIG.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE
+      .replace('{{functionality}}', functionality || '')
+      .replace('{{action}}', action || '')
   } catch (err) {
     Logger.isErrorEnabled && Logger.error(err)
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
@@ -239,3 +240,6 @@ exports.getKafkaConfig = getKafkaConfig
 exports.updateMessageProtocolMetadata = updateMessageProtocolMetadata
 exports.createGeneralTopicConf = createGeneralTopicConf
 exports.produceGeneralMessage = produceGeneralMessage
+
+// Test only
+exports._generalTopicTemplate = generalTopicTemplate
