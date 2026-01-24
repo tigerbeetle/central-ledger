@@ -28,7 +28,7 @@
  ******/
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const Facade = {
   getApplicableByWindowIdList: async function (idList, settlementModel, winStateEnum) {

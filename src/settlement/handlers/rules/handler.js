@@ -42,7 +42,7 @@ const Producer = require('@mojaloop/central-services-stream').Util.Producer
 const RulesService = require('../../domain/rules')
 const scriptsLoader = require('../../lib/scriptsLoader')
 const Utility = require('@mojaloop/central-services-shared').Util
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 const LOG_LOCATION = { module: 'RulesHandler', method: '', path: '' } // var object used as pointer
 
 const {

@@ -28,7 +28,7 @@
  ******/
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const create = async ({ settlementWindowContentId, state, reason }, enums = {}) => {
   return Db.from('settlementWindowContentStateChange').insert({

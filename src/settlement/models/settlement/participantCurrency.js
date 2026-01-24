@@ -30,7 +30,7 @@
 
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const checkParticipantAccountExists = async ({ participantId, accountId }, enums = {}) => {
   return Db.from('participantCurrency').query(builder => {

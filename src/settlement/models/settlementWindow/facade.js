@@ -30,7 +30,7 @@
  ******/
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Enum = require('@mojaloop/central-services-shared').Enum
 const Logger = require('@mojaloop/central-services-logger')

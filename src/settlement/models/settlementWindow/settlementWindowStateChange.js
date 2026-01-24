@@ -30,7 +30,7 @@
  ******/
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const create = async ({ settlementWindowId, state, reason }, enums = {}) => {
   return Db.from('settlementWindowStateChange').insert({

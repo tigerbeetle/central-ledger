@@ -30,7 +30,7 @@
 
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const create = async (settlement) => {
   return Db.from('settlement').insert({

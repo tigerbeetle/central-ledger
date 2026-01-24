@@ -30,7 +30,7 @@
 
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const getAccountInSettlement = async ({ settlementId, accountId }) => {
   const result = await Db.from('settlementParticipantCurrency').query(builder => {

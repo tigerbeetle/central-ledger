@@ -30,7 +30,11 @@
  ******/
 'use strict'
 
-const Db = require('../../lib/db')
+// TODO(LD): remove this file!
+
+console.warn(`importing src/settlement/models/lib/enums.js`)
+// throw new Error('deprectated!')
+const Db = require('../../../lib/db')
 
 module.exports = {
   headers: {

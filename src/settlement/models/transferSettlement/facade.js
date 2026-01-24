@@ -32,14 +32,14 @@
 
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Logger = require('@mojaloop/central-services-logger')
 const Utility = require('@mojaloop/central-services-shared').Util
 const location = { module: 'TransferFulfilHandler', method: '', path: '' }
 const SettlementEnum = require('@mojaloop/central-services-shared').Enum.Settlements
 const TransferStateEnum = require('@mojaloop/central-services-shared').Enum.Transfers.TransferState
-const TransferFacade = require('@mojaloop/central-ledger/src/models/transfer/facade')
+const TransferFacade = require('../../../models/transfer/facade')
 
 async function insertLedgerEntry (ledgerEntry, transferId, trx = null) {
   try {

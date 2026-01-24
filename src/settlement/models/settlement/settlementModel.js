@@ -28,7 +28,7 @@
  ******/
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const getByName = async (name) => {
   return Db.from('settlementModel').findOne({ name, isActive: 1 })

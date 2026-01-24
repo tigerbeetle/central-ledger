@@ -28,7 +28,7 @@
 
 'use strict'
 
-const Db = require('../../lib/db')
+const Db = require('../../../lib/db')
 
 const getBySettlementId = async (id) => {
   const knex = await Db.getKnex()

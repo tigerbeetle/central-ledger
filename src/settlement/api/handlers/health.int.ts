@@ -40,6 +40,7 @@ describe('settlement/api/health', () => {
         code,
         body
         // @ts-ignore
+        // TODO(LD): there is some typescript issue with the central services health library
       } = await TestUtils.unwrapHapiResponse(h => HealthHandler.get(request, h))
 
       // Assert
