@@ -405,6 +405,14 @@ async function initializeServer(port: number, modules: Array<Plugin<any>>, ledge
     // Pass through ledger in app state
     server.app.ledger = ledger
 
+    // Register enums server method for settlement API
+    const SettlementEnums = require('../settlement/models/lib/enums')
+    server.method({
+      name: 'enums',
+      method: (id: string) => SettlementEnums[id](),
+      options: {}
+    })
+
     await Plugins.registerPlugins(server)
     await server.register(modules)
     await server.start()

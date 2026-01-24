@@ -42,7 +42,7 @@ const Inert = require('@hapi/inert')
 const Vision = require('@hapi/vision')
 const Blipp = require('blipp')
 const ErrorHandling = require('@mojaloop/central-services-error-handling')
-const { APIDocumentation, loggingPlugin } = require('@mojaloop/central-services-shared').Util.Hapi
+const { APIDocumentation, loggingPlugin, HapiEventPlugin } = require('@mojaloop/central-services-shared').Util.Hapi
 const Config = require('../shared/config').default
 const { logger } = require('./logger')
 
@@ -86,7 +86,7 @@ const registerPlugins = async (server) => {
     await server.register([Blipp])
   }
 
-  await server.register([Inert, Vision, ErrorHandling])
+  await server.register([Inert, Vision, ErrorHandling, HapiEventPlugin])
 }
 
 module.exports = {
