@@ -34,7 +34,7 @@ const { statusEnum, serviceName } = require('@mojaloop/central-services-shared')
 const Logger = require('@mojaloop/central-services-logger')
 const Consumer = require('@mojaloop/central-services-stream').Util.Consumer
 
-const MigrationLockModel = require('../../models/misc/migrationLock')
+const MigrationLockModel = require('../../../models/misc/migrationLock')
 
 /**
  * @function getSubServiceHealthBroker
