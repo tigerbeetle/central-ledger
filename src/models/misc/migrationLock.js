@@ -32,11 +32,11 @@ const Db = require('../../lib/db')
 /**
  * @function getIsMigrationLocked
  *
- * @description Gets whether or not the database is locked based on the knex_migrations_lock
+ * @description Gets whether or not the database is locked based on the migration_lock
  * @returns {Promise<boolean>} - true if locked, false if not. Rejects if an error occours
  */
 const getIsMigrationLocked = async () => {
-  const result = await Db.from('knex_migrations_lock').query(async builder => {
+  const result = await Db.from('migration_lock').query(async builder => {
     builder.select('is_locked AS isLocked')
       .orderBy('index', 'desc')
       .first()

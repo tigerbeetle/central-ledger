@@ -34,7 +34,7 @@ const Path = require('path')
 module.exports = {
   plugin: HapiOpenAPI,
   options: {
-    api: Path.resolve(__dirname, '../interface/swagger-bundled.json'),
+    api: Path.resolve(__dirname, '../../../interface/swagger-bundled.json'),
     handlers: Path.resolve(__dirname, './handlers')
   }
 }

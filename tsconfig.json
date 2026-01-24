@@ -14,11 +14,13 @@
   },
   "include": [
     "src/**/*.ts",
-    "src/**/*.js"
+    "src/**/*.js",
   ],
   "exclude": [
     "node_modules",
     "config/knexfile.js",
     "seeds/**/*.js",
+    "src/**/*.int.ts",
+    "src/**/*.unit.ts",
   ]
 }
