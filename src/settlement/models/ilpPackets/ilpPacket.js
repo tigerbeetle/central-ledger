@@ -33,6 +33,7 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Logger = require('@mojaloop/central-services-logger')
 
 exports.getById = async (id) => {
+  Logger.warn('deprecated! Use src/models/transfer/ilpPacket.js instead')
   try {
     return await Db.from('ilpPacket').find({ transferId: id })
   } catch (err) {

@@ -32,6 +32,7 @@ const rethrow = require('../../shared/rethrow')
 
 exports.getById = async (id) => {
   try {
+    Logger.warn('deprecated! Use src/models/transfer/ilpPacket.js instead')
     return await Db.from('ilpPacket').find({ transferId: id })
   } catch (err) {
     rethrow.rethrowDatabaseError(err)
