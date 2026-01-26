@@ -31,6 +31,7 @@
  ******/
 'use strict'
 
+import * as settlementWindowV2 from '../../../domain/settlementWindow/index-v2'
 const settlementWindow = require('../../../domain/settlementWindow/index')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Utility = require('@mojaloop/central-services-shared').Util
@@ -94,7 +95,9 @@ module.exports = {
       span.setTags(spanTags)
       await span.audit(request.payload, EventSdk.AuditEventAction.start)
       const Enums = await request.server.methods.enums('settlementWindowStates')
-      return await settlementWindow.process({ settlementWindowId, reason, headers: request.raw.req.headers }, Enums)
+      
+      // return await settlementWindow.process({ settlementWindowId, reason, headers: request.raw.req.headers }, Enums)
+      return await settlementWindowV2.processAndClose({ settlementWindowId, reason, headers: request.raw.req.headers }, Enums)
     } catch (err) {
       request.server.log('error', err)
       return ErrorHandler.Factory.reformatFSPIOPError(err)

@@ -348,16 +348,19 @@ const settlementTransfersReserve = async function (settlementId, transactionTime
             })
             .transacting(trx)
 
+
+          // TODO(LD): change to internal call to ledger position adjustment
+
           // Send notification for position change
-          const action = 'settlement-transfer-position-change'
-          const destination = dfspName
-          const payload = {
-            currency: currencyId,
-            value: new MLNumber(dfspPositionValue).add(dfspAmount).toNumber(),
-            changedDate: new Date().toISOString()
-          }
-          const message = Facade.getNotificationMessage(action, destination, payload)
-          await Utility.produceGeneralMessage(Utility.ENUMS.NOTIFICATION, Utility.ENUMS.EVENT, message, Utility.ENUMS.STATE.SUCCESS)
+          // const action = 'settlement-transfer-position-change'
+          // const destination = dfspName
+          // const payload = {
+          //   currency: currencyId,
+          //   value: new MLNumber(dfspPositionValue).add(dfspAmount).toNumber(),
+          //   changedDate: new Date().toISOString()
+          // }
+          // const message = Facade.getNotificationMessage(action, destination, payload)
+          // await Utility.produceGeneralMessage(Utility.ENUMS.NOTIFICATION, Utility.ENUMS.EVENT, message, Utility.ENUMS.STATE.SUCCESS)
 
           // Select hubPosition FOR UPDATE
           const { hubPositionId, hubPositionValue } = await knex('participantPosition')
@@ -502,16 +505,18 @@ const settlementTransfersAbort = async function (settlementId, transactionTimest
             })
             .transacting(trx)
 
+          // TODO(LD): change to internal call to ledger position adjustment
+          
           // Send notification for position change
-          const action = 'settlement-transfer-position-change'
-          const destination = dfspName
-          const payload = {
-            currency: currencyId,
-            value: dfspPositionValue - dfspAmount,
-            changedDate: new Date().toISOString()
-          }
-          const message = Facade.getNotificationMessage(action, destination, payload)
-          await Utility.produceGeneralMessage(Utility.ENUMS.NOTIFICATION, Utility.ENUMS.EVENT, message, Utility.ENUMS.STATE.SUCCESS)
+          // const action = 'settlement-transfer-position-change'
+          // const destination = dfspName
+          // const payload = {
+          //   currency: currencyId,
+          //   value: dfspPositionValue - dfspAmount,
+          //   changedDate: new Date().toISOString()
+          // }
+          // const message = Facade.getNotificationMessage(action, destination, payload)
+          // await Utility.produceGeneralMessage(Utility.ENUMS.NOTIFICATION, Utility.ENUMS.EVENT, message, Utility.ENUMS.STATE.SUCCESS)
 
           // Select hubPosition FOR UPDATE
           const { hubPositionId, hubPositionValue } = await knex('participantPosition')
@@ -700,15 +705,17 @@ const settlementTransfersCommit = async function (settlementId, transactionTimes
             .transacting(trx)
 
           // Send notification for position change
-          const action = 'settlement-transfer-position-change'
-          const destination = dfspName
-          const payload = {
-            currency: currencyId,
-            value: new MLNumber(dfspPositionValue).add(dfspAmount).toNumber(),
-            changedDate: new Date().toISOString()
-          }
-          const message = Facade.getNotificationMessage(action, destination, payload)
-          await Utility.produceGeneralMessage(Utility.ENUMS.NOTIFICATION, Utility.ENUMS.EVENT, message, Utility.ENUMS.STATE.SUCCESS)
+          // const action = 'settlement-transfer-position-change'
+          // const destination = dfspName
+          // const payload = {
+          //   currency: currencyId,
+          //   value: new MLNumber(dfspPositionValue).add(dfspAmount).toNumber(),
+          //   changedDate: new Date().toISOString()
+          // }
+          // const message = Facade.getNotificationMessage(action, destination, payload)
+          // await Utility.produceGeneralMessage(Utility.ENUMS.NOTIFICATION, Utility.ENUMS.EVENT, message, Utility.ENUMS.STATE.SUCCESS)
+
+          // TODO: replace with internal call to ledger or something
         }
       }
     } catch (err) {
