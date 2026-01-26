@@ -373,6 +373,7 @@ export class IntegrationHarness implements Harness {
       },
       settlement: {
         settlementWindowModel: require('../../settlement/models/settlementWindow'),
+        settlementDomain: require('../../settlement/domain/settlement'),
         enums: require('../../settlement/models/lib/enums')
       },
       clearing: {

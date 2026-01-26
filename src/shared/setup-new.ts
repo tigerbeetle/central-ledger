@@ -317,6 +317,7 @@ async function initializeLegacyLedger(config: ApplicationConfig): Promise<Legacy
     },
     settlement: {
       settlementWindowModel: require('../settlement/models/settlementWindow'),
+      settlementDomain: require('../settlement/domain/settlement'),
       enums: enumsSettlement
     },
     clearing: {

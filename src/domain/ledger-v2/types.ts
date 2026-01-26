@@ -565,6 +565,67 @@ export type SettlementCommitCommand = {
 
 }
 
+export type GetSettlementQuery = {
+  /**
+   * The settlement id of the settlement
+   */
+  id: number
+}
+
+export type SettlementWindow = {
+  id: number,
+  // TODO(LD): better typing
+  state: string,
+  reason: string,
+  createdDate: Date,
+  changedDate: Date,
+  content: Array<{
+    id: number,
+    // TODO(LD): better typing
+    state: string
+    // TODO(LD): better typing
+    ledgerAccountType: string
+    currencyId: string,
+    createdDate: Date,
+    changedDate: Date,
+  }>
+}
+
+export type SettlementAccount = {
+  id: number
+  // TODO(LD): better typing
+  state: string
+  reason: string,
+  netSettlementAmount: {
+    // TODO(LD): should this be a number?
+    amount: string,
+    currency: string
+  }
+}
+
+export type SettlementParticipant = {
+  id: number,
+  accounts: Array<SettlementAccount>
+}
+
+export type GetSettlementQueryResponse = {
+  type: 'FOUND',
+  id: number
+  // TODO(LD): better typing
+  settlementModel: string,
+  // TODO(LD): better typing
+  state: string,
+  reason: string,
+  createdDate: Date,
+  changedDate: Date,
+  settlementWindows: Array<SettlementWindow>
+  participants: Array<SettlementParticipant>
+} | {
+  type: 'NOT_FOUND'
+} | {
+  type: 'FAILED',
+  error: Error
+}
 
 
 

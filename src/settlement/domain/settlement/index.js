@@ -265,6 +265,7 @@ module.exports = {
     // settlement event trigger
     const settlementId = await SettlementModel.triggerSettlementEvent({ idList, reason }, settlementModelData, enums)
 
+    // TODO(LD): we can remove this next section!
     // retrieve resulting data for response
     const settlement = await SettlementModel.getById({ settlementId })
     const settlementWindowsList = await SettlementWindowModel.getBySettlementId({ settlementId })

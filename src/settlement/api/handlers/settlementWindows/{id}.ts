@@ -30,20 +30,14 @@
  --------------
  ******/
 
-import * as settlementWindowV2 from '../../../domain/settlementWindow/index-v2'
-import type { SettlementWindowEnums } from '../../../domain/settlementWindow/index-v2'
+import type { Request, ResponseObject, ResponseToolkit } from '@hapi/hapi'
 import * as ErrorHandler from '@mojaloop/central-services-error-handling'
 import * as EventSdk from '@mojaloop/event-sdk'
-import type { Request, ResponseToolkit, ResponseObject } from '@hapi/hapi'
 
-// const {Util, Eu} = require('@mojaloop/central-services-shared')
-// const Utility = CentralServicesShared.Util
-// const Enum = CentralServicesShared.Enum
-
-import { Util, Enum } from '@mojaloop/central-services-shared'
-import { Ledger } from 'src/domain/ledger-v2/Ledger'
+import { Enum, Util } from '@mojaloop/central-services-shared'
 import assert from 'assert'
-import { SettlementCloseWindowCommand } from 'src/domain/ledger-v2/types'
+import { SettlementCloseWindowCommand } from '../../../../domain/ledger-v2/types'
+import { getLedger } from '../../../../api/helper'
 const settlementWindow = require('../../../domain/settlementWindow/index')
 
 interface SettlementWindowGetRequest extends Request {
@@ -157,13 +151,6 @@ async function post(
   }
 }
 
-
-const getLedger = (request: any): Ledger => {
-  assert(request, 'request is undefined')
-  assert(request.server.app, 'request.server.app is undefined')
-  assert(request.server.app.ledger, 'Ledger not available in server app state')
-  return request.server.app.ledger
-}
 
 module.exports = {
   get,

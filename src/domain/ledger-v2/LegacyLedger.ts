@@ -50,6 +50,8 @@ import {
   SettlementCloseWindowCommand,
   SettlementAbortCommand,
   SettlementCommitCommand,
+  GetSettlementQuery,
+  GetSettlementQueryResponse,
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
@@ -398,9 +400,20 @@ export interface LegacyLedgerDependencies {
    */
   settlement: {
     settlementWindowModel: {
-      process: (payload: {settlementWindowId: number, reason: string}, enums: any) => Promise<number>,
+      process: (payload: { settlementWindowId: number, reason: string }, enums: any) => Promise<number>,
       close: (settlementWindowId: number, reason: string) => Promise<unknown>,
     },
+    settlementDomain: {
+      settlementEventTrigger: (
+        params: {
+          settlementModel: string,
+          reason: string,
+          settlementWindows: Array<Record<string, number>>
+        },
+        enums: any
+      ) => Promise<unknown>
+      getById: (params: { settlementId: number }, enums: any) => Promise<any>
+    }
     enums: {
       ledgerAccountTypes: Record<string, number>
       ledgerEntryTypes: Record<string, number>
@@ -1841,7 +1854,7 @@ export default class LegacyLedger implements Ledger {
 
     try {
       await this.deps.settlement.settlementWindowModel.process(
-        { settlementWindowId: cmd.id, reason: cmd.reason }, 
+        { settlementWindowId: cmd.id, reason: cmd.reason },
         this.deps.settlement.enums.settlementWindowStates
       )
       await this.deps.settlement.settlementWindowModel.close(cmd.id, cmd.reason)
@@ -1858,10 +1871,37 @@ export default class LegacyLedger implements Ledger {
     }
   }
 
-  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<void>> {
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
+  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{ id: number }>> {
+    assert(cmd.model)
+    assert(cmd.reason)
+    assert(cmd.windowIds)
+
+    try {
+      const triggerResult = await this.deps.settlement.settlementDomain.settlementEventTrigger(
+        {
+          settlementModel: cmd.model,
+          reason: cmd.reason,
+          // rewrap in a format the function expects
+          settlementWindows: cmd.windowIds.map(id => {
+            return { id }
+          })
+        },
+        this.deps.settlement.enums
+      ) as { id: number }
+      assert(triggerResult.id, 'expected settlementEventTrigger() to return an id')
+
+      return {
+        type: 'SUCCESS',
+        result: {
+          id: triggerResult.id
+        }
+      }
+    }
+    catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
     }
   }
 
@@ -1878,6 +1918,30 @@ export default class LegacyLedger implements Ledger {
       error: new Error('not implemented')
     }
   }
+
+  public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
+    assert(query)
+    assert(query.id)
+    try {
+      const settlement = await this.deps.settlement.settlementDomain.getById(
+        { settlementId: query.id }, this.deps.settlement.enums
+      )
+
+      return {
+        type: 'FOUND',
+        ...settlement
+      }
+    } catch (err) {
+      // getById throws if not found
+      // TODO(LD): catch the specific not found error!
+
+      return {
+        type: 'FAILED',
+        error: err
+      }
+    }
+  }
+
 
   // ============================================================================
   // Private Methods

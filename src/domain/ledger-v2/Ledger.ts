@@ -15,6 +15,8 @@ import {
   GetAllDfspsResponse,
   GetDfspAccountsQuery,
   GetNetDebitCapQuery,
+  GetSettlementQuery,
+  GetSettlementQueryResponse,
   HubAccountResponse,
   LegacyLedgerDfsp,
   LegacyLimit,
@@ -104,7 +106,8 @@ export interface Ledger {
    * Settlement Methods
    */
   closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>>
-  settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<void>>;
+  settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{id: number}>>;
   settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>>;
   settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>>;
+  getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse>
 }

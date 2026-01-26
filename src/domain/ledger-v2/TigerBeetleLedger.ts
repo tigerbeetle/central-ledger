@@ -59,6 +59,8 @@ import {
   SettlementCloseWindowCommand,
   SettlementAbortCommand,
   SettlementCommitCommand,
+  GetSettlementQuery,
+  GetSettlementQueryResponse,
 } from "./types";
 
 const NS_PER_MS = 1_000_000n
@@ -3168,7 +3170,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<void>> {
+  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{id: number}>> {
     return {
       type: 'FAILURE',
       error: new Error('not implemented')
@@ -3189,7 +3191,12 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-
+  public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
+    return {
+      type: 'FAILED',
+      error: new Error('not implemented')
+    }
+  }
 
   // public async closeSettlementWindow(thing: unknown): Promise<unknown> {
   //   throw new Error('not implemented')
