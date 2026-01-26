@@ -132,7 +132,6 @@ async function post(
     )
     span.setTags(spanTags)
     await span.audit(request.payload, EventSdk.AuditEventAction.start)
-    const Enums = await (request.server.methods as any).enums('settlementWindowStates') as SettlementWindowEnums
 
     const cmd: SettlementCloseWindowCommand = {
       id, reason

@@ -420,7 +420,6 @@ export interface LegacyLedgerDependencies {
   }
 }
 
-
 /**
  * @class LegacyLedger
  * @description Collects the business logic from all ledger-related activites into a common
