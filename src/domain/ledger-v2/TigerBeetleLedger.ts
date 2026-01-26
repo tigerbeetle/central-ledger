@@ -56,6 +56,9 @@ import {
   SettlementReport,
   SettlementPrepareCommand,
   SettlementPrepareResult,
+  SettlementCloseWindowCommand,
+  SettlementAbortCommand,
+  SettlementCommitCommand,
 } from "./types";
 
 const NS_PER_MS = 1_000_000n
@@ -3158,136 +3161,166 @@ export default class TigerBeetleLedger implements Ledger {
   // Settlement Methods
   // ============================================================================
 
-  public async closeSettlementWindow(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
-  }
-
-  public async settleClosedWindows(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
-  }
-
-  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<SettlementPrepareResult> {
-    // Each Physical Transfer is 128 bytes
-    // MAX_TRANSFERS = 100k: (128 * 100000)   / 1024 / 1024 = 12   MB
-    // MAX_TRANSFERS = 1M:   (128 * 1000000)  / 1024 / 1024 = 128  MB
-    // MAX_TRANSFERS = 10M:  (128 * 10000000) / 1024 / 1024 = 1280 MB
-    const MAX_TRANSFERS = 100_000
-    assert(cmd.settlementId)
-    assert(cmd.settlementId <= (2 ** 64 - 1), 'Settlement id must be a 64 bit bigint')
-    assert(cmd.currency)
-    assert(cmd.selector)
-
-    try {
-      const currency = cmd.currency
-      const { ledgerControl, ledgerOperation } = this.currencyManager.get(currency)
-      const dfspAndIds: Array<{
-        dfspId: string,
-        participantId: number,
-        accountIdOutgoing: bigint,
-        accountIdIncoming: bigint,
-
-      }> = (await this.deps.specStore.queryAccountsAll())
-        .filter(accounts => accounts.currency === currency)
-        .map(accounts => ({
-          dfspId: accounts.dfspId,
-          participantId: accounts.participantId,
-          // TODO(LD): double check these!
-          accountIdOutgoing: cmd.settlementId * 10n ** 64n + 1n * 10n ** 32n + BigInt(accounts.participantId),
-          accountIdIncoming: cmd.settlementId * 10n ** 64n + 2n * 10n ** 32n + BigInt(accounts.participantId)
-        }))
-
-      const accounts: Array<Account> = dfspAndIds.flatMap((dfspAndId) => {
-        return [{
-          ...Helper.createAccountTemplate,
-          id: dfspAndId.accountIdOutgoing,
-          ledger: ledgerControl,
-          code: AccountCode.Settlement_Outgoing,
-          flags: 0
-        }, {
-          ...Helper.createAccountTemplate,
-          id: dfspAndId.accountIdIncoming,
-          ledger: ledgerControl,
-          code: AccountCode.Settlement_Incoming,
-          flags: 0
-        }]
-      })
-      const fatalErrors: Array<AccountFailureResult<SettlementPrepareCreateAccountsFailureType>> = []
-      const createAccountsResults = await this.deps.client.createAccounts(accounts)
-      createAccountsResults.forEach(result => {
-        switch (result.result) {
-          case CreateAccountError.ok:
-          case CreateAccountError.exists:
-            return
-          default:
-            fatalErrors.push({ type: 'UNKNOWN', ...result })
-        }
-      })
-      if (fatalErrors.length > 0) {
-        const errorMessage = fatalErrors.map(error => `account at index: ${error.index} \
-          ${CreateAccountError[error.result]}`)
-          .join(';')
-        return {
-          type: 'SETUP_FAILURE',
-          error: new Error(`settlementPrepare failed when creating accounts with errors: \
-            ${errorMessage}`)
-        }
-      }
-
-      // Look up all of the transfers matching the selector
-      assert(cmd.selector.type === 'LEDGER_TIMERANGE', 'Only LEDGER_TIMERANGE currently supported')
-      const transferFilter: QueryFilter = {
-        user_data_128: 0n,
-        user_data_64: 0n,
-        user_data_32: 0,
-        ledger: ledgerOperation,
-        code: TransferCode.Clearing_Fulfil,
-        timestamp_min: BigInt(cmd.selector.timestampMin),
-        timestamp_max: BigInt(cmd.selector.timestampMax),
-        limit: Helper.maxBatchSize,
-        flags: 0
-      }
-      const fulfilledTransfers = await this.deps.client.queryTransfers(transferFilter)
-      let keepPaging = fulfilledTransfers.length === Helper.maxBatchSize
-      // Keep paging
-      while (fulfilledTransfers.length < MAX_TRANSFERS && keepPaging === true) {
-        const nextPage = await this.deps.client.queryTransfers({
-          ...transferFilter,
-          timestamp_min: fulfilledTransfers.at(-1).timestamp
-        })
-        keepPaging = nextPage.length === Helper.maxBatchSize
-        fulfilledTransfers.push(...nextPage)
-      }
-      logger.debug(`settlementPrepare(): found ${fulfilledTransfers.length} fulfilled Transfers`)
-
-      // Map from the account => dfspId => settlement calculation account
-      const mapDebitAccount = (debitAccountId: bigint): bigint => {
-        return 0n
-      }
-      const mapCreditAccount = (debitAccountId: bigint): bigint => {
-        return 0n
-      } 
-      // For each fulfilled transfer, create a new transfer on the Control Ledger
-      const transfers = fulfilledTransfers.map(transfer => {
-        return {
-          ...transfer,
-          id: transfer.user_data_128 + 1n,
-          // need to map from these 
-          debit_account_id: mapDebitAccount(transfer.debit_account_id),
-          credit_account_id: mapCreditAccount(transfer.credit_account_id),
-          timestamp: 0n
-        }
-      })
-
-
-
-    } catch (err) {
-      return {
-        type: 'UNKNOWN_FAILURE',
-        error: err
-      }
+  public async closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
     }
-
   }
+
+  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
+  }
+
+  public async settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
+  }
+
+  public async settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
+  }
+
+
+
+  // public async closeSettlementWindow(thing: unknown): Promise<unknown> {
+  //   throw new Error('not implemented')
+  // }
+
+  // public async settleClosedWindows(thing: unknown): Promise<unknown> {
+  //   throw new Error('not implemented')
+  // }
+
+  // public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<SettlementPrepareResult> {
+  //   // Each Physical Transfer is 128 bytes
+  //   // MAX_TRANSFERS = 100k: (128 * 100000)   / 1024 / 1024 = 12   MB
+  //   // MAX_TRANSFERS = 1M:   (128 * 1000000)  / 1024 / 1024 = 128  MB
+  //   // MAX_TRANSFERS = 10M:  (128 * 10000000) / 1024 / 1024 = 1280 MB
+  //   const MAX_TRANSFERS = 100_000
+  //   assert(cmd.settlementId)
+  //   assert(cmd.settlementId <= (2 ** 64 - 1), 'Settlement id must be a 64 bit bigint')
+  //   assert(cmd.currency)
+  //   assert(cmd.selector)
+
+  //   try {
+  //     const currency = cmd.currency
+  //     const { ledgerControl, ledgerOperation } = this.currencyManager.get(currency)
+  //     const dfspAndIds: Array<{
+  //       dfspId: string,
+  //       participantId: number,
+  //       accountIdOutgoing: bigint,
+  //       accountIdIncoming: bigint,
+
+  //     }> = (await this.deps.specStore.queryAccountsAll())
+  //       .filter(accounts => accounts.currency === currency)
+  //       .map(accounts => ({
+  //         dfspId: accounts.dfspId,
+  //         participantId: accounts.participantId,
+  //         // TODO(LD): double check these!
+  //         accountIdOutgoing: cmd.settlementId * 10n ** 64n + 1n * 10n ** 32n + BigInt(accounts.participantId),
+  //         accountIdIncoming: cmd.settlementId * 10n ** 64n + 2n * 10n ** 32n + BigInt(accounts.participantId)
+  //       }))
+
+  //     const accounts: Array<Account> = dfspAndIds.flatMap((dfspAndId) => {
+  //       return [{
+  //         ...Helper.createAccountTemplate,
+  //         id: dfspAndId.accountIdOutgoing,
+  //         ledger: ledgerControl,
+  //         code: AccountCode.Settlement_Outgoing,
+  //         flags: 0
+  //       }, {
+  //         ...Helper.createAccountTemplate,
+  //         id: dfspAndId.accountIdIncoming,
+  //         ledger: ledgerControl,
+  //         code: AccountCode.Settlement_Incoming,
+  //         flags: 0
+  //       }]
+  //     })
+  //     const fatalErrors: Array<AccountFailureResult<SettlementPrepareCreateAccountsFailureType>> = []
+  //     const createAccountsResults = await this.deps.client.createAccounts(accounts)
+  //     createAccountsResults.forEach(result => {
+  //       switch (result.result) {
+  //         case CreateAccountError.ok:
+  //         case CreateAccountError.exists:
+  //           return
+  //         default:
+  //           fatalErrors.push({ type: 'UNKNOWN', ...result })
+  //       }
+  //     })
+  //     if (fatalErrors.length > 0) {
+  //       const errorMessage = fatalErrors.map(error => `account at index: ${error.index} \
+  //         ${CreateAccountError[error.result]}`)
+  //         .join(';')
+  //       return {
+  //         type: 'SETUP_FAILURE',
+  //         error: new Error(`settlementPrepare failed when creating accounts with errors: \
+  //           ${errorMessage}`)
+  //       }
+  //     }
+
+  //     // Look up all of the transfers matching the selector
+  //     assert(cmd.selector.type === 'LEDGER_TIMERANGE', 'Only LEDGER_TIMERANGE currently supported')
+  //     const transferFilter: QueryFilter = {
+  //       user_data_128: 0n,
+  //       user_data_64: 0n,
+  //       user_data_32: 0,
+  //       ledger: ledgerOperation,
+  //       code: TransferCode.Clearing_Fulfil,
+  //       timestamp_min: BigInt(cmd.selector.timestampMin),
+  //       timestamp_max: BigInt(cmd.selector.timestampMax),
+  //       limit: Helper.maxBatchSize,
+  //       flags: 0
+  //     }
+  //     const fulfilledTransfers = await this.deps.client.queryTransfers(transferFilter)
+  //     let keepPaging = fulfilledTransfers.length === Helper.maxBatchSize
+  //     // Keep paging
+  //     while (fulfilledTransfers.length < MAX_TRANSFERS && keepPaging === true) {
+  //       const nextPage = await this.deps.client.queryTransfers({
+  //         ...transferFilter,
+  //         timestamp_min: fulfilledTransfers.at(-1).timestamp
+  //       })
+  //       keepPaging = nextPage.length === Helper.maxBatchSize
+  //       fulfilledTransfers.push(...nextPage)
+  //     }
+  //     logger.debug(`settlementPrepare(): found ${fulfilledTransfers.length} fulfilled Transfers`)
+
+  //     // Map from the account => dfspId => settlement calculation account
+  //     const mapDebitAccount = (debitAccountId: bigint): bigint => {
+  //       return 0n
+  //     }
+  //     const mapCreditAccount = (debitAccountId: bigint): bigint => {
+  //       return 0n
+  //     } 
+  //     // For each fulfilled transfer, create a new transfer on the Control Ledger
+  //     const transfers = fulfilledTransfers.map(transfer => {
+  //       return {
+  //         ...transfer,
+  //         id: transfer.user_data_128 + 1n,
+  //         // need to map from these 
+  //         debit_account_id: mapDebitAccount(transfer.debit_account_id),
+  //         credit_account_id: mapCreditAccount(transfer.credit_account_id),
+  //         timestamp: 0n
+  //       }
+  //     })
+
+
+
+  //   } catch (err) {
+  //     return {
+  //       type: 'UNKNOWN_FAILURE',
+  //       error: err
+  //     }
+  //   }
+
+  // }
 
   public async querySettlementReport(selector: SettlementSelector): Promise<QueryResult<SettlementReport>> {
 

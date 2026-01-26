@@ -39,7 +39,39 @@ module.exports = {
       SWITCH: 'central-switch'
     }
   },
+  getAll: async function () {
+    const ledgerAccountTypes = await this.ledgerAccountTypes()
+    const ledgerEntryTypes = await this.ledgerEntryTypes()
+    const participantLimitTypes = await this.participantLimitTypes()
+    const settlementDelay = await this.settlementDelay()
+    const settlementDelayEnums = await this.settlementDelayEnums()
+    const settlementGranularity = await this.settlementGranularity()
+    const settlementGranularityEnums = await this.settlementGranularityEnums()
+    const settlementInterchangeEnums = await this.settlementInterchangeEnums()
+    const settlementStates = await this.settlementStates()
+    const settlementWindowStates = await this.settlementWindowStates()
+    const transferParticipantRoleTypes = await this.transferParticipantRoleTypes()
+    const transferStateEnums = await this.transferStateEnums()
+    const transferStates = await this.transferStates()
+    const settlementInterchange = await this.settlementInterchange()
 
+    return {
+      ledgerAccountTypes,
+      ledgerEntryTypes,
+      participantLimitTypes,
+      settlementDelay,
+      settlementDelayEnums,
+      settlementGranularity,
+      settlementGranularityEnums,
+      settlementInterchangeEnums,
+      settlementStates,
+      settlementWindowStates,
+      transferParticipantRoleTypes,
+      transferStateEnums,
+      transferStates,
+      settlementInterchange,
+    }
+  },
   ledgerAccountTypes: async function () {
     const ledgerAccountTypeEnum = {}
     const ledgerAccountTypeEnumsList = await Db.from('ledgerAccountType').find({})

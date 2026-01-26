@@ -202,19 +202,11 @@ export interface CreateHubAccountCommand {
   settlementModel: SettlementModel
 }
 
-export type CreateHubAccountResponse = CreateHubAccountResponseSuccess
-  | CreateHubAccountResponseAlreadyExists
-  | CreateHubAccountResponseFailure
-
-export interface CreateHubAccountResponseSuccess {
+export type CreateHubAccountResponse =  {
   type: 'SUCCESS'
-}
-
-export interface CreateHubAccountResponseAlreadyExists {
+} | {
   type: 'ALREADY_EXISTS'
-}
-
-export interface CreateHubAccountResponseFailure {
+} | {
   type: 'FAILURE'
   error: Error
 }
@@ -224,19 +216,11 @@ export interface CreateDfspCommand {
   currencies: Array<string>
 }
 
-export type CreateDfspResponse = CreateDfspResponseSuccess
-  | CreateDfspResponseAlreadyExists
-  | CreateDfspResponseFailure
-
-export interface CreateDfspResponseSuccess {
+export type CreateDfspResponse =  {
   type: 'SUCCESS'
-}
-
-export interface CreateDfspResponseAlreadyExists {
+} | {
   type: 'ALREADY_EXISTS'
-}
-
-export interface CreateDfspResponseFailure {
+} |{
   type: 'FAILURE'
   error: Error
 }
@@ -249,19 +233,11 @@ export interface DepositCommand {
   reason: string
 }
 
-export type DepositResponse = DepositResponseSuccess
-  | DepositResponseAlreadyExists
-  | DepositResponseFailure
-
-export interface DepositResponseSuccess {
+export type DepositResponse = {
   type: 'SUCCESS'
-}
-
-export interface DepositResponseAlreadyExists {
+} | {
   type: 'ALREADY_EXISTS'
-}
-
-export interface DepositResponseFailure {
+} |{
   type: 'FAILURE'
   error: Error
 }
@@ -274,19 +250,11 @@ export interface WithdrawPrepareCommand {
   reason: string
 }
 
-export type WithdrawPrepareResponse = WithdrawPrepareResponseSuccess
-  | WithdrawPrepareResponseInsufficientFunds
-  | WithdrawPrepareResponseFailure
-
-export interface WithdrawPrepareResponseSuccess {
+export type WithdrawPrepareResponse = {
   type: 'SUCCESS'
-}
-
-export interface WithdrawPrepareResponseInsufficientFunds {
+} | {
   type: 'INSUFFICIENT_FUNDS'
-}
-
-export interface WithdrawPrepareResponseFailure {
+} | {
   type: 'FAILURE'
   error: Error
 }
@@ -295,14 +263,9 @@ export interface WithdrawCommitCommand {
   transferId: string
 }
 
-export type WithdrawCommitResponse = WithdrawCommitResponseSuccess
-  | WithdrawCommitResponseFailure
-
-export interface WithdrawCommitResponseSuccess {
+export type WithdrawCommitResponse = {
   type: 'SUCCESS'
-}
-
-export interface WithdrawCommitResponseFailure {
+} | {
   type: 'FAILURE'
   error: Error
 }
@@ -311,14 +274,9 @@ export interface WithdrawAbortCommand {
   transferId: string
 }
 
-export type WithdrawAbortResponse = WithdrawAbortResponseSuccess
-  | WithdrawAbortResponseFailure
-
-export interface WithdrawAbortResponseSuccess {
+export type WithdrawAbortResponse =  {
   type: 'SUCCESS'
-}
-
-export interface WithdrawAbortResponseFailure {
+} | {
   type: 'FAILURE'
   error: Error
 }
@@ -333,17 +291,12 @@ export interface DisableDfspAccountCommand {
   accountId: number
 }
 
-export type SetNetDebitCapCommand = SetNetDebitCapAmountCommand | SetNetDebitCapUnlimitedCommand
-
-// TODO(LD): refactor this to use the NetDebitCap type
-export interface SetNetDebitCapAmountCommand {
+export type SetNetDebitCapCommand = {
   netDebitCapType: 'LIMITED'
   dfspId: string
   currency: string
   amount: number
-}
-
-export interface SetNetDebitCapUnlimitedCommand {
+} | {
   netDebitCapType: 'UNLIMITED'
   dfspId: string
   currency: string
@@ -371,19 +324,11 @@ export enum DeactivateDfspResponseType {
   FAILED = 'FAILED'
 }
 
-export type DeactivateDfspResponse = DeactivateDfspResponseSuccess
-  | DeactivateDfspResponseRetryable
-  | DeactivateDfspResponseFailure
-
-export interface DeactivateDfspResponseSuccess {
+export type DeactivateDfspResponse = {
   type: DeactivateDfspResponseType.SUCCESS | DeactivateDfspResponseType.ALREADY_CLOSED
-}
-
-export interface DeactivateDfspResponseRetryable {
+} | {
   type: DeactivateDfspResponseType.CREATE_ACCOUNT
-}
-
-export interface DeactivateDfspResponseFailure {
+} | {
   type: DeactivateDfspResponseType.FAILED
   error: Error
 }
@@ -401,31 +346,20 @@ export interface GetAllDfspAccountsQuery {
   dfspId: string
 }
 
-export type DfspAccountResponse = DfspAccountResponseSuccess | DfspAccountResponseFailure
-
-export interface DfspAccountResponseSuccess {
+export type DfspAccountResponse = {
   type: 'SUCCESS'
   accounts: Array<LegacyLedgerAccount>
-}
-
-export interface DfspAccountResponseFailure {
+} | {
   type: 'FAILURE'
   error: FSPIOPError
 }
 
-export interface GetHubAccountsQuery {
-  // TODO(LD): should we specify currency here?
-  // currency: string
-}
+export interface GetHubAccountsQuery { }
 
-export type HubAccountResponse = HubAccountResponseSuccess | HubAccountResponseFailure
-
-export interface HubAccountResponseSuccess {
+export type HubAccountResponse = {
   type: 'SUCCESS'
   accounts: Array<LegacyLedgerAccount>
-}
-
-export interface HubAccountResponseFailure {
+} | {
   type: 'FAILURE'
   error: FSPIOPError
 }
@@ -464,33 +398,22 @@ export enum LookupTransferResultType {
   FAILED = 'FAILED',
 }
 
-export type LookupTransferQueryResponse = LookupTransferQueryResponseFoundNonFinal
-  | LookupTransferQueryResponseFoundFinal
-  | LookupTransferQueryResponseNotFound
-  | LookupTransferQueryResponseFailed
-
-export interface LookupTransferQueryResponseFoundNonFinal {
+export type LookupTransferQueryResponse = {
   type: LookupTransferResultType.FOUND_NON_FINAL,
   // Transfer amount from Clearing Credit -> Reserved
   amountClearingCredit: bigint
   // Transfer amount from Unrestricted -> Reserved
   amountUnrestricted: bigint
-}
-
-export interface LookupTransferQueryResponseFoundFinal {
+} | {
   type: LookupTransferResultType.FOUND_FINAL
   finalizedTransfer: {
     completedTimestamp: string
     transferState: 'ABORTED' | 'COMMITTED'
     fulfilment?: string
   }
-}
-
-export interface LookupTransferQueryResponseNotFound {
+} | {
   type: LookupTransferResultType.NOT_FOUND
-}
-
-export interface LookupTransferQueryResponseFailed {
+} | {
   type: LookupTransferResultType.FAILED
   error: FSPIOPError
 }
@@ -537,46 +460,26 @@ export enum PrepareResultType {
   FAIL_OTHER = 'FAIL_OTHER',
 }
 
-export type PrepareResult = PrepareResultPass
-  | PrepareResultDuplicateFinal
-  | PrepareResultDuplicateNonFinal
-  | PrepareResultFailModified
-  | PrepareResultFailValidation
-  | PrepareResultFailLiquidity
-  | PrepareResultFailOther
-
-export interface PrepareResultPass {
+export type PrepareResult =  {
   type: PrepareResultType.PASS
-}
-
-export interface PrepareResultDuplicateFinal {
+} |  {
   type: PrepareResultType.DUPLICATE_FINAL
   finalizedTransfer: {
     completedTimestamp: string
     transferState: 'COMMITTED' | 'ABORTED'
     fulfilment?: string
   }
-}
-
-export interface PrepareResultDuplicateNonFinal {
+} | {
   type: PrepareResultType.DUPLICATE_NON_FINAL
-}
-
-export interface PrepareResultFailModified {
+} | {
   type: PrepareResultType.MODIFIED
-}
-
-export interface PrepareResultFailValidation {
+} | {
   type: PrepareResultType.FAIL_VALIDATION
   failureReasons: Array<string>
-}
-
-export interface PrepareResultFailLiquidity {
+} | {
   type: PrepareResultType.FAIL_LIQUIDITY
   error: FSPIOPError
-}
-
-export interface PrepareResultFailOther {
+} | {
   type: PrepareResultType.FAIL_OTHER
   error: FSPIOPError
 }
@@ -609,37 +512,22 @@ export enum FulfilResultType {
   FAIL_OTHER = 'FAIL_OTHER',
 }
 
-export type FulfilResult = FulfilResultPass
-  | FulfilResultDuplicateFinal
-  | FulfilResultFailValidation
-  | FulfilResultFailOther
-
-export interface FulfilResultPass {
+export type FulfilResult = {
   type: FulfilResultType.PASS
-}
-
-export interface FulfilResultDuplicateFinal {
+} | {
   type: FulfilResultType.DUPLICATE_FINAL
-}
-
-export interface FulfilResultFailValidation {
+} | {
   type: FulfilResultType.FAIL_VALIDATION
   error: FSPIOPError
-}
-
-export interface FulfilResultFailOther {
+} | {
   type: FulfilResultType.FAIL_OTHER
   error: FSPIOPError
 }
 
-export type SweepResult = SweepResultSuccess | SweepResultFailure
-
-export interface SweepResultSuccess {
+export type SweepResult = {
   type: 'SUCCESS'
   transfers: Array<TimedOutTransfer>
-}
-
-export interface SweepResultFailure {
+} | {
   type: 'FAILURE'
   error: Error
 }
@@ -648,7 +536,39 @@ export interface SweepResultFailure {
 // Settlement 
 // ============================================================================
 
+export type SettlementCloseWindowCommand = {
+  id: number,
+  reason: string,
+}
+
 export type SettlementPrepareCommand = {
+  windowIds: Array<number>,
+  model: string,
+  reason: string,
+}
+
+export type SettlementAbortCommand = {
+
+}
+
+/**
+ * In the new ledger interface, we either commit a prepared settlement or
+ * abort it. All participants are settled at the same time.
+ * 
+ * We may want to revist this decision later on to provide better interop with
+ * the Settlement API, but maintaining the 
+ *  PS_TRANSFERS_RECORDED -> PS_TRANSFERS_RESERVED -> PS_TRANSFERS_COMMITTED
+ * 
+ * For each Dfsp
+ */
+export type SettlementCommitCommand = {
+
+}
+
+
+
+
+export type SettlementPrepareCommandV2 = {
 
   /**
    * Unique id (64 bit bigint) to represent the settlement

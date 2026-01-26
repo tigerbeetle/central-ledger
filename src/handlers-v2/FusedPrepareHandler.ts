@@ -5,7 +5,7 @@ import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import assert from 'assert';
 import { CreateTransferDto } from './types';
 import { ApplicationConfig } from '../shared/config';
-import { PrepareResult, PrepareResultFailLiquidity, PrepareResultFailValidation, PrepareResultType } from '../domain/ledger-v2/types';
+import { PrepareResult, PrepareResultType } from '../domain/ledger-v2/types';
 import { Ledger } from '../domain/ledger-v2/Ledger';
 
 
@@ -221,7 +221,7 @@ export class FusedPrepareHandler {
         break;
       }
       case PrepareResultType.FAIL_VALIDATION: {
-        const typedResult = result as PrepareResultFailValidation
+        const typedResult = result as Extract<PrepareResult, { type: PrepareResultType.FAIL_VALIDATION }>
         assert(typedResult.failureReasons)
         assert(input.message)
         assert(input.message.value)
@@ -242,7 +242,7 @@ export class FusedPrepareHandler {
       }
       case PrepareResultType.FAIL_LIQUIDITY:
       case PrepareResultType.FAIL_OTHER: {
-        const typedResult = result as PrepareResultFailLiquidity
+        const typedResult = result as Extract<PrepareResult, { type: PrepareResultType.FAIL_LIQUIDITY | PrepareResultType.FAIL_OTHER }>
         assert(typedResult.error)
         assert(input.message)
         assert(input.message.value)

@@ -46,6 +46,10 @@ import {
   WithdrawPrepareResponse,
   WithdrawAbortCommand,
   WithdrawAbortResponse,
+  SettlementPrepareCommand,
+  SettlementCloseWindowCommand,
+  SettlementAbortCommand,
+  SettlementCommitCommand,
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
@@ -388,6 +392,32 @@ export interface LegacyLedgerDependencies {
       ) => Promise<{ transferTimeoutList: any[] | null; fxTransferTimeoutList: any[] | null }>;
     };
   }
+
+  /**
+   * Legacy functions used for settlement.
+   */
+  settlement: {
+    settlementWindowModel: {
+      process: (payload: {settlementWindowId: number, reason: string}, enums: any) => Promise<number>,
+      close: (settlementWindowId: number, reason: string) => Promise<unknown>,
+    },
+    enums: {
+      ledgerAccountTypes: Record<string, number>
+      ledgerEntryTypes: Record<string, number>
+      participantLimitTypes: Record<string, number>
+      settlementDelay: Record<string, number>
+      settlementDelayEnums: Record<string, number>
+      settlementGranularity: Record<string, number>
+      settlementGranularityEnums: Record<string, number>
+      settlementInterchangeEnums: Record<string, number>
+      settlementStates: Record<string, number>
+      settlementWindowStates: Record<string, number>
+      transferParticipantRoleTypes: Record<string, number>
+      transferStateEnums: Record<string, number>
+      transferStates: Record<string, number>
+      settlementInterchange: Record<string, number>
+    }
+  }
 }
 
 
@@ -398,6 +428,50 @@ export interface LegacyLedgerDependencies {
  */
 export default class LegacyLedger implements Ledger {
   constructor(private deps: LegacyLedgerDependencies) { }
+
+
+  // ============================================================================
+  // Lifecycle Methods
+  // ============================================================================
+
+  public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
+    assert(cmd.currency)
+    assert(cmd.settlementModel)
+    assert(cmd.settlementModel.name)
+    assert(cmd.settlementModel.settlementGranularity)
+    assert(cmd.settlementModel.settlementInterchange)
+    assert(cmd.settlementModel.settlementDelay)
+    assert.equal(cmd.settlementModel.currency, cmd.currency)
+    assert(cmd.settlementModel.requireLiquidityCheck === true, 'createHubAccount - currently only allows settlements with liquidity checks enabled')
+    assert(cmd.settlementModel.ledgerAccountType)
+    assert(cmd.settlementModel.settlementAccountType)
+    assert(cmd.settlementModel.autoPositionReset === true || cmd.settlementModel.autoPositionReset === false)
+
+    try {
+      try {
+        await this._createHubAccount('HUB_MULTILATERAL_SETTLEMENT', cmd.currency)
+        await this._createHubAccount('HUB_RECONCILIATION', cmd.currency)
+      } catch (err) {
+        // catch this early, since we can't know if the settlementModel has also already been created
+        if ((err as ErrorHandler.FSPIOPError).message === 'Hub account has already been registered.') {
+          logger.warn('createHubAccount', { error: err })
+        } else {
+          throw err
+        }
+      }
+
+      await this.deps.lifecycle.settlementModelDomain.createSettlementModel(cmd.settlementModel)
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      if (err.message === 'Settlement Model already exists') {
+        return {
+          type: 'ALREADY_EXISTS'
+        }
+      }
+
+      return Helper.commandResultFailure(err)
+    }
+  }
 
   private async _createHubAccount(accountType: string, currency: string): Promise<void> {
     const participant = await this.deps.lifecycle.participantService.getByName('Hub')
@@ -456,53 +530,10 @@ export default class LegacyLedger implements Ledger {
     }
   }
 
-  /**
-   * Onboarding/Lifecycle Management
-   */
-
-  public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
-    assert(cmd.currency)
-    assert(cmd.settlementModel)
-    assert(cmd.settlementModel.name)
-    assert(cmd.settlementModel.settlementGranularity)
-    assert(cmd.settlementModel.settlementInterchange)
-    assert(cmd.settlementModel.settlementDelay)
-    assert.equal(cmd.settlementModel.currency, cmd.currency)
-    assert(cmd.settlementModel.requireLiquidityCheck === true, 'createHubAccount - currently only allows settlements with liquidity checks enabled')
-    assert(cmd.settlementModel.ledgerAccountType)
-    assert(cmd.settlementModel.settlementAccountType)
-    assert(cmd.settlementModel.autoPositionReset === true || cmd.settlementModel.autoPositionReset === false)
-
-    try {
-      try {
-        await this._createHubAccount('HUB_MULTILATERAL_SETTLEMENT', cmd.currency)
-        await this._createHubAccount('HUB_RECONCILIATION', cmd.currency)
-      } catch (err) {
-        // catch this early, since we can't know if the settlementModel has also already been created
-        if ((err as ErrorHandler.FSPIOPError).message === 'Hub account has already been registered.') {
-          logger.warn('createHubAccount', { error: err })
-        } else {
-          throw err
-        }
-      }
-
-      await this.deps.lifecycle.settlementModelDomain.createSettlementModel(cmd.settlementModel)
-      return Helper.emptyCommandResultSuccess()
-    } catch (err) {
-      if (err.message === 'Settlement Model already exists') {
-        return {
-          type: 'ALREADY_EXISTS'
-        }
-      }
-
-      return Helper.commandResultFailure(err)
-    }
-  }
 
   /**
    * @description Create the dfsp accounts. Returns a duplicate response if any of the dfsp + 
-   *   currency combinations already exist.
-   * 
+   * currency combinations already exist.
    */
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     assert(cmd.dfspId)
@@ -1185,8 +1216,112 @@ export default class LegacyLedger implements Ledger {
   }
 
   /**
-   * Clearing Methods
+   * Create participant and currency accounts directly (bypassing handler to avoid circular dependency)
+   * This extracts the core logic from the participants handler create method
    */
+  private async createParticipantWithCurrency(dfspId: string, currency: string): Promise<void> {
+    await this.deps.lifecycle.participantService.validateHubAccounts(currency)
+
+    let participant = await this.deps.lifecycle.participantService.getByName(dfspId)
+    if (participant) {
+      const currencyExists = participant.currencyList.find((curr: any) => {
+        return curr.currencyId === currency
+      })
+      if (currencyExists) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
+          'Participant currency has already been registered'
+        )
+      }
+    } else {
+      const participantId = await this.deps.lifecycle.participantService.create({ name: dfspId })
+      participant = await this.deps.lifecycle.participantService.getById(participantId)
+    }
+
+    const allSettlementModels = await this.deps.lifecycle.settlementModelDomain.getAll()
+    let settlementModels = allSettlementModels.filter(model => model.currencyId === currency)
+    if (settlementModels.length === 0) {
+      settlementModels = allSettlementModels.filter(model => model.currencyId === null) // Default settlement model
+      if (settlementModels.length === 0) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.GENERIC_SETTLEMENT_ERROR,
+          'Unable to find a matching or default, Settlement Model'
+        )
+      }
+    }
+
+    for (const settlementModel of settlementModels) {
+      // TODO(LD): Ideally these would be created in a transaction - as it stands right now, these are non
+      // atomically created.
+      const participantCurrencyPosition = await this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.ledgerAccountTypeId, false)
+      const participantCurrencySettlement = await this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.settlementAccountTypeId, false)
+
+      if (Array.isArray(participant.currencyList)) {
+        participant.currencyList = participant.currencyList.concat([
+          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyPosition),
+          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencySettlement)
+        ])
+      } else {
+        participant.currencyList = await Promise.all([
+          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyPosition),
+          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencySettlement)
+        ])
+      }
+    }
+  }
+
+  /**
+   * Creates a participant limit when it doesn't exist
+   * This directly inserts a limit into the database when positions already exist
+   * but no limit has been set yet.
+   *
+   * @param dfspId - The participant name
+   * @param currency - The currency for the limit
+   * @param limitValue - The limit value to set
+   */
+  private async createParticipantLimit(dfspId: string, currency: string, limitValue: number): Promise<void> {
+    try {
+      // Get the position account to get the participantCurrencyId
+      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
+        dfspId,
+        currency,
+        Enum.Accounts.LedgerAccountType.POSITION
+      )
+      assert(positionAccount, `Position account not found for ${dfspId} ${currency}`)
+
+      // Get the limit type ID for NET_DEBIT_CAP
+      const limitType = await this.deps.knex('participantLimitType')
+        .where({ name: 'NET_DEBIT_CAP', isActive: 1 })
+        .select('participantLimitTypeId')
+        .first()
+
+      assert(limitType, 'NET_DEBIT_CAP limit type not found')
+
+      // Insert the new limit
+      const participantLimit = {
+        participantCurrencyId: positionAccount.participantCurrencyId,
+        participantLimitTypeId: limitType.participantLimitTypeId,
+        value: limitValue,
+        thresholdAlarmPercentage: 10,
+        isActive: 1,
+        createdBy: 'unknown'
+      }
+
+      await this.deps.knex('participantLimit').insert(participantLimit)
+
+      logger.info(`Successfully created participant limit for ${dfspId} ${currency}`, {
+        limitValue,
+        participantCurrencyId: positionAccount.participantCurrencyId
+      })
+    } catch (err) {
+      logger.error(`Failed to create participant limit for ${dfspId} ${currency}`, err)
+      throw ErrorHandler.Factory.reformatFSPIOPError(err)
+    }
+  }
+
+  // ============================================================================
+  // Clearing Methods
+  // ============================================================================
 
   public async prepare(input: FusedPrepareHandlerInput): Promise<PrepareResult> {
     const { payload, transferId, headers } = input;
@@ -1526,7 +1661,7 @@ export default class LegacyLedger implements Ledger {
     }
   }
 
-  async sweepTimedOut(): Promise<SweepResult> {
+  public async sweepTimedOut(): Promise<SweepResult> {
     try {
       // Get timeout segments
       const timeoutSegment = await this.deps.clearing.timeoutService.getTimeoutSegment();
@@ -1697,19 +1832,57 @@ export default class LegacyLedger implements Ledger {
     throw new Error('not implemented')
   }
 
-  /**
-   * Settlement Methods
-   */
+  // ============================================================================
+  // Settlement Methods
+  // ============================================================================
 
-  public async closeSettlementWindow(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
+  public async closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>> {
+    assert(cmd.id)
+    assert(cmd.reason)
+
+    try {
+      await this.deps.settlement.settlementWindowModel.process(
+        { settlementWindowId: cmd.id, reason: cmd.reason }, 
+        this.deps.settlement.enums.settlementWindowStates
+      )
+      await this.deps.settlement.settlementWindowModel.close(cmd.id, cmd.reason)
+
+      return {
+        type: 'SUCCESS',
+        result: undefined
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
-  public async settleClosedWindows(thing: unknown): Promise<unknown> {
-    throw new Error('not implemented')
+  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
   }
 
+  public async settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
+  }
 
+  public async settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
+  }
+
+  // ============================================================================
+  // Private Methods
+  // ============================================================================
 
   private async validateFulfilMessage(input: FusedFulfilHandlerInput): Promise<void> {
     const { transferId, payload, message: { value: { from } }, headers } = input;
@@ -1969,107 +2142,4 @@ export default class LegacyLedger implements Ledger {
     };
   }
 
-  /**
-   * Create participant and currency accounts directly (bypassing handler to avoid circular dependency)
-   * This extracts the core logic from the participants handler create method
-   */
-  private async createParticipantWithCurrency(dfspId: string, currency: string): Promise<void> {
-    await this.deps.lifecycle.participantService.validateHubAccounts(currency)
-
-    let participant = await this.deps.lifecycle.participantService.getByName(dfspId)
-    if (participant) {
-      const currencyExists = participant.currencyList.find((curr: any) => {
-        return curr.currencyId === currency
-      })
-      if (currencyExists) {
-        throw ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
-          'Participant currency has already been registered'
-        )
-      }
-    } else {
-      const participantId = await this.deps.lifecycle.participantService.create({ name: dfspId })
-      participant = await this.deps.lifecycle.participantService.getById(participantId)
-    }
-
-    const allSettlementModels = await this.deps.lifecycle.settlementModelDomain.getAll()
-    let settlementModels = allSettlementModels.filter(model => model.currencyId === currency)
-    if (settlementModels.length === 0) {
-      settlementModels = allSettlementModels.filter(model => model.currencyId === null) // Default settlement model
-      if (settlementModels.length === 0) {
-        throw ErrorHandler.Factory.createFSPIOPError(
-          ErrorHandler.Enums.FSPIOPErrorCodes.GENERIC_SETTLEMENT_ERROR,
-          'Unable to find a matching or default, Settlement Model'
-        )
-      }
-    }
-
-    for (const settlementModel of settlementModels) {
-      // TODO(LD): Ideally these would be created in a transaction - as it stands right now, these are non
-      // atomically created.
-      const participantCurrencyPosition = await this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.ledgerAccountTypeId, false)
-      const participantCurrencySettlement = await this.deps.lifecycle.participantService.createParticipantCurrency(participant.participantId, currency, settlementModel.settlementAccountTypeId, false)
-
-      if (Array.isArray(participant.currencyList)) {
-        participant.currencyList = participant.currencyList.concat([
-          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyPosition),
-          await this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencySettlement)
-        ])
-      } else {
-        participant.currencyList = await Promise.all([
-          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencyPosition),
-          this.deps.lifecycle.participantService.getParticipantCurrencyById(participantCurrencySettlement)
-        ])
-      }
-    }
-  }
-
-  /**
-   * Creates a participant limit when it doesn't exist
-   * This directly inserts a limit into the database when positions already exist
-   * but no limit has been set yet.
-   *
-   * @param dfspId - The participant name
-   * @param currency - The currency for the limit
-   * @param limitValue - The limit value to set
-   */
-  private async createParticipantLimit(dfspId: string, currency: string, limitValue: number): Promise<void> {
-    try {
-      // Get the position account to get the participantCurrencyId
-      const positionAccount = await this.deps.lifecycle.participantFacade.getByNameAndCurrency(
-        dfspId,
-        currency,
-        Enum.Accounts.LedgerAccountType.POSITION
-      )
-      assert(positionAccount, `Position account not found for ${dfspId} ${currency}`)
-
-      // Get the limit type ID for NET_DEBIT_CAP
-      const limitType = await this.deps.knex('participantLimitType')
-        .where({ name: 'NET_DEBIT_CAP', isActive: 1 })
-        .select('participantLimitTypeId')
-        .first()
-
-      assert(limitType, 'NET_DEBIT_CAP limit type not found')
-
-      // Insert the new limit
-      const participantLimit = {
-        participantCurrencyId: positionAccount.participantCurrencyId,
-        participantLimitTypeId: limitType.participantLimitTypeId,
-        value: limitValue,
-        thresholdAlarmPercentage: 10,
-        isActive: 1,
-        createdBy: 'unknown'
-      }
-
-      await this.deps.knex('participantLimit').insert(participantLimit)
-
-      logger.info(`Successfully created participant limit for ${dfspId} ${currency}`, {
-        limitValue,
-        participantCurrencyId: positionAccount.participantCurrencyId
-      })
-    } catch (err) {
-      logger.error(`Failed to create participant limit for ${dfspId} ${currency}`, err)
-      throw ErrorHandler.Factory.reformatFSPIOPError(err)
-    }
-  }
 }

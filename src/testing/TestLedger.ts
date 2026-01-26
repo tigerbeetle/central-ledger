@@ -1,5 +1,5 @@
 import { Ledger } from "src/domain/ledger-v2/Ledger";
-import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery, LegacyLedgerDfsp, WithdrawAbortCommand, WithdrawAbortResponse } from "src/domain/ledger-v2/types";
+import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery, LegacyLedgerDfsp, WithdrawAbortCommand, WithdrawAbortResponse, SettlementCloseWindowCommand, SettlementPrepareCommand, SettlementAbortCommand, SettlementCommitCommand } from "src/domain/ledger-v2/types";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { QueryResult } from "src/shared/results";
@@ -34,7 +34,16 @@ export default class TestLedger implements Ledger {
   lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse> {
     throw new Error("Method not implemented.");
   }
-  closeSettlementWindow(cmd: unknown): Promise<unknown> {
+  closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>> {
+    throw new Error("Method not implemented.");
+  }
+  settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>> {
     throw new Error("Method not implemented.");
   }
   settleClosedWindows(cmd: unknown): Promise<unknown> {

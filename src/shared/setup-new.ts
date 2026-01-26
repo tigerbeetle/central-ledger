@@ -288,9 +288,11 @@ async function initializeLegacyLedger(config: ApplicationConfig): Promise<Legacy
   const prepareModule = require('../handlers/transfers/prepare')
   const TimeoutService = require('../domain/timeout')
   const enumCached = require('../lib/enumCached')
+  const modelEnumSettlement = require('../settlement/models/lib/enums')
 
   // Get enums before creating the ledger (they don't change)
   const enums = await enumCached.getEnums('all')
+  const enumsSettlement = await modelEnumSettlement.getAll()
 
   // Initialize AdminHandler
   const adminHandler = new AdminHandler({
@@ -312,6 +314,10 @@ async function initializeLegacyLedger(config: ApplicationConfig): Promise<Legacy
       adminHandler: adminHandler,
       enums,
       settlementModelDomain: require('../domain/settlement'),
+    },
+    settlement: {
+      settlementWindowModel: require('../settlement/models/settlementWindow'),
+      enums: enumsSettlement
     },
     clearing: {
       // Validation functions (flattened from validator)

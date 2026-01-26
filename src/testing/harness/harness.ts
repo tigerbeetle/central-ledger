@@ -371,6 +371,10 @@ export class IntegrationHarness implements Harness {
         enums: await require('../../lib/enumCached').getEnums('all'),
         settlementModelDomain: require('../../domain/settlement'),
       },
+      settlement: {
+        settlementWindowModel: require('../../settlement/models/settlementWindow'),
+        enums: require('../../settlement/models/lib/enums')
+      },
       clearing: {
         validatePrepare: Validator.validatePrepare,
         validateParticipantByName: Validator.validateParticipantByName,

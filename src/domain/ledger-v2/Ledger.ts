@@ -22,6 +22,10 @@ import {
   LookupTransferQueryResponse,
   PrepareResult,
   SetNetDebitCapCommand,
+  SettlementAbortCommand,
+  SettlementCloseWindowCommand,
+  SettlementCommitCommand,
+  SettlementPrepareCommand,
   SweepResult,
   WithdrawAbortCommand,
   WithdrawAbortResponse,
@@ -99,6 +103,8 @@ export interface Ledger {
   /**
    * Settlement Methods
    */
-  closeSettlementWindow(cmd: unknown): Promise<unknown>;
-  settleClosedWindows(cmd: unknown): Promise<unknown>;
+  closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>>
+  settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<void>>;
+  settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>>;
+  settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>>;
 }
