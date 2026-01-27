@@ -415,6 +415,23 @@ export interface LegacyLedgerDependencies {
       ) => Promise<unknown>
       getById: (params: { settlementId: number }, enums: any) => Promise<any>
     }
+    settlementModel: {
+      putById: (
+        settlementId: number,
+        payload: {
+          participants: Array<{
+            id: number
+            accounts: Array<{
+              id: number
+              state: string
+              reason: string
+              externalReference?: string
+            }>
+          }>
+        },
+        enums: any
+      ) => Promise<any>
+    }
     enums: {
       ledgerAccountTypes: Record<string, number>
       ledgerEntryTypes: Record<string, number>
@@ -1861,8 +1878,7 @@ export default class LegacyLedger implements Ledger {
       await this.deps.settlement.settlementWindowModel.close(cmd.id, cmd.reason)
 
       return {
-        type: 'SUCCESS',
-        result: undefined
+        type: 'SUCCESS'
       }
     } catch (err) {
       return {
@@ -1913,17 +1929,69 @@ export default class LegacyLedger implements Ledger {
     }
   }
 
+  /**
+   * Noop for LegacyLedger - the Settlement is considered committed when each participant has been
+   * updated
+   */
   public async settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>> {
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
-    }
+    return { type: 'SUCCESS' }
   }
 
   public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
+    assert(cmd)
+    assert(cmd.id)
+    assert(cmd.accountId)
+    assert(cmd.externalReference)
+    assert(cmd.participantId)
+    assert(cmd.participantState)
+    assert(cmd.reason)
+
+    logger.info(`settlementUpdate() with cmd: ${JSON.stringify(cmd)}`)
+
+    // Map states back to Legacy representation
+    let state: 'PS_TRANSFERS_RECORDED' | 'PS_TRANSFERS_RESERVED' | 'PS_TRANSFERS_COMMITTED' | 'SETTLED'
+    switch (cmd.participantState) {
+      case 'RECORDED': state = 'PS_TRANSFERS_RECORDED'
+        break
+      case 'RESERVED': state = 'PS_TRANSFERS_RESERVED'
+        break
+      case 'COMMITTED': state = 'PS_TRANSFERS_COMMITTED'
+        break
+      case 'SETTLED': state = 'SETTLED'
+        break
+      default: {
+        throw new Error(`Unexpected cmd.participantState: ${cmd.participantState}. Expected it to be \
+          [RECORDED | RESERVED | COMMITTED | SETTLED]`)
+      }
+    }
+    try {
+      const payload = {
+        participants: [
+          {
+            id: cmd.participantId,
+            accounts: [
+              {
+                id: cmd.accountId,
+                state,
+                reason: cmd.reason,
+                externalReference: cmd.externalReference
+              }
+            ]
+          }
+        ]
+      }
+      await this.deps.settlement.settlementModel.putById(
+        cmd.id, payload, this.deps.settlement.enums
+      )
+
+      return {
+        type: 'SUCCESS'
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
     }
   }
 

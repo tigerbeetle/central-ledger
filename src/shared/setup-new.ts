@@ -320,6 +320,7 @@ async function initializeLegacyLedger(config: ApplicationConfig): Promise<Legacy
     settlement: {
       settlementWindowModel: require('../settlement/models/settlementWindow'),
       settlementDomain: require('../settlement/domain/settlement'),
+      settlementModel: require('../settlement/models/settlement'),
       enums: enumsSettlement
     },
     clearing: {

@@ -7,13 +7,12 @@ export default class Helper {
     return {
       type: 'SUCCESS',
       result,
-    }
+    } as CommandResultSuccess<T>
   }
 
   public static emptyCommandResultSuccess(): CommandResultSuccess<void> {
     return {
-      type: 'SUCCESS',
-      result: undefined
+      type: 'SUCCESS'
     }
   }
 
@@ -28,13 +27,15 @@ export default class Helper {
     return {
       type: 'SUCCESS',
       result,
-    }
+    } as QueryResultSuccess<T>
   }
 
+  /**
+   * @deprecated
+   */
   public static emptyQueryResultSuccess(): QueryResultSuccess<void> {
     return {
-      type: 'SUCCESS',
-      result: undefined
+      type: 'SUCCESS'
     }
   }
 

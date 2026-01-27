@@ -368,8 +368,7 @@ export default class TigerBeetleLedger implements Ledger {
       case DeactivateDfspResponseType.SUCCESS:
       case DeactivateDfspResponseType.ALREADY_CLOSED: {
         return {
-          type: 'SUCCESS',
-          result: undefined
+          type: 'SUCCESS'
         }
       }
       case DeactivateDfspResponseType.FAILED: {
@@ -413,8 +412,7 @@ export default class TigerBeetleLedger implements Ledger {
       case DeactivateDfspResponseType.SUCCESS:
       case DeactivateDfspResponseType.ALREADY_CLOSED: {
         return {
-          type: 'SUCCESS',
-          result: undefined
+          type: 'SUCCESS'
         }
       }
       // We shouldn't see the same CREATE_ACCOUNT error twice!
@@ -456,8 +454,7 @@ export default class TigerBeetleLedger implements Ledger {
     if (transfers.length === 0) {
       // This is a success case, as account isn't closed.
       return {
-        type: 'SUCCESS',
-        result: undefined
+        type: 'SUCCESS'
       }
     }
 
@@ -477,8 +474,7 @@ export default class TigerBeetleLedger implements Ledger {
 
     if (createTransferResults.length === 0) {
       return {
-        type: 'SUCCESS',
-        result: undefined
+        type: 'SUCCESS'
       }
     }
 
@@ -490,8 +486,7 @@ export default class TigerBeetleLedger implements Ledger {
       case CreateTransferError.pending_transfer_not_pending:
       case CreateTransferError.pending_transfer_already_voided:
         return {
-          type: 'SUCCESS',
-          result: undefined
+          type: 'SUCCESS'
         }
       default:
         return {
@@ -619,8 +614,7 @@ export default class TigerBeetleLedger implements Ledger {
         // no transfers found, therefore this account must not be closed
         // treat is as successful
         return {
-          type: 'SUCCESS',
-          result: undefined
+          type: 'SUCCESS'
         }
       }
       const lastClosingTransfer = closingTransfers[0]
@@ -663,8 +657,7 @@ export default class TigerBeetleLedger implements Ledger {
           case 'ALREADY_ENABLED':
             // Account already open - treat as success
             return {
-              type: 'SUCCESS',
-              result: undefined
+              type: 'SUCCESS'
             }
           case 'UNKNOWN':
             return {
@@ -675,8 +668,7 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       return {
-        type: 'SUCCESS',
-        result: undefined
+        type: 'SUCCESS'
       }
     } catch (err) {
       return {
@@ -777,8 +769,7 @@ export default class TigerBeetleLedger implements Ledger {
           case 'ALREADY_CLOSED':
             // Account already closed - treat as success
             return {
-              type: 'SUCCESS',
-              result: undefined
+              type: 'SUCCESS'
             }
           case 'UNKNOWN':
             return {
@@ -789,8 +780,7 @@ export default class TigerBeetleLedger implements Ledger {
       }
 
       return {
-        type: 'SUCCESS',
-        result: undefined
+        type: 'SUCCESS'
       }
 
     } catch (err) {
@@ -1429,8 +1419,7 @@ export default class TigerBeetleLedger implements Ledger {
     }
 
     return {
-      type: 'SUCCESS',
-      result: undefined
+      type: 'SUCCESS'
     }
   }
 
@@ -3266,7 +3255,7 @@ export default class TigerBeetleLedger implements Ledger {
           reason: 'New settlement window opened'
         })
 
-        return { type: 'SUCCESS', result: undefined }
+        return { type: 'SUCCESS' }
       })
     } catch (err: any) {
       logger.error(`closeSettlementWindow failed: ${err.message}`, { err })

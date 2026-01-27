@@ -8,11 +8,11 @@ import { Transfer } from 'tigerbeetle-node'
 
 /**
  * Generic interface for Ledger Commands
+ * When T is void, result property is omitted
  */
-export type CommandResultSuccess<T> = {
-  type: 'SUCCESS'
-  result: T
-}
+export type CommandResultSuccess<T> = T extends void
+  ? { type: 'SUCCESS' }
+  : { type: 'SUCCESS'; result: T }
 
 export type CommandResultFailure = {
   type: 'FAILURE'
