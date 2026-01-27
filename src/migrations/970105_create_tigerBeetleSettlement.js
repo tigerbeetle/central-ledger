@@ -87,10 +87,10 @@ exports.up = async (knex) => {
         t.dateTime('created_at').notNullable().defaultTo(knex.fn.now())
         t.dateTime('updated_at').notNullable().defaultTo(knex.fn.now())
 
-        t.unique(['settlement_id', 'participant_id', 'currency'])
+        t.unique(['settlement_id', 'participant_id', 'currency'], 'tb_stl_bal_sid_pid_cur_uniq')
         t.foreign('settlement_id').references('id').inTable('tigerbeetle_settlement')
-        t.index(['participant_id', 'currency'])
-        t.index('state')
+        t.index(['participant_id', 'currency'], 'tb_stl_bal_pid_cur_idx')
+        t.index('state', 'tb_stl_bal_state_idx')
       })
     }
   })

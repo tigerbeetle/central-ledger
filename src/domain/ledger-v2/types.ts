@@ -569,8 +569,8 @@ export type SettlementUpdateCommand = {
   /**
    * The settlement id
    */
-  id: number,
-  dfspId: string,
+  id: number
+  participantId: number
 
   /**
    * TODO(LD):
