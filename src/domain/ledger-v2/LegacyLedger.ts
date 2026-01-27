@@ -52,6 +52,7 @@ import {
   SettlementCommitCommand,
   GetSettlementQuery,
   GetSettlementQueryResponse,
+  SettlementUpdateCommand,
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
@@ -1913,6 +1914,13 @@ export default class LegacyLedger implements Ledger {
   }
 
   public async settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>> {
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
+    }
+  }
+
+  public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
     return {
       type: 'FAILURE',
       error: new Error('not implemented')

@@ -318,10 +318,12 @@ export class IntegrationHarness implements Harness {
    * Create TigerBeetleLedger instance
    */
   private async createTigerBeetleLedger(): Promise<TigerBeetleLedger> {
+    const knex = Db.getKnex()
     const deps: TigerBeetleLedgerDependencies = {
       config: this.config,
       client: this.client,
-      specStore: new PersistedSpecStore(Db.getKnex())
+      specStore: new PersistedSpecStore(knex),
+      knex
     };
     return new TigerBeetleLedger(deps);
   }

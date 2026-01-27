@@ -28,6 +28,7 @@ import {
   SettlementCloseWindowCommand,
   SettlementCommitCommand,
   SettlementPrepareCommand,
+  SettlementUpdateCommand,
   SweepResult,
   WithdrawAbortCommand,
   WithdrawAbortResponse,
@@ -108,6 +109,17 @@ export interface Ledger {
   closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>>
   settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{id: number}>>;
   settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>>;
+
+  /**
+   * Commit the settlement - this doesn't really match legacy settlement, since it depends
+   * on the individual particpants to be updated internally
+   */
   settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>>;
+
+  /**
+   * Update the internal, per Dfsp status of a Settlement
+   */
+  settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>>;
+
   getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse>
 }

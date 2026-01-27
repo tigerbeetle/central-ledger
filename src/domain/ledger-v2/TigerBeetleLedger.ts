@@ -1,6 +1,7 @@
 import * as ErrorHandler from '@mojaloop/central-services-error-handling';
 import { Enum } from '@mojaloop/central-services-shared';
 import assert, { ok } from "assert";
+import { Knex } from "knex";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { ApplicationConfig } from "src/shared/config";
@@ -61,6 +62,7 @@ import {
   SettlementCommitCommand,
   GetSettlementQuery,
   GetSettlementQueryResponse,
+  SettlementUpdateCommand,
 } from "./types";
 
 const NS_PER_MS = 1_000_000n
@@ -112,6 +114,7 @@ export interface TigerBeetleLedgerDependencies {
   config: ApplicationConfig
   client: Client
   specStore: SpecStore
+  knex: Knex
 }
 
 export default class TigerBeetleLedger implements Ledger {
@@ -3163,17 +3166,203 @@ export default class TigerBeetleLedger implements Ledger {
   // Settlement Methods
   // ============================================================================
 
+  /**
+   * Helper to query TigerBeetle for transfers in time range
+   * TODO: Implement proper query from TigerBeetle ledger
+   */
+  private async getTransfersInTimeRange(
+    startTime: Date,
+    endTime: Date
+  ): Promise<Array<{ payerId: string, payeeId: string, amount: bigint, currency: string }>> {
+    // TODO: Query TigerBeetle transfer history/ledger for transfers in this range
+    // This would use TB's query API or filter existing transfer specs
+
+    // Placeholder implementation - need to implement actual TB query
+    throw new Error('getTransfersInTimeRange not yet implemented - need to query TigerBeetle ledger')
+  }
+
+  /**
+   * Helper to ensure settlement window 1 exists within a transaction
+   */
+  private async _ensureOpenSettlementWindowInTransaction(trx: Knex.Transaction): Promise<void> {
+    const window = await trx('tigerbeetle_settlement_window')
+      .where('id', 1)
+      .first()
+
+    if (!window) {
+      logger.info('Creating initial settlement window (id=1) with unix epoch timestamp')
+      await trx('tigerbeetle_settlement_window').insert({
+        id: 1,
+        state: 'OPEN',
+        opened_at: new Date(0), // Unix epoch
+        reason: 'Initial settlement window'
+      })
+    }
+  }
+
+  /**
+   * Ensures an OPEN settlement window exists with id=1.
+   * Creates the first window with opened_at = unix epoch if it doesn't exist.
+   * Can be called with or without a transaction - will create one if not provided.
+   */
+  private async ensureOpenSettlementWindow(trx?: Knex.Transaction): Promise<void> {
+    if (trx) {
+      await this._ensureOpenSettlementWindowInTransaction(trx)
+    } else {
+      await this.deps.knex.transaction(async (newTrx) => {
+        await this._ensureOpenSettlementWindowInTransaction(newTrx)
+      })
+    }
+  }
+
   public async closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>> {
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
+    const { id, reason } = cmd
+
+    try {
+      return await this.deps.knex.transaction(async (trx) => {
+        // Special case: if id = 1, ensure it exists first
+        if (id === 1) {
+          await this.ensureOpenSettlementWindow(trx)
+        }
+
+        // 1. Verify the window exists and is OPEN
+        const window = await trx('tigerbeetle_settlement_window')
+          .where('id', id)
+          .first()
+
+        if (!window) {
+          return {
+            type: 'FAILURE',
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
+              `Settlement window ${id} not found`
+            )
+          }
+        }
+
+        if (window.state !== 'OPEN') {
+          return {
+            type: 'FAILURE',
+            error: ErrorHandler.Factory.createFSPIOPError(
+              ErrorHandler.Enums.FSPIOPErrorCodes.CLIENT_ERROR,
+              `Settlement window ${id} is not open (current state: ${window.state})`
+            )
+          }
+        }
+
+        // 2. Close the current window
+        await trx('tigerbeetle_settlement_window')
+          .where('id', id)
+          .update({
+            state: 'CLOSED',
+            closed_at: new Date(),
+            reason
+          })
+
+        // 3. Create a new OPEN window
+        await trx('tigerbeetle_settlement_window').insert({
+          state: 'OPEN',
+          opened_at: new Date(),
+          reason: 'New settlement window opened'
+        })
+
+        return { type: 'SUCCESS', result: undefined }
+      })
+    } catch (err: any) {
+      logger.error(`closeSettlementWindow failed: ${err.message}`, { err })
+      return {
+        type: 'FAILURE',
+        error: ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Failed to close settlement window: ${err.message}`
+        )
+      }
     }
   }
 
   public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{id: number}>> {
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
+    const { windowIds, model, reason } = cmd
+
+    try {
+      return await this.deps.knex.transaction(async (trx) => {
+        // 1. Create the settlement record
+        const [settlementId] = await trx('tigerbeetle_settlement').insert({
+          state: 'PENDING',
+          model,
+          reason,
+          created_at: new Date()
+        })
+
+        // 2. Link windows to this settlement
+        await trx('tigerbeetle_settlement_window_mapping').insert(
+          windowIds.map(windowId => ({ settlement_id: settlementId, window_id: windowId }))
+        )
+
+        // 3. Get time ranges for all windows
+        const windows = await trx('tigerbeetle_settlement_window')
+          .whereIn('id', windowIds)
+          .select('id', 'opened_at', 'closed_at')
+
+        // 4. Query TigerBeetle for transfers in these time ranges
+        const netAmounts = new Map<string, { amount: bigint, currency: string }>() // key: dfspId:currency
+
+        for (const window of windows) {
+          const transfers = await this.getTransfersInTimeRange(
+            window.opened_at,
+            window.closed_at
+          )
+
+          // 5. Aggregate in memory
+          for (const transfer of transfers) {
+            // Payer (debit)
+            const payerKey = `${transfer.payerId}:${transfer.currency}`
+            const payerCurrent = netAmounts.get(payerKey) || { amount: 0n, currency: transfer.currency }
+            netAmounts.set(payerKey, {
+              amount: payerCurrent.amount + transfer.amount,
+              currency: transfer.currency
+            })
+
+            // Payee (credit)
+            const payeeKey = `${transfer.payeeId}:${transfer.currency}`
+            const payeeCurrent = netAmounts.get(payeeKey) || { amount: 0n, currency: transfer.currency }
+            netAmounts.set(payeeKey, {
+              amount: payeeCurrent.amount - transfer.amount,
+              currency: transfer.currency
+            })
+          }
+        }
+
+        // 6. Convert to settlement balances and insert
+        const balances = []
+        for (const [key, { amount, currency }] of netAmounts.entries()) {
+          const [dfspId] = key.split(':')
+          if (amount === 0n) continue // Skip zero balances
+
+          const assetScale = this.currencyManager.getAssetScale(currency)
+          const absAmount = amount < 0n ? -amount : amount
+          balances.push({
+            settlement_id: settlementId,
+            participant_id: dfspId,
+            currency,
+            amount: Helper.toRealAmount(absAmount, assetScale),
+            direction: amount > 0n ? 'INBOUND' : 'OUTBOUND',
+            state: 'PENDING'
+          })
+        }
+
+        if (balances.length > 0) {
+          await trx('tigerbeetle_settlement_balance').insert(balances)
+        }
+
+        return { type: 'SUCCESS', result: { id: settlementId } }
+      })
+    } catch (err: any) {
+      logger.error(`settlementPrepare failed: ${err.message}`, { err })
+      return {
+        type: 'FAILURE',
+        error: ErrorHandler.Factory.createInternalServerFSPIOPError(
+          `Failed to prepare settlement: ${err.message}`
+        )
+      }
     }
   }
 
@@ -3190,6 +3379,13 @@ export default class TigerBeetleLedger implements Ledger {
       error: new Error('not implemented')
     }
   }
+
+  public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
+      return {
+        type: 'FAILURE',
+        error: new Error('not implemented')
+      }
+    }
 
   public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
     return {

@@ -185,10 +185,12 @@ export class HarnessApi implements Harness {
   }
 
   private async initTigerBeetleLedger(): Promise<TigerBeetleLedger> {
+    const knex = this.dbLib.getKnex()
     const deps: TigerBeetleLedgerDependencies = {
       config: this.config.applicationConfig,
       client: this.client,
-      specStore: new PersistedSpecStore(this.dbLib.getKnex()),
+      specStore: new PersistedSpecStore(knex),
+      knex
     }
     return new TigerBeetleLedger(deps)
   }

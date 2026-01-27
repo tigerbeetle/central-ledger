@@ -265,11 +265,13 @@ function initializeTigerBeetleLedger(config: ApplicationConfig): TigerBeetleLedg
     cluster_id: config.EXPERIMENTAL.TIGERBEETLE.CLUSTER_ID,
     replica_addresses: config.EXPERIMENTAL.TIGERBEETLE.ADDRESS
   })
-  const specStore = new PersistedSpecStore(Db.getKnex())
+  const knex = Db.getKnex()
+  const specStore = new PersistedSpecStore(knex)
   const tigerBeetleDeps: TigerBeetleLedgerDependencies = {
     config,
     client,
-    specStore
+    specStore,
+    knex
   }
   return new TigerBeetleLedger(tigerBeetleDeps)
 }

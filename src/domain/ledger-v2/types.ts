@@ -565,6 +565,24 @@ export type SettlementCommitCommand = {
 
 }
 
+export type SettlementUpdateCommand = {
+  /**
+   * The settlement id
+   */
+  id: number,
+  dfspId: string,
+
+  /**
+   * TODO(LD):
+   * Not sure if we need this, but it's on the API.
+   * I suspect it shouldn't be, since accountId is internal and shouldn't be exposed
+   */
+  accountId: number
+  participantState: 'RECORDED' | 'RESERVED' | 'COMMITTED' | 'SETTLED',
+  reason: string
+  externalReference: string
+}
+
 export type GetSettlementQuery = {
   /**
    * The settlement id of the settlement

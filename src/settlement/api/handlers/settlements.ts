@@ -77,6 +77,11 @@ async function get(
   h: ResponseToolkit
 ): Promise<ResponseObject> {
   try {
+    assert(request)
+
+    // validate all the params here
+    
+
     const { span, headers } = request as any
     const spanTags = Util.EventFramework.getSpanTags(
       Enum.Events.Event.Type.SETTLEMENT,
