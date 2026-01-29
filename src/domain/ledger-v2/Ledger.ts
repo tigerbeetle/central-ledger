@@ -17,6 +17,8 @@ import {
   GetNetDebitCapQuery,
   GetSettlementQuery,
   GetSettlementQueryResponse,
+  GetSettlementsQuery,
+  GetSettlementsQueryResponse,
   GetSettlementWindowsQuery,
   GetSettlementWindowsQueryResponse,
   HubAccountResponse,
@@ -50,8 +52,8 @@ export interface Ledger {
    */
   createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse>;
   createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse>;
-  disableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>>;
-  enableDfsp(cmd: {dfspId: string}): Promise<CommandResult<void>>;
+  disableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>>;
+  enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>>;
   enableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>>;
   disableDfspAccount(cmd: { dfspId: string, accountId: number }): Promise<CommandResult<void>>;
   deposit(cmd: DepositCommand): Promise<DepositResponse>;
@@ -64,12 +66,12 @@ export interface Ledger {
    * Onboarding/Lifecycle Management Queries
    */
   getHubAccounts(query: AnyQuery): Promise<HubAccountResponse>
-  getDfsp(query: {dfspId: string}): Promise<QueryResult<LegacyLedgerDfsp>>
+  getDfsp(query: { dfspId: string }): Promise<QueryResult<LegacyLedgerDfsp>>
   getAllDfsps(query: AnyQuery): Promise<QueryResult<GetAllDfspsResponse>>
   getDfspAccounts(query: GetDfspAccountsQuery): Promise<DfspAccountResponse>
   getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse>
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>>
-  
+
 
   /**
    * Clearing Methods
@@ -109,7 +111,7 @@ export interface Ledger {
    * Settlement Methods
    */
   closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>>
-  settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{id: number}>>;
+  settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{ id: number }>>;
   settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>>;
 
   /**
@@ -123,6 +125,7 @@ export interface Ledger {
    */
   settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>>;
 
-getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>>
+  getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>>
   getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse>
+  getSettlements(query: GetSettlementsQuery): Promise<GetSettlementsQueryResponse>
 }

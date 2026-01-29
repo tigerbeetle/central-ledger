@@ -36,7 +36,7 @@ import * as EventSdk from '@mojaloop/event-sdk'
 import type { Request, ResponseToolkit, ResponseObject } from '@hapi/hapi'
 import { Util, Enum } from '@mojaloop/central-services-shared'
 import { getLedger } from '../../../api/helper'
-import { GetSettlementQuery, SettlementPrepareCommand } from '../../../domain/ledger-v2/types'
+import { GetSettlementQuery, GetSettlementsQuery, SettlementPrepareCommand, SettlementState } from '../../../domain/ledger-v2/types'
 import assert from 'assert'
 
 const Settlements = require('../../domain/settlement/index')
@@ -78,9 +78,57 @@ async function get(
 ): Promise<ResponseObject> {
   try {
     assert(request)
+    assert(request.query)
+    const ledger = getLedger(request)
 
-    // TODO(LD): Validate all params here
-    
+    // Validate that at least one query parameter has a truthy value
+    const query = request.query
+    const hasValidFilter = Object.keys(query).some(key => {
+      const value = query[key as keyof typeof query]
+      return !!value
+    })
+
+    if (!hasValidFilter) {
+      const error = ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+        'At least one valid filter parameter is required (currency, participantId, settlementWindowId, state, fromDateTime, or toDateTime)'
+      )
+      throw error
+    }
+
+    // Helper to parse and validate date strings
+    const parseDate = (dateStr: string, fieldName: string): Date => {
+      const date = new Date(dateStr)
+      if (isNaN(date.getTime())) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+          `Invalid ${fieldName}: ${dateStr}`
+        )
+      }
+      return date
+    }
+
+    // Helper to validate settlement state
+    const parseState = (stateStr: string): SettlementState => {
+      const validStates: SettlementState[] = ['PENDING', 'PROCESSING', 'COMMITTED', 'ABORTED']
+      if (!validStates.includes(stateStr as SettlementState)) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+          `Invalid state: ${stateStr}. Must be one of: ${validStates.join(', ')}`
+        )
+      }
+      return stateStr as SettlementState
+    }
+
+    // Build query object with validation
+    const getSettlementsQuery: GetSettlementsQuery = {
+      ...(query.currency && { currency: query.currency }),
+      ...(query.participantId && { participantId: parseInt(query.participantId) }),
+      ...(query.settlementWindowId && { settlementWindowId: parseInt(query.settlementWindowId) }),
+      ...(query.state && { state: parseState(query.state) }),
+      ...(query.fromDateTime && { fromDateTime: parseDate(query.fromDateTime, 'fromDateTime') }),
+      ...(query.toDateTime && { toDateTime: parseDate(query.toDateTime, 'toDateTime') }),
+    }
 
     const { span, headers } = request as any
     const spanTags = Util.EventFramework.getSpanTags(
@@ -96,9 +144,11 @@ async function get(
       params: request.params
     }, EventSdk.AuditEventAction.start)
 
-    const Enums = await (request.server.methods as any).enums('settlementStates')
-    const settlementResult = await Settlements.getSettlementsByParams({ query: request.query }, Enums)
-    return h.response(settlementResult)
+    const result = await ledger.getSettlements(getSettlementsQuery)
+    if (result.type === 'SUCCESS') {
+      return h.response(result.result)
+    }
+    return ErrorHandler.Factory.reformatFSPIOPError(result.error) as any
   } catch (err) {
     request.server.log('error', err)
     return ErrorHandler.Factory.reformatFSPIOPError(err) as any

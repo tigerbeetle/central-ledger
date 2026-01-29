@@ -37,7 +37,7 @@ import type { Request, ResponseToolkit, ResponseObject } from '@hapi/hapi'
 import { Util, Enum } from '@mojaloop/central-services-shared'
 import { logger } from '../../../../shared/logger'
 import { getLedger, mapSettlementState } from '../../../../api/helper'
-import { SettlementAbortCommand, SettlementUpdateCommand } from 'src/domain/ledger-v2/types'
+import { GetSettlementQuery, SettlementAbortCommand, SettlementUpdateCommand } from 'src/domain/ledger-v2/types'
 import assert from 'assert'
 
 
@@ -82,13 +82,18 @@ async function get(
   request: SettlementGetRequest,
   h: ResponseToolkit
 ): Promise<ResponseObject> {
-  const settlementId = request.params.id
   try {
+    assert(request)
+    const ledger = getLedger(request)
+    assert(request.params)
+    assert(request.params.id)
+    const id = request.params.id
+
     const { span, headers } = request as any
     const spanTags = Util.EventFramework.getSpanTags(
       Enum.Events.Event.Type.SETTLEMENT,
       Enum.Events.Event.Action.GET,
-      `sid=${settlementId}`,
+      `sid=${id}`,
       headers[Enum.Http.Headers.FSPIOP.SOURCE],
       headers[Enum.Http.Headers.FSPIOP.DESTINATION]
     )
@@ -98,10 +103,24 @@ async function get(
       params: request.params
     }, EventSdk.AuditEventAction.start)
 
-    const Enums = await (request.server.methods as any).enums('settlementStates')
-    request.server.log('info', `get settlement by Id requested with id ${settlementId}`)
-    const settlementResult = await Settlements.getById({ settlementId }, Enums)
-    return h.response(settlementResult)
+    const query: GetSettlementQuery = {
+      id,
+    }
+    const result = await ledger.getSettlement(query)
+    switch (result.type) {
+      case 'NOT_FOUND':
+        throw new Error(`no settlement found for id: ${id}`)
+      case 'FAILED':
+        throw new Error(`failed to get settlement for id: ${id}`)
+      case 'FOUND':
+        const { type, ...rest } = result
+        return h.response(rest)
+    }
+
+    // const Enums = await (request.server.methods as any).enums('settlementStates')
+    // request.server.log('info', `get settlement by Id requested with id ${settlementId}`)
+    // const settlementResult = await Settlements.getById({ settlementId }, Enums)
+    // return h.response(settlementResult)
   } catch (err) {
     request.server.log('error', err)
     return ErrorHandler.Factory.reformatFSPIOPError(err) as any

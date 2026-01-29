@@ -65,6 +65,10 @@ import {
   SettlementUpdateCommand,
   GetSettlementWindowsQuery,
   GetSettlementWindowsQueryResponse,
+  SettlementWindow,
+  SettlementWindowState,
+  SettlementAccount,
+  SettlementParticipant,
 } from "./types";
 import { first } from 'lodash';
 
@@ -3409,7 +3413,7 @@ export default class TigerBeetleLedger implements Ledger {
 
           balances.push({
             settlement_id: settlementId,
-            participant_id: dfspId,
+            dfspId,
             currency,
             amount: Helper.toRealAmount(netAmount, assetScale),
             direction,
@@ -3609,9 +3613,132 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
-    return {
-      type: 'FAILED',
-      error: new Error('not implemented')
+    try {
+      logger.info(`TigerBeetleLedger.getSettlement() with id: ${query.id}`)
+
+      // Get settlement record
+      const settlement = await this.deps.knex('tigerbeetleSettlement')
+        .where('id', query.id)
+        .first()
+
+      if (!settlement) {
+        return { type: 'NOT_FOUND' }
+      }
+
+      // Get settlement windows
+      const windowRows = await this.deps.knex('tigerbeetleSettlementWindowMapping as tswm')
+        .join('tigerbeetleSettlementWindow as tsw', 'tsw.id', 'tswm.window_id')
+        .where('tswm.settlement_id', query.id)
+        .select(
+          'tsw.id',
+          'tsw.state',
+          'tsw.reason',
+          'tsw.opened_at',
+          'tsw.closed_at'
+        )
+
+      // Get window content (same pattern as getSettlementWindows)
+      const windowIds = windowRows.map((w: any) => w.id)
+      const contentRows = windowIds.length > 0
+        ? await this.deps.knex('tigerbeetleSettlementWindowMapping as tswm')
+            .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
+            .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
+            .whereIn('tswm.window_id', windowIds)
+            .select(
+              'tswm.window_id',
+              'tsb.id',
+              'ts.state',
+              'tsb.currency as currencyId',
+              'ts.created_at as createdDate',
+              'ts.created_at as changedDate'
+            )
+        : []
+
+      // Group content by window_id
+      const contentByWindow = new Map<number, Array<any>>()
+      for (const row of contentRows) {
+        if (!contentByWindow.has(row.window_id)) {
+          contentByWindow.set(row.window_id, [])
+        }
+        contentByWindow.get(row.window_id)!.push({
+          id: row.id,
+          state: row.state,
+          ledgerAccountType: 'POSITION',
+          currencyId: row.currencyId,
+          createdDate: row.createdDate,
+          changedDate: row.changedDate
+        })
+      }
+
+      // Transform windows with content
+      const settlementWindows: SettlementWindow[] = windowRows.map((w: any) => ({
+        id: w.id,
+        state: w.state as SettlementWindowState,
+        reason: w.reason ?? '',
+        createdDate: w.opened_at,
+        changedDate: w.closed_at ?? w.opened_at,
+        content: contentByWindow.get(w.id) || []
+      }))
+
+      // 5. Get participant balances with participantId from participant table
+      const balanceRows = await this.deps.knex('tigerbeetleSettlementBalance as tsb')
+        .join('participant as p', 'p.name', 'tsb.dfspId')
+        .where('tsb.settlement_id', query.id)
+        .select(
+          'tsb.id',
+          'p.participantId',
+          'tsb.currency',
+          'tsb.amount',
+          'tsb.direction',
+          'tsb.state'
+        )
+
+      // 6. Group and transform participant balances
+      const participantMap = new Map<number, SettlementAccount[]>()
+
+      for (const balance of balanceRows) {
+        const account: SettlementAccount = {
+          id: balance.id,
+          state: balance.state,
+          reason: '',
+          netSettlementAmount: {
+            amount: balance.direction === 'OUTBOUND'
+              ? `-${balance.amount}`
+              : balance.amount.toString(),
+            currency: balance.currency
+          }
+        }
+
+        if (!participantMap.has(balance.participantId)) {
+          participantMap.set(balance.participantId, [])
+        }
+        participantMap.get(balance.participantId)!.push(account)
+      }
+
+      const participants: SettlementParticipant[] = Array.from(participantMap.entries())
+        .map(([participantId, accounts]) => ({
+          id: participantId,
+          accounts
+        }))
+
+      // 7. Return response
+      return {
+        type: 'FOUND',
+        id: settlement.id,
+        settlementModel: settlement.model,
+        state: settlement.state,
+        reason: settlement.reason ?? '',
+        createdDate: settlement.created_at,
+        changedDate: settlement.created_at,
+        settlementWindows,
+        participants
+      }
+    } catch (err: any) {
+      logger.error(`TigerBeetleLedger.getSettlement() failed: ${err.message}`, { err })
+      return {
+        type: 'FAILED',
+        error: err
+      }
     }
   }
 

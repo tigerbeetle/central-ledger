@@ -52,6 +52,9 @@ import {
   SettlementCommitCommand,
   GetSettlementQuery,
   GetSettlementQueryResponse,
+  GetSettlementsQuery,
+  GetSettlementsQueryResponse,
+  Settlement,
   SettlementUpdateCommand,
   GetSettlementWindowsQuery,
   GetSettlementWindowsQueryResponse,
@@ -418,6 +421,19 @@ export interface LegacyLedgerDependencies {
         enums: any
       ) => Promise<unknown>
       getById: (params: { settlementId: number }, enums: any) => Promise<any>
+      getSettlementsByParams: (
+        params: {
+          query: {
+            currency?: string
+            participantId?: string
+            settlementWindowId?: string
+            state?: string
+            fromDateTime?: string
+            toDateTime?: string
+          }
+        },
+        enums: any
+      ) => Promise<any[]>
     }
     settlementModel: {
       putById: (
@@ -2173,6 +2189,7 @@ export default class LegacyLedger implements Ledger {
   public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
     assert(query)
     assert(query.id)
+    
     try {
       const settlement = await this.deps.settlement.settlementDomain.getById(
         { settlementId: query.id }, this.deps.settlement.enums
@@ -2190,6 +2207,39 @@ export default class LegacyLedger implements Ledger {
         type: 'FAILED',
         error: err
       }
+    }
+  }
+
+  public async getSettlements(query: GetSettlementsQuery): Promise<GetSettlementsQueryResponse> {
+    try {
+      const legacyQuery = {
+        currency: query.currency,
+        participantId: query.participantId?.toString(),
+        settlementWindowId: query.settlementWindowId?.toString(),
+        state: query.state,
+        fromDateTime: query.fromDateTime?.toISOString(),
+        toDateTime: query.toDateTime?.toISOString(),
+      }
+
+      const result = await this.deps.settlement.settlementDomain.getSettlementsByParams(
+        { query: legacyQuery },
+        this.deps.settlement.enums
+      )
+
+      const settlements: Settlement[] = result.map((s: any) => ({
+        id: s.id,
+        settlementModel: s.settlementModel,
+        state: s.state,
+        reason: s.reason ?? '',
+        createdDate: s.createdDate,
+        changedDate: s.changedDate,
+        settlementWindows: s.settlementWindows ?? [],
+        participants: s.participants ?? []
+      }))
+
+      return { type: 'SUCCESS', result: settlements }
+    } catch (err: any) {
+      return { type: 'FAILURE', error: err }
     }
   }
 

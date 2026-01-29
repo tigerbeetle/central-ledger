@@ -81,7 +81,7 @@ exports.up = async (knex) => {
       return knex.schema.createTable('tigerbeetleSettlementBalance', (t) => {
         t.bigIncrements('id').primary().notNullable()
         t.bigInteger('settlement_id').unsigned().notNullable()
-        t.string('participant_id', 128).notNullable()
+        t.string('dfspId', 128).notNullable()
         t.string('currency', 3).notNullable()
         t.decimal('amount', 18, 4).notNullable()
         t.enum('direction', ['INBOUND', 'OUTBOUND']).notNullable()
@@ -90,9 +90,10 @@ exports.up = async (knex) => {
         t.dateTime('created_at').notNullable().defaultTo(knex.fn.now())
         t.dateTime('updated_at').notNullable().defaultTo(knex.fn.now())
 
-        t.unique(['settlement_id', 'participant_id', 'currency'], 'tb_stl_bal_sid_pid_cur_uniq')
+        t.unique(['settlement_id', 'dfspId', 'currency'], 'tb_stl_bal_sid_dfsp_cur_uniq')
         t.foreign('settlement_id').references('id').inTable('tigerbeetleSettlement')
-        t.index(['participant_id', 'currency'], 'tb_stl_bal_pid_cur_idx')
+        t.foreign('dfspId').references('name').inTable('participant')
+        t.index(['dfspId', 'currency'], 'tb_stl_bal_dfsp_cur_idx')
         t.index('state', 'tb_stl_bal_state_idx')
       })
     }

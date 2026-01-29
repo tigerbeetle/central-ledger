@@ -1,4 +1,5 @@
 import { FSPIOPError } from '@mojaloop/central-services-error-handling'
+import { QueryResult } from 'src/shared/results';
 import { Transfer } from 'tigerbeetle-node'
 
 
@@ -597,6 +598,8 @@ export type SettlementUpdateCommand = {
 export type SettlementWindowState =  'OPEN' | 'CLOSED' | 'PENDING_SETTLEMENT' | 'SETTLED' 
   | 'ABORTED' | 'PROCESSING' | 'FAILED'
 
+export type SettlementState = 'PENDING' | 'PROCESSING' | 'COMMITTED' | 'ABORTED'
+
 export type GetSettlementWindowsQuery = {
   participantId?: number
   state?: SettlementWindowState
@@ -612,6 +615,15 @@ export type GetSettlementQuery = {
    * The settlement id of the settlement
    */
   id: number
+}
+
+export type GetSettlementsQuery = {
+  currency?: string
+  participantId?: number
+  settlementWindowId?: number
+  state?: SettlementState
+  fromDateTime?: Date
+  toDateTime?: Date,
 }
 
 export type SettlementWindow = {
@@ -644,13 +656,7 @@ export type SettlementAccount = {
   }
 }
 
-export type SettlementParticipant = {
-  id: number,
-  accounts: Array<SettlementAccount>
-}
-
-export type GetSettlementQueryResponse = {
-  type: 'FOUND',
+export type Settlement = {
   id: number
   // TODO(LD): better typing
   settlementModel: string,
@@ -661,6 +667,15 @@ export type GetSettlementQueryResponse = {
   changedDate: Date,
   settlementWindows: Array<SettlementWindow>
   participants: Array<SettlementParticipant>
+}
+
+export type SettlementParticipant = {
+  id: number,
+  accounts: Array<SettlementAccount>
+}
+
+export type GetSettlementQueryResponse = Settlement & {
+  type: 'FOUND',
 } | {
   type: 'NOT_FOUND'
 } | {
@@ -668,7 +683,7 @@ export type GetSettlementQueryResponse = {
   error: Error
 }
 
-
+export type GetSettlementsQueryResponse = QueryResult<Array<Settlement>>
 
 export type SettlementPrepareCommandV2 = {
 
