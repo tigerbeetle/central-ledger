@@ -27,10 +27,10 @@
 'use strict'
 
 exports.up = async (knex) => {
-  // Create tigerbeetle_settlement_window table
-  await knex.schema.hasTable('tigerbeetle_settlement_window').then(function (exists) {
+  // Create tigerbeetleSettlementWindow table
+  await knex.schema.hasTable('tigerbeetleSettlementWindow').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerbeetle_settlement_window', (t) => {
+      return knex.schema.createTable('tigerbeetleSettlementWindow', (t) => {
         t.bigIncrements('id').primary().notNullable()
         t.enum('state', ['OPEN', 'CLOSED', 'SETTLED']).notNullable()
         t.dateTime('opened_at').notNullable()
@@ -43,10 +43,10 @@ exports.up = async (knex) => {
     }
   })
 
-  // Create tigerbeetle_settlement table
-  await knex.schema.hasTable('tigerbeetle_settlement').then(function (exists) {
+  // Create tigerbeetleSettlement table
+  await knex.schema.hasTable('tigerbeetleSettlement').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerbeetle_settlement', (t) => {
+      return knex.schema.createTable('tigerbeetleSettlement', (t) => {
         t.bigIncrements('id').primary().notNullable()
         t.enum('state', ['PENDING', 'PROCESSING', 'COMMITTED', 'ABORTED']).notNullable()
         t.string('model', 128).notNullable()
@@ -58,24 +58,24 @@ exports.up = async (knex) => {
     }
   })
 
-  // Create tigerbeetle_settlement_window_mapping table
-  await knex.schema.hasTable('tigerbeetle_settlement_window_mapping').then(function (exists) {
+  // Create tigerbeetleSettlementWindowMapping table
+  await knex.schema.hasTable('tigerbeetleSettlementWindowMapping').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerbeetle_settlement_window_mapping', (t) => {
+      return knex.schema.createTable('tigerbeetleSettlementWindowMapping', (t) => {
         t.bigInteger('settlement_id').unsigned().notNullable()
         t.bigInteger('window_id').unsigned().notNullable()
 
         t.primary(['settlement_id', 'window_id'])
-        t.foreign('settlement_id').references('id').inTable('tigerbeetle_settlement')
-        t.foreign('window_id').references('id').inTable('tigerbeetle_settlement_window')
+        t.foreign('settlement_id').references('id').inTable('tigerbeetleSettlement')
+        t.foreign('window_id').references('id').inTable('tigerbeetleSettlementWindow')
       })
     }
   })
 
-  // Create tigerbeetle_settlement_balance table
-  await knex.schema.hasTable('tigerbeetle_settlement_balance').then(function (exists) {
+  // Create tigerbeetleSettlementBalance table
+  await knex.schema.hasTable('tigerbeetleSettlementBalance').then(function (exists) {
     if (!exists) {
-      return knex.schema.createTable('tigerbeetle_settlement_balance', (t) => {
+      return knex.schema.createTable('tigerbeetleSettlementBalance', (t) => {
         t.bigIncrements('id').primary().notNullable()
         t.bigInteger('settlement_id').unsigned().notNullable()
         t.string('participant_id', 128).notNullable()
@@ -88,7 +88,7 @@ exports.up = async (knex) => {
         t.dateTime('updated_at').notNullable().defaultTo(knex.fn.now())
 
         t.unique(['settlement_id', 'participant_id', 'currency'], 'tb_stl_bal_sid_pid_cur_uniq')
-        t.foreign('settlement_id').references('id').inTable('tigerbeetle_settlement')
+        t.foreign('settlement_id').references('id').inTable('tigerbeetleSettlement')
         t.index(['participant_id', 'currency'], 'tb_stl_bal_pid_cur_idx')
         t.index('state', 'tb_stl_bal_state_idx')
       })
@@ -97,8 +97,8 @@ exports.up = async (knex) => {
 }
 
 exports.down = async (knex) => {
-  await knex.schema.dropTableIfExists('tigerbeetle_settlement_balance')
-  await knex.schema.dropTableIfExists('tigerbeetle_settlement_window_mapping')
-  await knex.schema.dropTableIfExists('tigerbeetle_settlement')
-  await knex.schema.dropTableIfExists('tigerbeetle_settlement_window')
+  await knex.schema.dropTableIfExists('tigerbeetleSettlementBalance')
+  await knex.schema.dropTableIfExists('tigerbeetleSettlementWindowMapping')
+  await knex.schema.dropTableIfExists('tigerbeetleSettlement')
+  await knex.schema.dropTableIfExists('tigerbeetleSettlementWindow')
 }

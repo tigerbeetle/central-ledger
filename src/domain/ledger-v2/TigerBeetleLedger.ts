@@ -3181,13 +3181,13 @@ export default class TigerBeetleLedger implements Ledger {
    * Helper to ensure settlement window 1 exists within a transaction
    */
   private async _ensureOpenSettlementWindowInTransaction(trx: Knex.Transaction): Promise<void> {
-    const window = await trx('tigerbeetle_settlement_window')
+    const window = await trx('tigerbeetleSettlementWindow')
       .where('id', 1)
       .first()
 
     if (!window) {
       logger.info('Creating initial settlement window (id=1) with unix epoch timestamp')
-      await trx('tigerbeetle_settlement_window').insert({
+      await trx('tigerbeetleSettlementWindow').insert({
         id: 1,
         state: 'OPEN',
         opened_at: new Date(0), // Unix epoch
@@ -3222,7 +3222,7 @@ export default class TigerBeetleLedger implements Ledger {
         }
 
         // 1. Verify the window exists and is OPEN
-        const window = await trx('tigerbeetle_settlement_window')
+        const window = await trx('tigerbeetleSettlementWindow')
           .where('id', id)
           .first()
 
@@ -3247,7 +3247,7 @@ export default class TigerBeetleLedger implements Ledger {
         }
 
         // 2. Close the current window
-        await trx('tigerbeetle_settlement_window')
+        await trx('tigerbeetleSettlementWindow')
           .where('id', id)
           .update({
             state: 'CLOSED',
@@ -3256,7 +3256,7 @@ export default class TigerBeetleLedger implements Ledger {
           })
 
         // 3. Create a new OPEN window
-        await trx('tigerbeetle_settlement_window').insert({
+        await trx('tigerbeetleSettlementWindow').insert({
           state: 'OPEN',
           opened_at: new Date(),
           reason: 'New settlement window opened'
@@ -3281,7 +3281,7 @@ export default class TigerBeetleLedger implements Ledger {
     try {
       return await this.deps.knex.transaction(async (trx) => {
         // 1. Create the settlement record
-        const [settlementId] = await trx('tigerbeetle_settlement').insert({
+        const [settlementId] = await trx('tigerbeetleSettlement').insert({
           state: 'PENDING',
           model,
           reason,
@@ -3289,12 +3289,12 @@ export default class TigerBeetleLedger implements Ledger {
         })
 
         // 2. Link windows to this settlement
-        await trx('tigerbeetle_settlement_window_mapping').insert(
+        await trx('tigerbeetleSettlementWindowMapping').insert(
           windowIds.map(windowId => ({ settlement_id: settlementId, window_id: windowId }))
         )
 
         // 3. Get time ranges for all windows
-        const windows = await trx('tigerbeetle_settlement_window')
+        const windows = await trx('tigerbeetleSettlementWindow')
           .whereIn('id', windowIds)
           .select('id', 'opened_at', 'closed_at')
 
@@ -3346,7 +3346,7 @@ export default class TigerBeetleLedger implements Ledger {
         }
 
         if (balances.length > 0) {
-          await trx('tigerbeetle_settlement_balance').insert(balances)
+          await trx('tigerbeetleSettlementBalance').insert(balances)
         }
 
         return { type: 'SUCCESS', result: { id: settlementId } }
@@ -3396,7 +3396,7 @@ export default class TigerBeetleLedger implements Ledger {
    * Used when only filtering by state or date ranges
    */
   private buildBaseSettlementWindowQuery() {
-    return this.deps.knex('tigerbeetle_settlement_window as tsw')
+    return this.deps.knex('tigerbeetleSettlementWindow as tsw')
       .select(
         'tsw.id as settlementWindowId',
         'tsw.state',
@@ -3412,9 +3412,9 @@ export default class TigerBeetleLedger implements Ledger {
    * Used when filtering by participant or currency
    */
   private buildSettlementWindowQueryWithJoins() {
-    return this.deps.knex('tigerbeetle_settlement_window as tsw')
-      .leftJoin('tigerbeetle_settlement_window_mapping as tswm', 'tswm.window_id', 'tsw.id')
-      .leftJoin('tigerbeetle_settlement_balance as tsb', 'tsb.settlement_id', 'tswm.settlement_id')
+    return this.deps.knex('tigerbeetleSettlementWindow as tsw')
+      .leftJoin('tigerbeetleSettlementWindowMapping as tswm', 'tswm.window_id', 'tsw.id')
+      .leftJoin('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'tswm.settlement_id')
       .select(
         'tsw.id as settlementWindowId',
         'tsw.state',
