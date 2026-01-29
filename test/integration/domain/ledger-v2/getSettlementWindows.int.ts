@@ -30,8 +30,8 @@ describe('TigerBeetleLedger.getSettlementWindows()', () => {
 
     assert.strictEqual(result.type, 'SUCCESS')
     if (result.type === 'SUCCESS') {
-      assert.ok(Array.isArray(result.result))
-      assert.strictEqual(result.result.length, 0)
+      assert.ok(Array.isArray(result.result.windows))
+      assert.strictEqual(result.result.windows.length, 0)
     }
   })
 
@@ -46,10 +46,10 @@ describe('TigerBeetleLedger.getSettlementWindows()', () => {
 
     assert.strictEqual(result.type, 'SUCCESS')
     if (result.type === 'SUCCESS') {
-      assert.ok(Array.isArray(result.result))
-      assert.ok(result.result.length > 0)
-      assert.strictEqual(result.result[0].state, 'OPEN')
-      assert.ok(result.result[0].settlementWindowId)
+      assert.ok(Array.isArray(result.result.windows))
+      assert.ok(result.result.windows.length > 0)
+      assert.strictEqual(result.result.windows[0].state, 'OPEN')
+      assert.ok(result.result.windows[0].id)
     }
   })
 
@@ -64,13 +64,13 @@ describe('TigerBeetleLedger.getSettlementWindows()', () => {
 
     assert.strictEqual(result.type, 'SUCCESS')
     if (result.type === 'SUCCESS') {
-      assert.ok(Array.isArray(result.result))
-      assert.ok(result.result.length > 0)
-      assert.strictEqual(result.result[0].state, 'CLOSED')
-      assert.ok(result.result[0].settlementWindowId)
-      assert.ok(result.result[0].reason)
-      assert.ok(result.result[0].createdDate)
-      assert.ok(result.result[0].changedDate)
+      assert.ok(Array.isArray(result.result.windows))
+      assert.ok(result.result.windows.length > 0)
+      assert.strictEqual(result.result.windows[0].state, 'CLOSED')
+      assert.ok(result.result.windows[0].id)
+      assert.ok(result.result.windows[0].reason)
+      assert.ok(result.result.windows[0].createdDate)
+      assert.ok(result.result.windows[0].changedDate)
     }
   })
 
@@ -89,7 +89,7 @@ describe('TigerBeetleLedger.getSettlementWindows()', () => {
 
     assert.strictEqual(result.type, 'SUCCESS')
     if (result.type === 'SUCCESS') {
-      assert.ok(Array.isArray(result.result))
+      assert.ok(Array.isArray(result.result.windows))
       // Should include any windows created today
     }
   })
@@ -110,9 +110,9 @@ describe('TigerBeetleLedger.getSettlementWindows()', () => {
 
     assert.strictEqual(result.type, 'SUCCESS')
     if (result.type === 'SUCCESS') {
-      assert.ok(Array.isArray(result.result))
+      assert.ok(Array.isArray(result.result.windows))
       // All results should be OPEN
-      result.result.forEach((window: any) => {
+      result.result.windows.forEach((window: any) => {
         assert.strictEqual(window.state, 'OPEN')
       })
     }
@@ -129,7 +129,7 @@ describe('TigerBeetleLedger.getSettlementWindows()', () => {
     // Should return SUCCESS with empty array (no matching windows)
     assert.strictEqual(result.type, 'SUCCESS')
     if (result.type === 'SUCCESS') {
-      assert.ok(Array.isArray(result.result))
+      assert.ok(Array.isArray(result.result.windows))
     }
   })
 })

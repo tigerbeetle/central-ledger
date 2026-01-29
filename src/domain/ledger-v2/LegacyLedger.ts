@@ -55,6 +55,8 @@ import {
   SettlementUpdateCommand,
   GetSettlementWindowsQuery,
   GetSettlementWindowsQueryResponse,
+  SettlementWindow,
+  SettlementWindowState,
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
@@ -457,7 +459,7 @@ export interface LegacyLedgerDependencies {
         enums: any
       ) => Promise<Array<{
         settlementWindowId: number
-        state: number
+        state: string
         reason: string | null
         createdDate: Date
         changedDate: Date
@@ -2124,10 +2126,37 @@ export default class LegacyLedger implements Ledger {
         legacyQuery.currency = query.currency
       }
 
-      const settlementWindows = await this.deps.settlement.settlementWindows.getByParams(
+      const legacyWindows = await this.deps.settlement.settlementWindows.getByParams(
         { query: legacyQuery },
         this.deps.settlement.enums
       )
+
+      // Map legacy format to SettlementWindow format
+      const settlementWindows: SettlementWindow[] = legacyWindows.map((w) => {
+        let state: SettlementWindowState
+        switch (w.state) {
+          case 'OPEN':
+          case 'CLOSED':
+          case 'PENDING_SETTLEMENT':
+          case 'SETTLED':
+          case 'ABORTED':
+          case 'PROCESSING':
+          case 'FAILED':
+            state = w.state
+            break
+          default:
+            throw new Error(`Invalid settlement window state: ${w.state}`)
+        }
+
+        return {
+          id: w.settlementWindowId,
+          state,
+          reason: w.reason ?? '',
+          createdDate: w.createdDate,
+          changedDate: w.changedDate,
+          content: w.content || []
+        }
+      })
 
       return {
         type: 'SUCCESS',

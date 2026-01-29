@@ -605,9 +605,7 @@ export type GetSettlementWindowsQuery = {
   currency?: string
 }
 
-export type GetSettlementWindowsQueryResponse = {
-
-}
+export type GetSettlementWindowsQueryResponse = Array<SettlementWindow>
 
 export type GetSettlementQuery = {
   /**

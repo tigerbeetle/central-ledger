@@ -522,7 +522,7 @@
   "SERVER_PRINT_ROUTES_ON_STARTUP": true,
   "EXPERIMENTAL": {
     "LEDGER": {
-      "PRIMARY": "LEGACY",
+      "PRIMARY": "TIGERBEETLE",
       "SECONDARY": "NONE"
     },
     "TIGERBEETLE": {

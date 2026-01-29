@@ -304,4 +304,16 @@ export default class TigerBeetleLedgerHelper {
 
     return timeoutSeconds
   }
+
+  public static mergeWith<T>(
+    a: Record<string, T>,
+    b: Record<string, T>,
+    onConflict: (aVal: T, bVal: T) => T
+  ): Record<string, T> {
+    const result = { ...a }
+    for (const key of Object.keys(b)) {
+      result[key] = key in a ? onConflict(a[key], b[key]) : b[key]
+    }
+    return result
+  }
 }

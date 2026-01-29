@@ -66,6 +66,7 @@ import {
   GetSettlementWindowsQuery,
   GetSettlementWindowsQueryResponse,
 } from "./types";
+import { first } from 'lodash';
 
 const NS_PER_MS = 1_000_000n
 
@@ -1926,8 +1927,8 @@ export default class TigerBeetleLedger implements Ledger {
     const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
 
     // Funds withdrawal internally uses Pending/Posted, but doesn't expose this in the API
-    const settlementValue = (accountDeposit.debits_posted - accountDeposit.credits_pending 
-      - accountDeposit.credits_posted) * -1n  
+    const settlementValue = (accountDeposit.debits_posted - accountDeposit.credits_pending
+      - accountDeposit.credits_posted) * -1n
 
     // I'm pretty sure this should always be 0
     const settlementReservedValue = 0
@@ -3163,18 +3164,82 @@ export default class TigerBeetleLedger implements Ledger {
   // ============================================================================
 
   /**
-   * Helper to query TigerBeetle for transfers in time range
-   * TODO: Implement proper query from TigerBeetle ledger
+   * Look up all Fulfilled transfers in a given time range.
    */
-  private async getTransfersInTimeRange(
-    startTime: Date,
-    endTime: Date
-  ): Promise<Array<{ payerId: string, payeeId: string, amount: bigint, currency: string }>> {
-    // TODO: Query TigerBeetle transfer history/ledger for transfers in this range
-    // This would use TB's query API or filter existing transfer specs
+  private async getNetMovementsInRange(startTime: Date, endTime: Date, currency: string):
+    Promise<Record<string, { owing: bigint, owed: bigint }>> {
+    // Look up all accountIds for currencies for payee/payer mapping
+    // TODO(LD): we could optimize this by filtering on currency
+    // Map from accountId => dfspId
+    const accountDfspMap = (await this.deps.specStore.queryAccountsAll())
+      .filter(meta => meta.currency === currency)
+      .reduce((acc, curr) => {
+        acc[curr.reserved.toString()] = curr.dfspId
+        acc[curr.commitedOutgoing.toString()] = curr.dfspId
+        return acc
+      }, {} as Record<string, string>)
+    if (Object.keys(accountDfspMap).length === 0) {
+      throw new Error(`no AccountSpecs found for currency: ${currency}.`)
+    }
 
-    // Placeholder implementation - need to implement actual TB query
-    throw new Error('getTransfersInTimeRange not yet implemented - need to query TigerBeetle ledger')
+    const timestampMin = BigInt(startTime.getTime()) * NS_PER_MS
+    const timestampMax = BigInt(endTime.getTime()) * NS_PER_MS
+    const queryFilter: QueryFilter = {
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      ledger: 0,
+      code: TransferCode.Clearing_Fulfil,
+      timestamp_min: timestampMin,
+      timestamp_max: timestampMax,
+      limit: Helper.maxBatchSize,
+      flags: 0
+    }
+    const fulfilledTransfers = await this.deps.client.queryTransfers(queryFilter)
+    let totalTransferCount = fulfilledTransfers.length
+
+    let nettedAmounts: Record<string, { owing: bigint, owed: bigint }> = {}
+    // initialize
+    Object.values(accountDfspMap).forEach(dfspId => nettedAmounts[dfspId] = { owing: 0n, owed: 0n })
+
+    // Helper
+    const netTransfersToAmounts = (transfers: Array<Transfer>, net: Record<string, { owing: bigint, owed: bigint }>) => {
+      for (const transfer of fulfilledTransfers) {
+        const payerId = accountDfspMap[transfer.debit_account_id.toString()]
+        const payeeId = accountDfspMap[transfer.credit_account_id.toString()]
+        const payerCurrent = net[payerId]
+        assert(payerCurrent)
+        const payeeCurrent = net[payeeId]
+        assert(payeeCurrent)
+
+        // increment owing/owed for each Dfsp
+        net[payerId] = {
+          owing: payerCurrent.owing + transfer.amount,
+          owed: payerCurrent.owed
+        }
+        net[payeeId] = {
+          owing: payeeCurrent.owing,
+          owed: payeeCurrent.owed + transfer.amount
+        }
+      }
+      return net
+    }
+    nettedAmounts = netTransfersToAmounts(fulfilledTransfers, nettedAmounts)
+
+    let keepPaging = fulfilledTransfers.length === Helper.maxBatchSize
+    while (keepPaging) {
+      const nextPage = await this.deps.client.queryTransfers({
+        ...queryFilter,
+        timestamp_min: fulfilledTransfers.at(-1).timestamp
+      })
+      totalTransferCount += nextPage.length
+      nettedAmounts = netTransfersToAmounts(nextPage, nettedAmounts)
+      keepPaging = nextPage.length === Helper.maxBatchSize
+    }
+
+    logger.debug(`getNetMovementsInRange(): netted amounts from ${totalTransferCount} transfers.`)
+
+    return nettedAmounts
   }
 
   /**
@@ -3275,12 +3340,21 @@ export default class TigerBeetleLedger implements Ledger {
     }
   }
 
-  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{id: number}>> {
+  public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{ id: number }>> {
     const { windowIds, model, reason } = cmd
 
     try {
       return await this.deps.knex.transaction(async (trx) => {
-        // 1. Create the settlement record
+        // Lookup the settlement model
+        const [currencyRecord] = await trx('settlementModel')
+          .where('name', cmd.model)
+          .select('currencyId as currency')
+          .limit(1)
+        assert(currencyRecord, `could not find currency for model: ${cmd.model}`)
+        assert(currencyRecord.currency, `could not find currency for model: ${cmd.model}`)
+        let currency = currencyRecord.currency
+
+        // Create the settlement record
         const [settlementId] = await trx('tigerbeetleSettlement').insert({
           state: 'PENDING',
           model,
@@ -3288,59 +3362,57 @@ export default class TigerBeetleLedger implements Ledger {
           created_at: new Date()
         })
 
-        // 2. Link windows to this settlement
+        // Link windows to this settlement
         await trx('tigerbeetleSettlementWindowMapping').insert(
           windowIds.map(windowId => ({ settlement_id: settlementId, window_id: windowId }))
         )
 
-        // 3. Get time ranges for all windows
+        // Get time ranges for all windows
         const windows = await trx('tigerbeetleSettlementWindow')
           .whereIn('id', windowIds)
           .select('id', 'opened_at', 'closed_at')
 
-        // 4. Query TigerBeetle for transfers in these time ranges
-        const netAmounts = new Map<string, { amount: bigint, currency: string }>() // key: dfspId:currency
-
-        for (const window of windows) {
-          const transfers = await this.getTransfersInTimeRange(
-            window.opened_at,
-            window.closed_at
+        // Get the net movements for each window, and sum together
+        const [firstWindow, ...remainingWindows] = windows
+        let settlementNet = await this.getNetMovementsInRange(
+          firstWindow.opened_at, 
+          firstWindow.closed_at,
+          currency
+        )
+        for (const window of remainingWindows) {
+          const windowNet = await this.getNetMovementsInRange(
+            window.opened_at, window.closed_at, currency
           )
 
-          // 5. Aggregate in memory
-          for (const transfer of transfers) {
-            // Payer (debit)
-            const payerKey = `${transfer.payerId}:${transfer.currency}`
-            const payerCurrent = netAmounts.get(payerKey) || { amount: 0n, currency: transfer.currency }
-            netAmounts.set(payerKey, {
-              amount: payerCurrent.amount + transfer.amount,
-              currency: transfer.currency
-            })
-
-            // Payee (credit)
-            const payeeKey = `${transfer.payeeId}:${transfer.currency}`
-            const payeeCurrent = netAmounts.get(payeeKey) || { amount: 0n, currency: transfer.currency }
-            netAmounts.set(payeeKey, {
-              amount: payeeCurrent.amount - transfer.amount,
-              currency: transfer.currency
-            })
-          }
+          // Merge together
+          settlementNet = Helper.mergeWith(settlementNet, windowNet, (a, b) => {
+            return {
+              owing: a.owing + b.owing,
+              owed: a.owed + b.owed
+            }
+          })
         }
 
-        // 6. Convert to settlement balances and insert
+        // Convert to settlement balances and insert
         const balances = []
-        for (const [key, { amount, currency }] of netAmounts.entries()) {
-          const [dfspId] = key.split(':')
-          if (amount === 0n) continue // Skip zero balances
+        const assetScale = this.currencyManager.getAssetScale(currency)
+        for (const dfspId of Object.keys(settlementNet)) {
+          const {owing, owed} = settlementNet[dfspId]
+          // If dfsp is owed more than is owing, hub must pay out
+          // if dfsp owes more than it is owed, hub must collect in net
+          const direction = owed > owing ? 'INBOUND' : 'OUTBOUND'
+          let netAmount = 0n
+          switch (direction) {
+            case 'INBOUND': netAmount = owed - owing; break;
+            case 'OUTBOUND': netAmount = owing - owed; break;
+          }
 
-          const assetScale = this.currencyManager.getAssetScale(currency)
-          const absAmount = amount < 0n ? -amount : amount
           balances.push({
             settlement_id: settlementId,
             participant_id: dfspId,
             currency,
-            amount: Helper.toRealAmount(absAmount, assetScale),
-            direction: amount > 0n ? 'INBOUND' : 'OUTBOUND',
+            amount: Helper.toRealAmount(netAmount, assetScale),
+            direction,
             state: 'PENDING'
           })
         }
@@ -3377,11 +3449,11 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
-      return {
-        type: 'FAILURE',
-        error: new Error('not implemented')
-      }
+    return {
+      type: 'FAILURE',
+      error: new Error('not implemented')
     }
+  }
 
   /**
    * Helper method to determine if we need to join with settlement tables
@@ -3398,11 +3470,11 @@ export default class TigerBeetleLedger implements Ledger {
   private buildBaseSettlementWindowQuery() {
     return this.deps.knex('tigerbeetleSettlementWindow as tsw')
       .select(
-        'tsw.id as settlementWindowId',
+        'tsw.id',
         'tsw.state',
         'tsw.reason',
-        'tsw.opened_at as createdDate',
-        'tsw.closed_at as changedDate'
+        'tsw.opened_at',
+        'tsw.closed_at'
       )
       .orderBy('tsw.opened_at', 'desc')
   }
@@ -3416,11 +3488,11 @@ export default class TigerBeetleLedger implements Ledger {
       .leftJoin('tigerbeetleSettlementWindowMapping as tswm', 'tswm.window_id', 'tsw.id')
       .leftJoin('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'tswm.settlement_id')
       .select(
-        'tsw.id as settlementWindowId',
+        'tsw.id',
         'tsw.state',
         'tsw.reason',
-        'tsw.opened_at as createdDate',
-        'tsw.closed_at as changedDate'
+        'tsw.opened_at',
+        'tsw.closed_at'
       )
       .orderBy('tsw.opened_at', 'desc')
       .distinct()
@@ -3455,7 +3527,7 @@ export default class TigerBeetleLedger implements Ledger {
 
   public async getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>> {
     try {
-      logger.info(`TigerBeetleLedger.getSettlementWindows() with query: ${JSON.stringify(query)}`)
+      await this.ensureOpenSettlementWindow()
 
       // Determine if we need joins for participant/currency filtering
       const needsJoins = this.needsSettlementJoins(query)
@@ -3469,7 +3541,57 @@ export default class TigerBeetleLedger implements Ledger {
       queryBuilder = this.applySettlementWindowFilters(queryBuilder, query)
 
       // Execute query
-      const windows = await queryBuilder
+      const dbRows = await queryBuilder
+
+      if (dbRows.length === 0) {
+        return {
+          type: 'SUCCESS',
+          result: []
+        }
+      }
+
+      // Get all window IDs for content query
+      const windowIds = dbRows.map((row: any) => row.id)
+
+      // Fetch all content for all windows in a single query
+      const contentRows = await this.deps.knex('tigerbeetleSettlementWindowMapping as tswm')
+        .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
+        .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
+        .whereIn('tswm.window_id', windowIds)
+        .select(
+          'tswm.window_id',
+          'tsb.id',
+          'ts.state',
+          'tsb.currency as currencyId',
+          'ts.created_at as createdDate',
+          'ts.created_at as changedDate'
+        )
+
+      // Group content by window_id
+      const contentByWindow = new Map<number, Array<any>>()
+      for (const row of contentRows) {
+        if (!contentByWindow.has(row.window_id)) {
+          contentByWindow.set(row.window_id, [])
+        }
+        contentByWindow.get(row.window_id)!.push({
+          id: row.id,
+          state: row.state,
+          ledgerAccountType: 'POSITION', // TigerBeetle doesn't distinguish account types like legacy
+          currencyId: row.currencyId,
+          createdDate: row.createdDate,
+          changedDate: row.changedDate
+        })
+      }
+
+      // Map database rows to SettlementWindow format
+      const windows = dbRows.map((row: any) => ({
+        id: row.id,
+        state: row.state,
+        reason: row.reason,
+        createdDate: row.opened_at,
+        changedDate: row.closed_at,
+        content: contentByWindow.get(row.id) || []
+      }))
 
       logger.info(`TigerBeetleLedger.getSettlementWindows() found ${windows.length} windows`)
 

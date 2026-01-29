@@ -49,6 +49,9 @@ exports.up = async (knex) => {
       return knex.schema.createTable('tigerbeetleSettlement', (t) => {
         t.bigIncrements('id').primary().notNullable()
         t.enum('state', ['PENDING', 'PROCESSING', 'COMMITTED', 'ABORTED']).notNullable()
+
+        // TODO(LD): TODO: this should probably be modelId, and a foreign reference to the
+        // Settlement model table
         t.string('model', 128).notNullable()
         t.string('reason', 512).nullable()
         t.dateTime('created_at').notNullable().defaultTo(knex.fn.now())

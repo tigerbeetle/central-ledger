@@ -51,6 +51,22 @@ interface SettlementWindowsGetRequest extends Request {
   }
 }
 
+type SettlementWindowsGetResponse = Array<{ 
+  settlementWindowId: number,
+  state: SettlementWindowState,
+  reason: string,
+  createdDate: Date,
+  changedDate: Date,
+  content: Array<{
+    id: number,
+    state: string
+    ledgerAccountType: string
+    currencyId: string,
+    createdDate: Date,
+    changedDate: Date,
+  }>
+}>
+
 /**
  * summary: Returns a Settlement Window(s) as per parameter(s).
  * description:
@@ -138,7 +154,17 @@ async function get(
       return ErrorHandler.Factory.reformatFSPIOPError(result.error) as any
     }
 
-    return h.response(result.result)
+    // Map back from internal representation to DTO
+    const settlementWindowsDto: SettlementWindowsGetResponse = result.result.map(window => {
+      const { id, ...rest } = window
+      return {
+        settlementWindowId: id,
+        ...rest
+      }
+    })
+
+    return h.response(settlementWindowsDto)
+
     // const Enums = await (request.server.methods as any).enums('settlementWindowStates')
     // const settlementWindowResult = await settlementWindows.getByParams({ query: request.query }, Enums)
     // return h.response(settlementWindowResult)
