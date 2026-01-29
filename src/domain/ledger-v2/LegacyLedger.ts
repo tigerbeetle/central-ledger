@@ -53,6 +53,8 @@ import {
   GetSettlementQuery,
   GetSettlementQueryResponse,
   SettlementUpdateCommand,
+  GetSettlementWindowsQuery,
+  GetSettlementWindowsQueryResponse,
 } from './types';
 import { Ledger } from './Ledger';
 import { safeStringToNumber } from '../../shared/config/util';
@@ -431,6 +433,44 @@ export interface LegacyLedgerDependencies {
         },
         enums: any
       ) => Promise<any>
+      abortById: (
+        settlementId: number,
+        payload: {
+          state: string
+          reason: string
+          externalReference?: string
+        },
+        enums: any
+      ) => Promise<any>
+    }
+    settlementWindows: {
+      getByParams: (
+        params: {
+          query: {
+            participantId?: string
+            state?: string
+            fromDateTime?: string
+            toDateTime?: string
+            currency?: string
+          }
+        },
+        enums: any
+      ) => Promise<Array<{
+        settlementWindowId: number
+        state: number
+        reason: string | null
+        createdDate: Date
+        changedDate: Date
+        content?: Array<{
+          id: number
+          settlementWindowId: number
+          state: string
+          ledgerAccountType: string
+          currencyId: string
+          createdDate: Date
+          changedDate: Date
+        }>
+      }>>
     }
     enums: {
       ledgerAccountTypes: Record<string, number>
@@ -1923,9 +1963,51 @@ export default class LegacyLedger implements Ledger {
   }
 
   public async settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>> {
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
+    assert(cmd)
+    assert(cmd.id)
+
+    logger.info(`settlementAbort() with cmd: ${JSON.stringify(cmd)}`)
+
+    try {
+      // Get the current settlement to check its state
+      const settlement = await this.deps.settlement.settlementDomain.getById(
+        { settlementId: cmd.id },
+        this.deps.settlement.enums
+      )
+
+      // Only allow aborting if settlement is in PENDING_SETTLEMENT state
+      if (settlement.state !== 'PENDING_SETTLEMENT') {
+        const error = ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+          `Cannot abort settlement ${cmd.id} - settlement must be in PENDING_SETTLEMENT state, but is in ${settlement.state} state`
+        )
+        logger.error(error)
+        return {
+          type: 'FAILURE',
+          error
+        }
+      }
+
+      const payload = {
+        state: 'ABORTED',
+        reason: 'Settlement aborted',
+        externalReference: ''
+      }
+
+      await this.deps.settlement.settlementModel.abortById(
+        cmd.id,
+        payload,
+        this.deps.settlement.enums
+      )
+
+      return {
+        type: 'SUCCESS'
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
     }
   }
 
@@ -1940,52 +2022,116 @@ export default class LegacyLedger implements Ledger {
   public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
     assert(cmd)
     assert(cmd.id)
-    assert(cmd.accountId)
-    assert(cmd.externalReference)
-    assert(cmd.participantId)
-    assert(cmd.participantState)
-    assert(cmd.reason)
+    assert(cmd.updates)
+    assert(Array.isArray(cmd.updates))
+    assert(cmd.updates.length > 0, 'settlementUpdate requires at least one update')
 
-    logger.info(`settlementUpdate() with cmd: ${JSON.stringify(cmd)}`)
-
-    // Map states back to Legacy representation
-    let state: 'PS_TRANSFERS_RECORDED' | 'PS_TRANSFERS_RESERVED' | 'PS_TRANSFERS_COMMITTED' | 'SETTLED'
-    switch (cmd.participantState) {
-      case 'RECORDED': state = 'PS_TRANSFERS_RECORDED'
-        break
-      case 'RESERVED': state = 'PS_TRANSFERS_RESERVED'
-        break
-      case 'COMMITTED': state = 'PS_TRANSFERS_COMMITTED'
-        break
-      case 'SETTLED': state = 'SETTLED'
-        break
-      default: {
-        throw new Error(`Unexpected cmd.participantState: ${cmd.participantState}. Expected it to be \
-          [RECORDED | RESERVED | COMMITTED | SETTLED]`)
+    // Helper to map state to legacy representation
+    const mapState = (participantState: string): 'PS_TRANSFERS_RECORDED' | 'PS_TRANSFERS_RESERVED' | 'PS_TRANSFERS_COMMITTED' | 'SETTLED' => {
+      switch (participantState) {
+        case 'RECORDED': return 'PS_TRANSFERS_RECORDED'
+        case 'RESERVED': return 'PS_TRANSFERS_RESERVED'
+        case 'COMMITTED': return 'PS_TRANSFERS_COMMITTED'
+        case 'SETTLED': return 'SETTLED'
+        default: {
+          throw new Error(`Unexpected participantState: ${participantState}. Expected it to be \
+            [RECORDED | RESERVED | COMMITTED | SETTLED]`)
+        }
       }
     }
+
     try {
-      const payload = {
-        participants: [
-          {
-            id: cmd.participantId,
-            accounts: [
-              {
-                id: cmd.accountId,
-                state,
-                reason: cmd.reason,
-                externalReference: cmd.externalReference
-              }
-            ]
-          }
-        ]
+      // Group updates by participantId to batch accounts per participant
+      const participantMap = new Map<number, Array<{
+        id: number,
+        state: string,
+        reason: string,
+        externalReference: string
+      }>>()
+
+      for (const update of cmd.updates) {
+        assert(update.participantId)
+        assert(update.accountId)
+        assert(update.participantState)
+        assert(update.reason)
+        assert(update.externalReference)
+
+        const state = mapState(update.participantState)
+
+        if (!participantMap.has(update.participantId)) {
+          participantMap.set(update.participantId, [])
+        }
+
+        participantMap.get(update.participantId)!.push({
+          id: update.accountId,
+          state,
+          reason: update.reason,
+          externalReference: update.externalReference
+        })
       }
+
+      // Build participants array from grouped updates
+      const participants = Array.from(participantMap.entries()).map(([participantId, accounts]) => ({
+        id: participantId,
+        accounts
+      }))
+
+      const payload = { participants }
+
       await this.deps.settlement.settlementModel.putById(
         cmd.id, payload, this.deps.settlement.enums
       )
 
       return {
         type: 'SUCCESS'
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  public async getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>> {
+    assert(query)
+
+    logger.info(`getSettlementWindows() with query: ${JSON.stringify(query)}`)
+
+    try {
+      // Transform query to legacy format
+      const legacyQuery: {
+        participantId?: string
+        state?: string
+        fromDateTime?: string
+        toDateTime?: string
+        currency?: string
+      } = {}
+
+      if (query.participantId !== undefined) {
+        legacyQuery.participantId = query.participantId.toString()
+      }
+      if (query.state) {
+        legacyQuery.state = query.state
+      }
+      if (query.fromDateTime) {
+        legacyQuery.fromDateTime = query.fromDateTime.toISOString()
+      }
+      if (query.toDateTime) {
+        legacyQuery.toDateTime = query.toDateTime.toISOString()
+      }
+      if (query.currency) {
+        legacyQuery.currency = query.currency
+      }
+
+      const settlementWindows = await this.deps.settlement.settlementWindows.getByParams(
+        { query: legacyQuery },
+        this.deps.settlement.enums
+      )
+
+      return {
+        type: 'SUCCESS',
+        result: settlementWindows
       }
     } catch (err) {
       return {

@@ -36,7 +36,7 @@ import * as EventSdk from '@mojaloop/event-sdk'
 import type { Request, ResponseToolkit, ResponseObject } from '@hapi/hapi'
 import { Util, Enum } from '@mojaloop/central-services-shared'
 import assert from 'assert'
-import { getLedger } from '../../../../../../api/helper'
+import { getLedger, mapSettlementState } from '../../../../../../api/helper'
 import { SettlementUpdateCommand } from 'src/domain/ledger-v2/types'
 
 const Settlements = require('../../../../../domain/settlement/index')
@@ -136,21 +136,7 @@ async function put(
     assert(account.state)
     assert(account.externalReference)
 
-    let participantState: 'RECORDED' | 'RESERVED' | 'COMMITTED' | 'SETTLED'
-    switch (account.state) {
-      case 'PS_TRANSFERS_RECORDED': participantState = 'RECORDED'
-        break
-      case 'PS_TRANSFERS_RESERVED': participantState = 'RESERVED'
-        break
-      case 'PS_TRANSFERS_COMMITTED': participantState = 'COMMITTED'
-        break
-      case 'SETTLED': participantState = 'SETTLED'
-        break
-      default: {
-        throw new Error(`Unexpected account.state: ${account.state}. Expected it to be \
-          [PS_TRANSFERS_RECORDED| PS_TRANSFERS_RESERVED | PS_TRANSFERS_COMMITTED | SETTLED]`)
-      }
-    }
+    const participantState = mapSettlementState(account.state)
 
     const { span, headers } = request as any
     const spanTags = Util.EventFramework.getSpanTags(
@@ -163,14 +149,16 @@ async function put(
     span.setTags(spanTags)
     await span.audit(request.payload, EventSdk.AuditEventAction.start)
 
-    // TODO(LD): we should convert from participantId to dfspId
+    // TODO(LD): we should convert from participantId to dfspId?
     const cmd: SettlementUpdateCommand = {
       id,
-      participantId,
-      accountId: account.id,
-      participantState,
-      reason: account.reason,
-      externalReference: account.externalReference
+      updates: [{
+        participantId,
+        accountId: account.id,
+        participantState,
+        reason: account.reason,
+        externalReference: account.externalReference
+      }]
     }
     const settlementUpdateResponse = await ledger.settlementUpdate(cmd)
     if (settlementUpdateResponse.type === 'FAILURE') {

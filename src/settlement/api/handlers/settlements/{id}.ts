@@ -36,6 +36,9 @@ import * as EventSdk from '@mojaloop/event-sdk'
 import type { Request, ResponseToolkit, ResponseObject } from '@hapi/hapi'
 import { Util, Enum } from '@mojaloop/central-services-shared'
 import { logger } from '../../../../shared/logger'
+import { getLedger, mapSettlementState } from '../../../../api/helper'
+import { SettlementAbortCommand, SettlementUpdateCommand } from 'src/domain/ledger-v2/types'
+import assert from 'assert'
 
 
 const Settlements = require('../../../domain/settlement/index')
@@ -53,7 +56,7 @@ interface SettlementUpdatePayload {
       id: number
       state: string
       reason: string
-      externalReference?: string
+      externalReference: string
     }>
   }>
   state?: string
@@ -115,45 +118,120 @@ async function get(
 async function put(
   request: SettlementPutRequest
 ): Promise<ResponseObject> {
-  const settlementId = request.params.id
   try {
+    assert(request)
+    const ledger = getLedger(request)
+    assert(request.params)
+    assert(request.params.id)
+    assert(request.payload)
+
+    // shortcut
+    const id = request.params.id
+    const payload = request.payload
+
     const { span, headers } = request as any
     const spanTags = Util.EventFramework.getSpanTags(
       Enum.Events.Event.Type.SETTLEMENT,
       Enum.Events.Event.Action.PUT,
-      `sid=${settlementId}`,
+      `sid=${id}`,
       headers[Enum.Http.Headers.FSPIOP.SOURCE],
       headers[Enum.Http.Headers.FSPIOP.DESTINATION]
     )
     span.setTags(spanTags)
-    await span.audit(request.payload, EventSdk.AuditEventAction.start)
+    await span.audit(payload, EventSdk.AuditEventAction.start)
 
-    const p = request.payload
-    if (p.participants && (p.state || p.reason || p.externalReference)) {
-      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'No other properties are allowed when participants is provided')
-    } else if ((p.state && !p.reason) || (!p.state && p.reason)) {
-      const error = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.MISSING_ELEMENT, 'State and reason are mandatory')
-      logger.error(error)
-      throw error
+    let updateType: 'ABORT' | 'SETTLE'
+    if (payload.participants && (payload.state || payload.reason || payload.externalReference)) {
+      throw ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+        'No other properties are allowed when participants is provided'
+      )
     }
-    const Enums = {
-      ledgerAccountTypes: await (request.server.methods as any).enums('ledgerAccountTypes'),
-      ledgerEntryTypes: await (request.server.methods as any).enums('ledgerEntryTypes'),
-      participantLimitTypes: await (request.server.methods as any).enums('participantLimitTypes'),
-      settlementStates: await (request.server.methods as any).enums('settlementStates'),
-      settlementWindowStates: await (request.server.methods as any).enums('settlementWindowStates'),
-      transferParticipantRoleTypes: await (request.server.methods as any).enums('transferParticipantRoleTypes'),
-      transferStates: await (request.server.methods as any).enums('transferStates'),
-      transferStateEnums: await (request.server.methods as any).enums('transferStateEnums')
-    }
-    if (p.participants) {
-      return await Settlements.putById(settlementId, request.payload, Enums)
-    } else if (p.state && p.state === Enums.settlementStates.ABORTED) {
-      return await Settlements.abortById(settlementId, request.payload, Enums)
+
+    if (payload.participants) {
+      updateType = 'SETTLE'
+    } else if (payload.state) {
+      if (payload.state !== 'ABORTED') {
+        const error = ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
+          'Invalid state value - only ABORTED is supported'
+        )
+        logger.error(error)
+        throw error
+      }
+
+      if (!payload.reason) {
+        const error = ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.MISSING_ELEMENT, 'State and reason are mandatory'
+        )
+        logger.error(error)
+        throw error
+      }
+
+      updateType = 'ABORT'
     } else {
-      const error = ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'Invalid request payload input')
+      const error = ErrorHandler.Factory.createFSPIOPError(
+        ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR, 'Invalid request payload input'
+      )
       logger.error(error)
       throw error
+    }
+
+    // Execute based on update type
+    switch (updateType) {
+      case 'ABORT': {
+        assert(payload.reason)
+        const settlementUpdateResponse = await ledger.settlementAbort({ id, reason: payload.reason })
+        if (settlementUpdateResponse.type === 'FAILURE') {
+          return ErrorHandler.Factory.reformatFSPIOPError(settlementUpdateResponse.error) as any
+        }
+
+        return true as any
+      }
+      case 'SETTLE': {
+        // Flatten participants and accounts into updates array
+        const updates: SettlementUpdateCommand['updates'] = []
+        for (const participant of payload.participants) {
+          for (const account of participant.accounts) {
+            assert(participant.id)
+            assert(account.id)
+            assert(account.state)
+            assert(account.reason)
+            assert(account.externalReference)
+            updates.push({
+              participantId: participant.id,
+              accountId: account.id,
+              participantState: mapSettlementState(account.state),
+              reason: account.reason,
+              externalReference: account.externalReference
+            })
+          }
+        }
+
+        const cmd: SettlementUpdateCommand = {
+          id,
+          updates
+        }
+        const settlementUpdateResponse = await ledger.settlementUpdate(cmd)
+        if (settlementUpdateResponse.type === 'FAILURE') {
+          return ErrorHandler.Factory.reformatFSPIOPError(settlementUpdateResponse.error) as any
+        }
+
+        return true as any
+
+        // Old implementation
+        // const Enums = {
+        //   ledgerAccountTypes: await (request.server.methods as any).enums('ledgerAccountTypes'),
+        //   ledgerEntryTypes: await (request.server.methods as any).enums('ledgerEntryTypes'),
+        //   participantLimitTypes: await (request.server.methods as any).enums('participantLimitTypes'),
+        //   settlementStates: await (request.server.methods as any).enums('settlementStates'),
+        //   settlementWindowStates: await (request.server.methods as any).enums('settlementWindowStates'),
+        //   transferParticipantRoleTypes: await (request.server.methods as any).enums('transferParticipantRoleTypes'),
+        //   transferStates: await (request.server.methods as any).enums('transferStates'),
+        //   transferStateEnums: await (request.server.methods as any).enums('transferStateEnums')
+        // }
+        // return await Settlements.putById(settlementId, request.payload, Enums)
+      }
     }
   } catch (err) {
     request.server.log('error', err)

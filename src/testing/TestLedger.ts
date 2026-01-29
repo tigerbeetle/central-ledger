@@ -1,5 +1,5 @@
 import { Ledger } from "src/domain/ledger-v2/Ledger";
-import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery, LegacyLedgerDfsp, WithdrawAbortCommand, WithdrawAbortResponse, SettlementCloseWindowCommand, SettlementPrepareCommand, SettlementAbortCommand, SettlementCommitCommand, GetSettlementQuery, GetSettlementQueryResponse, SettlementUpdateCommand } from "src/domain/ledger-v2/types";
+import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery, LegacyLedgerDfsp, WithdrawAbortCommand, WithdrawAbortResponse, SettlementCloseWindowCommand, SettlementPrepareCommand, SettlementAbortCommand, SettlementCommitCommand, GetSettlementQuery, GetSettlementQueryResponse, SettlementUpdateCommand, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse } from "src/domain/ledger-v2/types";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { QueryResult } from "src/shared/results";
@@ -10,6 +10,9 @@ import { QueryResult } from "src/shared/results";
  * @description Use TestLedger as a superclass for test-specific ledger mocks
  */
 export default class TestLedger implements Ledger {
+  getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>> {
+    throw new Error("Method not implemented.");
+  }
   settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
     throw new Error("Method not implemented.");
   }

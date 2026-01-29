@@ -79,7 +79,7 @@ async function get(
   try {
     assert(request)
 
-    // validate all the params here
+    // TODO(LD): Validate all params here
     
 
     const { span, headers } = request as any

@@ -242,6 +242,7 @@ export class HarnessApi implements Harness {
         settlementWindowModel: require('../../settlement/models/settlementWindow'),
         settlementDomain: require('../../settlement/domain/settlement'),
         settlementModel: require('../../settlement/models/settlement'),
+        settlementWindows: require('../../settlement/domain/settlementWindow'),
         enums: require('../../settlement/models/lib/enums')
       },
       clearing: {

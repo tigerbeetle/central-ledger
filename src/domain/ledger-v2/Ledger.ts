@@ -17,6 +17,8 @@ import {
   GetNetDebitCapQuery,
   GetSettlementQuery,
   GetSettlementQueryResponse,
+  GetSettlementWindowsQuery,
+  GetSettlementWindowsQueryResponse,
   HubAccountResponse,
   LegacyLedgerDfsp,
   LegacyLimit,
@@ -121,5 +123,6 @@ export interface Ledger {
    */
   settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>>;
 
+getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>>
   getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse>
 }

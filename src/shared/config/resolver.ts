@@ -203,9 +203,9 @@ const parseAndValidateCurrencyLedgerConfig = (input: any): CurrencyLedgerConfig 
 }
 
 const assertRange = (input: any, minInclusive: number, maxInclusive: number): void => {
-  assert(maxInclusive < minInclusive, `assertRange invalid args - expected maxInclusive > minInclusive`)
+  assert(maxInclusive > minInclusive, `assertRange invalid args - expected maxInclusive > minInclusive`)
   assert(typeof input === 'number')
-  assert(input >= minInclusive && maxInclusive <= 1100, `assertRange valid range: [${minInclusive}, ${maxInclusive}]`)
+  assert(input >= minInclusive && input <= maxInclusive, `assertRange valid range: [${minInclusive}, ${maxInclusive}]`)
 }
 
 const printConfigWarnings = (config: ApplicationConfig): void => {

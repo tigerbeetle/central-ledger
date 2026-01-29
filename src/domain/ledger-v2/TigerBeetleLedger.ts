@@ -63,6 +63,8 @@ import {
   GetSettlementQuery,
   GetSettlementQueryResponse,
   SettlementUpdateCommand,
+  GetSettlementWindowsQuery,
+  GetSettlementWindowsQueryResponse,
 } from "./types";
 
 const NS_PER_MS = 1_000_000n
@@ -1904,6 +1906,9 @@ export default class TigerBeetleLedger implements Ledger {
     const accountDeposit: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Deposit)
     assert(accountDeposit, 'could not find deposit account')
 
+    const accountClearingCredit: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Clearing_Credit)
+    assert(accountClearingCredit, 'could not find clearing credit account')
+
     // Legacy Settlement Balance: How much Dfsp has available to settle.
     // Was a negative number in the legacy API once the dfsp had deposited funds.
     const legacySettlementBalancePosted = (accountDeposit.debits_posted - accountDeposit.credits_posted) * -1n
@@ -1913,15 +1918,17 @@ export default class TigerBeetleLedger implements Ledger {
     // Legacy Position Balance: How much Dfsp is owed or how much this Dfsp owes.
     const clearingBalancePosted = accountUnrestricted.credits_posted - accountUnrestricted.debits_posted
       + accountRestricted.credits_posted - accountRestricted.debits_posted
+      + accountClearingCredit.credits_posted - accountClearingCredit.debits_posted
 
     // instead this should be the net credit balance of the Reserved account
     const clearingBalancePending = accountUnrestricted.credits_pending - accountUnrestricted.debits_pending
     const legacyPositionBalancePosted = (legacySettlementBalancePosted + clearingBalancePosted) * BigInt(-1)
     const legacyPositionBalancePending = (legacySettlementBalancePending + clearingBalancePending) * BigInt(-1)
 
-
     // Funds withdrawal internally uses Pending/Posted, but doesn't expose this in the API
-    const settlementValue = -1n * (accountDeposit.debits_posted - accountDeposit.credits_pending - accountDeposit.credits_posted)
+    const settlementValue = (accountDeposit.debits_posted - accountDeposit.credits_pending 
+      - accountDeposit.credits_posted) * -1n  
+
     // I'm pretty sure this should always be 0
     const settlementReservedValue = 0
 
@@ -3375,6 +3382,109 @@ export default class TigerBeetleLedger implements Ledger {
         error: new Error('not implemented')
       }
     }
+
+  /**
+   * Helper method to determine if we need to join with settlement tables
+   * for participant or currency filtering
+   */
+  private needsSettlementJoins(query: GetSettlementWindowsQuery): boolean {
+    return query.participantId !== undefined || query.currency !== undefined
+  }
+
+  /**
+   * Build base query for settlement windows without joins
+   * Used when only filtering by state or date ranges
+   */
+  private buildBaseSettlementWindowQuery() {
+    return this.deps.knex('tigerbeetle_settlement_window as tsw')
+      .select(
+        'tsw.id as settlementWindowId',
+        'tsw.state',
+        'tsw.reason',
+        'tsw.opened_at as createdDate',
+        'tsw.closed_at as changedDate'
+      )
+      .orderBy('tsw.opened_at', 'desc')
+  }
+
+  /**
+   * Build query with joins to settlement tables
+   * Used when filtering by participant or currency
+   */
+  private buildSettlementWindowQueryWithJoins() {
+    return this.deps.knex('tigerbeetle_settlement_window as tsw')
+      .leftJoin('tigerbeetle_settlement_window_mapping as tswm', 'tswm.window_id', 'tsw.id')
+      .leftJoin('tigerbeetle_settlement_balance as tsb', 'tsb.settlement_id', 'tswm.settlement_id')
+      .select(
+        'tsw.id as settlementWindowId',
+        'tsw.state',
+        'tsw.reason',
+        'tsw.opened_at as createdDate',
+        'tsw.closed_at as changedDate'
+      )
+      .orderBy('tsw.opened_at', 'desc')
+      .distinct()
+  }
+
+  /**
+   * Apply filters to settlement window query
+   */
+  private applySettlementWindowFilters(queryBuilder: any, query: GetSettlementWindowsQuery) {
+    if (query.state) {
+      queryBuilder.where('tsw.state', query.state)
+    }
+
+    if (query.fromDateTime) {
+      queryBuilder.where('tsw.opened_at', '>=', query.fromDateTime)
+    }
+
+    if (query.toDateTime) {
+      queryBuilder.where('tsw.opened_at', '<=', query.toDateTime)
+    }
+
+    if (query.participantId !== undefined) {
+      queryBuilder.where('tsb.participant_id', query.participantId.toString())
+    }
+
+    if (query.currency) {
+      queryBuilder.where('tsb.currency', query.currency)
+    }
+
+    return queryBuilder
+  }
+
+  public async getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>> {
+    try {
+      logger.info(`TigerBeetleLedger.getSettlementWindows() with query: ${JSON.stringify(query)}`)
+
+      // Determine if we need joins for participant/currency filtering
+      const needsJoins = this.needsSettlementJoins(query)
+
+      // Build base query with or without joins
+      let queryBuilder = needsJoins
+        ? this.buildSettlementWindowQueryWithJoins()
+        : this.buildBaseSettlementWindowQuery()
+
+      // Apply all filters
+      queryBuilder = this.applySettlementWindowFilters(queryBuilder, query)
+
+      // Execute query
+      const windows = await queryBuilder
+
+      logger.info(`TigerBeetleLedger.getSettlementWindows() found ${windows.length} windows`)
+
+      return {
+        type: 'SUCCESS',
+        result: windows
+      }
+    } catch (err: any) {
+      logger.error(`TigerBeetleLedger.getSettlementWindows() failed: ${err.message}`, { err })
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
 
   public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
     return {

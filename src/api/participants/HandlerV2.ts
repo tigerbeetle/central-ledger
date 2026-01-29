@@ -598,30 +598,35 @@ export default class ParticipantAPIHandlerV2 {
   }
 
   public async getAccounts(request): Promise<any> {
-    assert(request)
-    assert(request.params)
-    assert(request.params.name)
-    assert(request.query)
-    assert(request.query.currency)
+    // TODO(LD): we need to implement getAccounts with no currency query
+    try {
+      assert(request)
+      assert(request.params)
+      assert(request.params.name)
+      assert(request.query)
+      assert(request.query.currency)
 
-    const name = request.params.name
-    const currency = request.query.currency
-    const ledger = getLedger(request)
-    const ledgerAccountsResponse = await ledger.getDfspAccounts({ dfspId: name, currency })
+      const name = request.params.name
+      const currency = request.query.currency
+      const ledger = getLedger(request)
+      const ledgerAccountsResponse = await ledger.getDfspAccounts({ dfspId: name, currency })
 
-    if (ledgerAccountsResponse.type === 'FAILURE') {
-      Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
-      throw ledgerAccountsResponse.error
-    }
-
-    // Map to legacy compatible API response
-    return ledgerAccountsResponse.accounts.map(acc => {
-      return {
-        ...acc,
-        id: convertBigIntToNumber(acc.id),
-        isActive: acc.isActive ? 1 : 0,
+      if (ledgerAccountsResponse.type === 'FAILURE') {
+        Logger.error(`getAccounts() - failed with error: ${ledgerAccountsResponse.error.message}`)
+        throw ledgerAccountsResponse.error
       }
-    })
+
+      // Map to legacy compatible API response
+      return ledgerAccountsResponse.accounts.map(acc => {
+        return {
+          ...acc,
+          id: convertBigIntToNumber(acc.id),
+          isActive: acc.isActive ? 1 : 0,
+        }
+      })
+    } catch (err) {
+      rethrow.rethrowAndCountFspiopError(err, { operation: 'getAccounts' })
+    }
   }
 
   public async updateAccount(request, h): Promise<unknown> {

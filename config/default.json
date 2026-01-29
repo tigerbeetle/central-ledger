@@ -531,8 +531,9 @@
         {
           "currency": "USD",
           "assetScale": 4,
-          "clearingLedgerId": 10,
-          "settlementLedgerId": 11
+          "ledgerOperation": 1003,
+          "ledgerControl": 2003,
+          "accountIdSettlementBalance": 123098124
         }
       ]
     },

@@ -24,7 +24,7 @@ export type CommandResult<T> = CommandResultSuccess<T> | CommandResultFailure
 /**
  * Empty interface for queries that have no params
  */
-export interface AnyQuery {}
+export interface AnyQuery { }
 
 // ============================================================================
 // Domain Models
@@ -202,7 +202,7 @@ export interface CreateHubAccountCommand {
   settlementModel: SettlementModel
 }
 
-export type CreateHubAccountResponse =  {
+export type CreateHubAccountResponse = {
   type: 'SUCCESS'
 } | {
   type: 'ALREADY_EXISTS'
@@ -216,11 +216,11 @@ export interface CreateDfspCommand {
   currencies: Array<string>
 }
 
-export type CreateDfspResponse =  {
+export type CreateDfspResponse = {
   type: 'SUCCESS'
 } | {
   type: 'ALREADY_EXISTS'
-} |{
+} | {
   type: 'FAILURE'
   error: Error
 }
@@ -237,7 +237,7 @@ export type DepositResponse = {
   type: 'SUCCESS'
 } | {
   type: 'ALREADY_EXISTS'
-} |{
+} | {
   type: 'FAILURE'
   error: Error
 }
@@ -274,7 +274,7 @@ export interface WithdrawAbortCommand {
   transferId: string
 }
 
-export type WithdrawAbortResponse =  {
+export type WithdrawAbortResponse = {
   type: 'SUCCESS'
 } | {
   type: 'FAILURE'
@@ -460,9 +460,9 @@ export enum PrepareResultType {
   FAIL_OTHER = 'FAIL_OTHER',
 }
 
-export type PrepareResult =  {
+export type PrepareResult = {
   type: PrepareResultType.PASS
-} |  {
+} | {
   type: PrepareResultType.DUPLICATE_FINAL
   finalizedTransfer: {
     completedTimestamp: string
@@ -548,6 +548,11 @@ export type SettlementPrepareCommand = {
 }
 
 export type SettlementAbortCommand = {
+  /**
+   * The settlement id
+   */
+  id: number
+  reason: string
 
 }
 
@@ -570,17 +575,38 @@ export type SettlementUpdateCommand = {
    * The settlement id
    */
   id: number
-  participantId: number
 
   /**
-   * TODO(LD):
-   * Not sure if we need this, but it's on the API.
-   * I suspect it shouldn't be, since accountId is internal and shouldn't be exposed
+   * A list of updates to apply to the settlement
    */
-  accountId: number
-  participantState: 'RECORDED' | 'RESERVED' | 'COMMITTED' | 'SETTLED',
-  reason: string
-  externalReference: string
+  updates: Array<{
+    participantId: number
+
+    /**
+     * TODO(LD):
+     * Not sure if we need this, but it's on the API.
+     * I suspect it shouldn't be, since accountId is internal and shouldn't be exposed
+     */
+    accountId: number
+    participantState: 'RECORDED' | 'RESERVED' | 'COMMITTED' | 'SETTLED',
+    reason: string
+    externalReference: string
+  }>
+}
+
+export type SettlementWindowState =  'OPEN' | 'CLOSED' | 'PENDING_SETTLEMENT' | 'SETTLED' 
+  | 'ABORTED' | 'PROCESSING' | 'FAILED'
+
+export type GetSettlementWindowsQuery = {
+  participantId?: number
+  state?: SettlementWindowState
+  fromDateTime?: Date
+  toDateTime?: Date,
+  currency?: string
+}
+
+export type GetSettlementWindowsQueryResponse = {
+
 }
 
 export type GetSettlementQuery = {
@@ -592,8 +618,7 @@ export type GetSettlementQuery = {
 
 export type SettlementWindow = {
   id: number,
-  // TODO(LD): better typing
-  state: string,
+  state: SettlementWindowState,
   reason: string,
   createdDate: Date,
   changedDate: Date,
