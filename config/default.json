@@ -519,7 +519,7 @@
       }
     }
   },
-  "SERVER_PRINT_ROUTES_ON_STARTUP": true,
+  "SERVER_PRINT_ROUTES_ON_STARTUP": false,
   "EXPERIMENTAL": {
     "LEDGER": {
       "PRIMARY": "TIGERBEETLE",

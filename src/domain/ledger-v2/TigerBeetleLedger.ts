@@ -62,6 +62,9 @@ import {
   SettlementCommitCommand,
   GetSettlementQuery,
   GetSettlementQueryResponse,
+  GetSettlementsQuery,
+  GetSettlementsQueryResponse,
+  Settlement,
   SettlementUpdateCommand,
   GetSettlementWindowsQuery,
   GetSettlementWindowsQueryResponse,
@@ -3739,6 +3742,173 @@ export default class TigerBeetleLedger implements Ledger {
         type: 'FAILED',
         error: err
       }
+    }
+  }
+
+  public async getSettlements(query: GetSettlementsQuery): Promise<GetSettlementsQueryResponse> {
+    try {
+      logger.info(`TigerBeetleLedger.getSettlements()`, { query })
+
+      // 1. Build base query on tigerbeetleSettlement with filters
+      let queryBuilder = this.deps.knex('tigerbeetleSettlement as ts')
+
+      if (query.state) {
+        queryBuilder = queryBuilder.where('ts.state', query.state)
+      }
+      if (query.fromDateTime) {
+        queryBuilder = queryBuilder.where('ts.created_at', '>=', query.fromDateTime)
+      }
+      if (query.toDateTime) {
+        queryBuilder = queryBuilder.where('ts.created_at', '<=', query.toDateTime)
+      }
+      if (query.settlementWindowId) {
+        queryBuilder = queryBuilder
+          .join('tigerbeetleSettlementWindowMapping as tswm', 'tswm.settlement_id', 'ts.id')
+          .where('tswm.window_id', query.settlementWindowId)
+      }
+      if (query.participantId || query.currency) {
+        queryBuilder = queryBuilder
+          .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
+          .join('participant as p', 'p.name', 'tsb.dfspId')
+        if (query.participantId) {
+          queryBuilder = queryBuilder.where('p.participantId', query.participantId)
+        }
+        if (query.currency) {
+          queryBuilder = queryBuilder.where('tsb.currency', query.currency)
+        }
+      }
+
+      const settlementRows = await queryBuilder
+        .select('ts.id', 'ts.state', 'ts.model', 'ts.reason', 'ts.created_at')
+        .distinct()
+
+      if (settlementRows.length === 0) {
+        return { type: 'SUCCESS', result: [] }
+      }
+
+      const settlementIds = settlementRows.map((s: any) => s.id)
+
+      // 2. Batch fetch all windows for all settlements
+      const windowRows = await this.deps.knex('tigerbeetleSettlementWindowMapping as tswm')
+        .join('tigerbeetleSettlementWindow as tsw', 'tsw.id', 'tswm.window_id')
+        .whereIn('tswm.settlement_id', settlementIds)
+        .select(
+          'tswm.settlement_id',
+          'tsw.id',
+          'tsw.state',
+          'tsw.reason',
+          'tsw.opened_at',
+          'tsw.closed_at'
+        )
+
+      // 3. Batch fetch all window content
+      const windowIds = windowRows.map((w: any) => w.id)
+      const contentRows = windowIds.length > 0
+        ? await this.deps.knex('tigerbeetleSettlementWindowMapping as tswm')
+            .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
+            .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
+            .whereIn('tswm.window_id', windowIds)
+            .select(
+              'tswm.window_id',
+              'tsb.id',
+              'ts.state',
+              'tsb.currency as currencyId',
+              'ts.created_at as createdDate'
+            )
+        : []
+
+      // 4. Batch fetch all participant balances
+      const balanceRows = await this.deps.knex('tigerbeetleSettlementBalance as tsb')
+        .join('participant as p', 'p.name', 'tsb.dfspId')
+        .whereIn('tsb.settlement_id', settlementIds)
+        .select(
+          'tsb.settlement_id',
+          'tsb.id',
+          'p.participantId',
+          'tsb.currency',
+          'tsb.amount',
+          'tsb.direction',
+          'tsb.state'
+        )
+
+      // 5. Group content by window_id
+      const contentByWindow = new Map<number, Array<any>>()
+      for (const row of contentRows) {
+        if (!contentByWindow.has(row.window_id)) {
+          contentByWindow.set(row.window_id, [])
+        }
+        contentByWindow.get(row.window_id)!.push({
+          id: row.id,
+          state: row.state,
+          ledgerAccountType: 'POSITION',
+          currencyId: row.currencyId,
+          createdDate: row.createdDate,
+          changedDate: row.createdDate
+        })
+      }
+
+      // 6. Group windows by settlement_id
+      const windowsBySettlement = new Map<number, SettlementWindow[]>()
+      for (const w of windowRows) {
+        if (!windowsBySettlement.has(w.settlement_id)) {
+          windowsBySettlement.set(w.settlement_id, [])
+        }
+        windowsBySettlement.get(w.settlement_id)!.push({
+          id: w.id,
+          state: w.state,
+          reason: w.reason ?? '',
+          createdDate: w.opened_at,
+          changedDate: w.closed_at ?? w.opened_at,
+          content: contentByWindow.get(w.id) || []
+        })
+      }
+
+      // 7. Group participants by settlement_id
+      const participantsBySettlement = new Map<number, Map<number, SettlementAccount[]>>()
+      for (const b of balanceRows) {
+        if (!participantsBySettlement.has(b.settlement_id)) {
+          participantsBySettlement.set(b.settlement_id, new Map())
+        }
+        const pMap = participantsBySettlement.get(b.settlement_id)!
+        if (!pMap.has(b.participantId)) {
+          pMap.set(b.participantId, [])
+        }
+        pMap.get(b.participantId)!.push({
+          id: b.id,
+          state: b.state,
+          reason: '',
+          netSettlementAmount: {
+            amount: b.direction === 'OUTBOUND' ? `-${b.amount}` : b.amount.toString(),
+            currency: b.currency
+          }
+        })
+      }
+
+      // 8. Assemble final settlements
+      const settlements: Settlement[] = settlementRows.map((s: any) => {
+        const pMap = participantsBySettlement.get(s.id) || new Map()
+        const participants = Array.from(pMap.entries()).map(([participantId, accounts]) => ({
+          id: participantId,
+          accounts
+        }))
+
+        return {
+          id: s.id,
+          settlementModel: s.model,
+          state: s.state,
+          reason: s.reason ?? '',
+          createdDate: s.created_at,
+          changedDate: s.created_at,
+          settlementWindows: windowsBySettlement.get(s.id) || [],
+          participants
+        }
+      })
+
+      logger.info(`TigerBeetleLedger.getSettlements() found ${settlements.length} settlements`)
+      return { type: 'SUCCESS', result: settlements }
+    } catch (err: any) {
+      logger.error(`TigerBeetleLedger.getSettlements() failed: ${err.message}`, { err })
+      return { type: 'FAILURE', error: err }
     }
   }
 

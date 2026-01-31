@@ -1,5 +1,5 @@
 import { Ledger } from "src/domain/ledger-v2/Ledger";
-import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery, LegacyLedgerDfsp, WithdrawAbortCommand, WithdrawAbortResponse, SettlementCloseWindowCommand, SettlementPrepareCommand, SettlementAbortCommand, SettlementCommitCommand, GetSettlementQuery, GetSettlementQueryResponse, SettlementUpdateCommand, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse } from "src/domain/ledger-v2/types";
+import { CreateHubAccountCommand, CreateHubAccountResponse, GetNetDebitCapQuery, LegacyLimit, PrepareResult, FulfilResult, SweepResult, LookupTransferQuery, LookupTransferQueryResponse, AnyQuery, CommandResult, DepositCommand, DepositResponse, DfspAccountResponse, GetAllDfspsResponse, GetDfspAccountsQuery, GetHubAccountsQuery, HubAccountResponse, LedgerDfsp, WithdrawCommitCommand, WithdrawCommitResponse, WithdrawPrepareCommand, WithdrawPrepareResponse, CreateDfspCommand, CreateDfspResponse, SetNetDebitCapCommand, GetAllDfspAccountsQuery, LegacyLedgerDfsp, WithdrawAbortCommand, WithdrawAbortResponse, SettlementCloseWindowCommand, SettlementPrepareCommand, SettlementAbortCommand, SettlementCommitCommand, GetSettlementQuery, GetSettlementQueryResponse, GetSettlementsQuery, GetSettlementsQueryResponse, SettlementUpdateCommand, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse } from "src/domain/ledger-v2/types";
 import { FusedFulfilHandlerInput } from "src/handlers-v2/FusedFulfilHandler";
 import { FusedPrepareHandlerInput } from "src/handlers-v2/FusedPrepareHandler";
 import { QueryResult } from "src/shared/results";
@@ -17,6 +17,9 @@ export default class TestLedger implements Ledger {
     throw new Error("Method not implemented.");
   }
   getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
+    throw new Error("Method not implemented.");
+  }
+  getSettlements(query: GetSettlementsQuery): Promise<GetSettlementsQueryResponse> {
     throw new Error("Method not implemented.");
   }
   createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {

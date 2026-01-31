@@ -110,6 +110,7 @@
     "@mojaloop/object-store-lib": "12.1.0",
     "@mojaloop/sdk-standard-components": "19.16.0",
     "@now-ims/hapi-now-auth": "2.1.0",
+    "@types/bun": "^1.3.8",
     "ajv": "8.17.1",
     "ajv-keywords": "5.1.0",
     "async": "3.2.6",

@@ -50,7 +50,10 @@ interface SettlementParticipantGetRequest extends Request {
 
 interface SettlementParticipantAccount {
   id: number
-  state: string
+  state: 'PS_TRANSFERS_RECORDED'
+  | 'PS_TRANSFERS_RESERVED'
+  | 'PS_TRANSFERS_COMMITTED'
+  | 'SETTLED'
   reason: string
   externalReference?: string
 }
