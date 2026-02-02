@@ -72,8 +72,12 @@ import {
   SettlementWindowState,
   SettlementAccount,
   SettlementParticipant,
+  InternalSettlementState,
+  LegacySettlementState,
 } from "./types";
-import { first } from 'lodash';
+import { randomUUID } from 'crypto';
+import { TestUtils } from '../../testing/testutils'
+
 
 const NS_PER_MS = 1_000_000n
 
@@ -112,6 +116,28 @@ interface InternalLedgerAccount extends Account {
   // but explicit typing here makes accessing this property easier.
   accountCode: AccountCode
 }
+
+type SettlementModel = {
+  id: bigint,
+  state: InternalSettlementState,
+  model: string,
+  reason?: string,
+  created_at: Date
+}
+
+const mapInternalSettlementStateToLegacy = (state: InternalSettlementState): LegacySettlementState => {
+  switch (state) {
+    case 'PENDING': return 'PENDING_SETTLEMENT'
+    case 'PROCESSING': return 'PS_TRANSFERS_RECORDED'
+    // case 'COMMITTED': return 'PS_TRANSFERS_COMMITTED'
+    case 'COMMITTED': return 'SETTLED'
+    case 'ABORTED': return 'ABORTED'
+    default: {
+      throw new Error(`unexpected state: ${state}. Expected it to be one of [PENDING | PROCESSED | COMMITTED | ABORTED]`)
+    }
+  }
+}
+
 
 /**
  * Internal representation of the Dfsp/Participant Master account
@@ -1917,6 +1943,7 @@ export default class TigerBeetleLedger implements Ledger {
     const accountClearingCredit: InternalLedgerAccount = input.find(acc => acc.accountCode === AccountCode.Clearing_Credit)
     assert(accountClearingCredit, 'could not find clearing credit account')
 
+
     // Legacy Settlement Balance: How much Dfsp has available to settle.
     // Was a negative number in the legacy API once the dfsp had deposited funds.
     const legacySettlementBalancePosted = (accountDeposit.debits_posted - accountDeposit.credits_posted) * -1n
@@ -3213,11 +3240,13 @@ export default class TigerBeetleLedger implements Ledger {
     const netTransfersToAmounts = (transfers: Array<Transfer>, net: Record<string, { owing: bigint, owed: bigint }>) => {
       for (const transfer of fulfilledTransfers) {
         const payerId = accountDfspMap[transfer.debit_account_id.toString()]
+        assert(payerId, `payerId not found for debit_account_id: ${transfer.debit_account_id}`)
         const payeeId = accountDfspMap[transfer.credit_account_id.toString()]
+        assert(payeeId, `payeeId not found for credit_account_id: ${transfer.credit_account_id}`)
         const payerCurrent = net[payerId]
-        assert(payerCurrent)
+        assert(payerCurrent, `payerCurrent not defined`)
         const payeeCurrent = net[payeeId]
-        assert(payeeCurrent)
+        assert(payeeCurrent, 'payeeCurrent not defined')
 
         // increment owing/owed for each Dfsp
         net[payerId] = {
@@ -3382,7 +3411,7 @@ export default class TigerBeetleLedger implements Ledger {
         // Get the net movements for each window, and sum together
         const [firstWindow, ...remainingWindows] = windows
         let settlementNet = await this.getNetMovementsInRange(
-          firstWindow.opened_at, 
+          firstWindow.opened_at,
           firstWindow.closed_at,
           currency
         )
@@ -3404,7 +3433,7 @@ export default class TigerBeetleLedger implements Ledger {
         const balances = []
         const assetScale = this.currencyManager.getAssetScale(currency)
         for (const dfspId of Object.keys(settlementNet)) {
-          const {owing, owed} = settlementNet[dfspId]
+          const { owing, owed } = settlementNet[dfspId]
           // If dfsp is owed more than is owing, hub must pay out
           // if dfsp owes more than it is owed, hub must collect in net
           const direction = owed > owing ? 'INBOUND' : 'OUTBOUND'
@@ -3449,16 +3478,226 @@ export default class TigerBeetleLedger implements Ledger {
   }
 
   public async settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>> {
+    // noop
     return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
+      type: 'SUCCESS',
     }
+
+  }
+
+  private async commitSettlementUpdate(
+    dfspId: string,
+    settlement: Settlement,
+    currency: string,
+    update: SettlementUpdateCommand['updates'][number]
+  ): Promise<void> {
+    if (update.participantState !== 'COMMITTED') {
+      return
+    }
+
+    // Look up the net for this participant.
+    const [contribution] = settlement.participants.filter(participant => participant.id === update.participantId)
+    assert(contribution, `no contribution found for participantId: ${update.participantId}`)
+    assert(contribution.accounts.length === 1, 'expected one account for contribution')
+    const contributionAccount = contribution.accounts[0]
+    assert(contributionAccount.netSettlementAmount)
+    assert(contributionAccount.netSettlementAmount.amount)
+    assert(contributionAccount.netSettlementAmount.currency)
+
+    // TODO(LD): not safe - we should use the internal representation for Settlement with Bigint!
+    const amountStr = contributionAccount.netSettlementAmount.amount
+    const amountRaw = Number.parseFloat(amountStr)
+    const amount = Math.abs(amountRaw)
+    let direction: 'OWING' | 'OWED'
+    if (amountRaw < 0) {
+      direction = 'OWED'
+    } else if (amountRaw > 0) {
+      direction = 'OWING'
+    } else {
+      return
+    }
+
+    // Withdraw funds
+    if (direction === 'OWED') {
+      // Ok now we need to journal across clearing credit 
+      let accounts = TestUtils.unwrapSuccess(
+        await this.getDfspV2({ dfspId })
+      )
+      TestUtils.printLedgerDfsps([accounts])
+      const { accountIdSettlementBalance, ledgerOperation, assetScale } = this.currencyManager.get(currency)
+      const accountSpecResult = await this.deps.specStore.getAccountSpec(dfspId, currency)
+      assert(accountSpecResult.type === 'SpecAccount', `No account spec found for ${dfspId}, ${currency}`)
+
+      const transfers: Array<Transfer> = [
+        // Move clearing credit to unrestricted
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecResult.clearingCredit,
+          credit_account_id: accountSpecResult.unrestricted,
+          amount: Helper.toTigerBeetleAmount(amount, assetScale),
+          ledger: ledgerOperation,
+          flags: TransferFlags.linked,
+        },
+        // Withdraw Liquidity
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecResult.unrestricted,
+          credit_account_id: accountSpecResult.deposit,
+          amount: Helper.toTigerBeetleAmount(amount, assetScale),
+          ledger: ledgerOperation,
+          flags: TransferFlags.linked,
+        },
+        // Increase Deposit by settlement amount
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: accountSpecResult.deposit,
+          credit_account_id: accountIdSettlementBalance,
+          amount: Helper.toTigerBeetleAmount(amount, assetScale),
+          ledger: ledgerOperation,
+          flags: 0
+        }
+      ]
+      const createTransfersResults = await this.deps.client.createTransfers(transfers)
+      if (createTransfersResults.length > 0) {
+        const result = createTransfersResults[0]
+        switch (result.result) {
+          case CreateTransferError.ok:
+            break;
+          default:
+            throw new Error(`balance net owed dfsp - failed with error: ${CreateTransferError[result.result]}`)
+        }
+      }
+      // Ok now we need to journal across clearing credit 
+      accounts = TestUtils.unwrapSuccess(
+        await this.getDfspV2({ dfspId })
+      )
+      TestUtils.printLedgerDfsps([accounts])
+      return
+    }
+
+    assert(direction === 'OWING')
+    let ledgerAccounts = TestUtils.unwrapSuccess(
+      await this.getDfspV2({ dfspId })
+    )
+    TestUtils.printLedgerDfsps([ledgerAccounts])
+
+    const transferId = randomUUID()
+    const cmdDeposit: DepositCommand = {
+      transferId,
+      dfspId,
+      currency,
+      amount,
+      reason: `Settlement deposit for: ${settlement.id}`
+    }
+    const resultCommit = await this.deposit(cmdDeposit)
+    assert(resultCommit.type === 'SUCCESS', `Expected resultCommit.type === 'SUCCESS', but got: ${resultCommit.type}`)
+
+    const { accountIdSettlementBalance, ledgerOperation, assetScale } = this.currencyManager.get(currency)
+    const accountSpecResult = await this.deps.specStore.getAccountSpec(dfspId, currency)
+    assert(accountSpecResult.type === 'SpecAccount', `No account spec found for ${dfspId}, ${currency}`)
+
+    // TODO(LD): combine with the above deposit
+
+    // Now balance out between participants
+    // Dr Settlement_Balance 67
+    //  Cr Deposit_A          67
+    const transfers: Array<Transfer> = [
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: accountIdSettlementBalance,
+        credit_account_id: accountSpecResult.deposit,
+        amount: Helper.toTigerBeetleAmount(amount, assetScale),
+        ledger: ledgerOperation,
+        flags: 0
+      }
+    ]
+    const createTransfersResults = await this.deps.client.createTransfers(transfers)
+    if (createTransfersResults.length > 0) {
+      const result = createTransfersResults[0]
+      switch (result.result) {
+        case CreateTransferError.ok:
+          break;
+        default:
+          throw new Error(`balance net owing dfsp - failed with error: ${CreateTransferError[result.result]}`)
+      }
+    }
+
+    ledgerAccounts = TestUtils.unwrapSuccess(
+      await this.getDfspV2({ dfspId })
+    )
+    TestUtils.printLedgerDfsps([ledgerAccounts])
   }
 
   public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
+    logger.warn(`settlementUpdate(): ${JSON.stringify(cmd)}`)
+    assert(cmd)
+    assert(cmd.id)
+    assert(cmd.updates)
+    assert(Array.isArray(cmd.updates))
+    assert(cmd.updates.length < 1000, 'Expected to have less than 1000 updates to process.')
+
+    try {
+      // TODO(LD): refactor behind interface - need to be able to get currency for settlementId
+      const settlementResponse = await this.getSettlement({ id: cmd.id })
+      assert(settlementResponse.type === 'FOUND', `Failed to find settlement for id: ${cmd.id}.`)
+      const { type, ...settlement } = settlementResponse
+
+      const settlementModel = await this.deps.knex<SettlementModel>('tigerbeetleSettlement')
+        .where('id', cmd.id)
+        .first()
+
+      assert(settlement, `no settlement found for id: ${cmd.id}`)
+
+      const [currencyRecord] = await this.deps.knex('settlementModel')
+        .where('name', settlementModel.model)
+        .select('currencyId as currency')
+        .limit(1)
+      assert(currencyRecord, `could not find currency for model: ${settlementModel.model}`)
+      assert(currencyRecord.currency, `could not find currency for model: ${settlementModel.model}`)
+      let currency = currencyRecord.currency
+
+      // iterate through the updates and apply
+      // for simplicity for dfsps that owe the hub, we will do deposit()
+      // and for dfsps that the hub owes, we will do withdrawPrepare() and withdrawCommit()
+      // only on the transition between RESERVED -> COMMITTED. It's fine for now, since the DST does settlement
+      // in one operation
+      let finalBoss = false
+      for await (const update of cmd.updates) {
+        // TODO(LD): hacky workaround, we need to update the interface to have dfspId and not participantId
+        const [dfspIdRecord] = await this.deps.knex(`participant`)
+          .where(`participantId`, update.participantId)
+          .select('name as dfspId')
+          .limit(1)
+        const dfspId = dfspIdRecord.dfspId
+        assert(dfspId, `dfspId not found for participant: ${update.participantId}`)
+        await this.commitSettlementUpdate(dfspId, settlement, currency, update)
+
+        if (update.participantState === 'SETTLED') {
+          finalBoss = true
+        }
+      }
+
+      // Now update the settlement record if they are all settled
+      if (finalBoss) {
+        await this.deps.knex('tigerbeetleSettlement')
+          .where('id', cmd.id)
+          .update({
+            state: 'COMMITTED',
+          })
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+    } catch (err) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
     }
   }
 
@@ -3583,7 +3822,8 @@ export default class TigerBeetleLedger implements Ledger {
         contentByWindow.get(row.window_id)!.push({
           id: row.id,
           state: row.state,
-          ledgerAccountType: 'POSITION', // TigerBeetle doesn't distinguish account types like legacy
+          // TigerBeetleLedger doesn't distinguish account types like legacy
+          ledgerAccountType: 'POSITION',
           currencyId: row.currencyId,
           createdDate: row.createdDate,
           changedDate: row.changedDate
@@ -3620,7 +3860,7 @@ export default class TigerBeetleLedger implements Ledger {
       logger.info(`TigerBeetleLedger.getSettlement() with id: ${query.id}`)
 
       // Get settlement record
-      const settlement = await this.deps.knex('tigerbeetleSettlement')
+      const settlement = await this.deps.knex<SettlementModel>('tigerbeetleSettlement')
         .where('id', query.id)
         .first()
 
@@ -3644,17 +3884,17 @@ export default class TigerBeetleLedger implements Ledger {
       const windowIds = windowRows.map((w: any) => w.id)
       const contentRows = windowIds.length > 0
         ? await this.deps.knex('tigerbeetleSettlementWindowMapping as tswm')
-            .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
-            .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
-            .whereIn('tswm.window_id', windowIds)
-            .select(
-              'tswm.window_id',
-              'tsb.id',
-              'ts.state',
-              'tsb.currency as currencyId',
-              'ts.created_at as createdDate',
-              'ts.created_at as changedDate'
-            )
+          .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
+          .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
+          .whereIn('tswm.window_id', windowIds)
+          .select(
+            'tswm.window_id',
+            'tsb.id',
+            'ts.state',
+            'tsb.currency as currencyId',
+            'ts.created_at as createdDate',
+            'ts.created_at as changedDate'
+          )
         : []
 
       // Group content by window_id
@@ -3705,7 +3945,7 @@ export default class TigerBeetleLedger implements Ledger {
           state: balance.state,
           reason: '',
           netSettlementAmount: {
-            amount: balance.direction === 'OUTBOUND'
+            amount: balance.direction === 'INBOUND'
               ? `-${balance.amount}`
               : balance.amount.toString(),
             currency: balance.currency
@@ -3727,9 +3967,9 @@ export default class TigerBeetleLedger implements Ledger {
       // 7. Return response
       return {
         type: 'FOUND',
-        id: settlement.id,
+        id: Number(settlement.id),
         settlementModel: settlement.model,
-        state: settlement.state,
+        state: mapInternalSettlementStateToLegacy(settlement.state),
         reason: settlement.reason ?? '',
         createdDate: settlement.created_at,
         changedDate: settlement.created_at,
@@ -3778,9 +4018,10 @@ export default class TigerBeetleLedger implements Ledger {
         }
       }
 
+      // TODO(LD): improve typing when we factor this out!
       const settlementRows = await queryBuilder
         .select('ts.id', 'ts.state', 'ts.model', 'ts.reason', 'ts.created_at')
-        .distinct()
+        .distinct() as unknown as Array<SettlementModel>
 
       if (settlementRows.length === 0) {
         return { type: 'SUCCESS', result: [] }
@@ -3805,16 +4046,16 @@ export default class TigerBeetleLedger implements Ledger {
       const windowIds = windowRows.map((w: any) => w.id)
       const contentRows = windowIds.length > 0
         ? await this.deps.knex('tigerbeetleSettlementWindowMapping as tswm')
-            .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
-            .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
-            .whereIn('tswm.window_id', windowIds)
-            .select(
-              'tswm.window_id',
-              'tsb.id',
-              'ts.state',
-              'tsb.currency as currencyId',
-              'ts.created_at as createdDate'
-            )
+          .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
+          .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
+          .whereIn('tswm.window_id', windowIds)
+          .select(
+            'tswm.window_id',
+            'tsb.id',
+            'ts.state',
+            'tsb.currency as currencyId',
+            'ts.created_at as createdDate'
+          )
         : []
 
       // 4. Batch fetch all participant balances
@@ -3822,6 +4063,7 @@ export default class TigerBeetleLedger implements Ledger {
         .join('participant as p', 'p.name', 'tsb.dfspId')
         .whereIn('tsb.settlement_id', settlementIds)
         .select(
+          'p.name',
           'tsb.settlement_id',
           'tsb.id',
           'p.participantId',
@@ -3863,6 +4105,9 @@ export default class TigerBeetleLedger implements Ledger {
         })
       }
 
+      // Look up settlement account ids
+      const dfspAccountResult = await this.deps.specStore.queryAccountsAll()
+
       // 7. Group participants by settlement_id
       const participantsBySettlement = new Map<number, Map<number, SettlementAccount[]>>()
       for (const b of balanceRows) {
@@ -3870,15 +4115,22 @@ export default class TigerBeetleLedger implements Ledger {
           participantsBySettlement.set(b.settlement_id, new Map())
         }
         const pMap = participantsBySettlement.get(b.settlement_id)!
+
+        const dfspAccounts = dfspAccountResult.filter(r => r.currency === b.currency)
+          .filter(r => r.dfspId === b.name)
+        assert(dfspAccounts.length > 0, `Could not find dfsp accounts for currency: ${b.currency} and dfspName: ${b.name}`)
+        assert(dfspAccounts.length === 1, `Found more than 1 account for currency: ${b.currency} and dfspName: ${b.name}`)
+        const dfspAccount = dfspAccounts[0]
+
         if (!pMap.has(b.participantId)) {
           pMap.set(b.participantId, [])
         }
         pMap.get(b.participantId)!.push({
-          id: b.id,
+          id: Number(dfspAccount.deposit),
           state: b.state,
           reason: '',
           netSettlementAmount: {
-            amount: b.direction === 'OUTBOUND' ? `-${b.amount}` : b.amount.toString(),
+            amount: b.direction === 'INBOUND' ? `-${b.amount}` : b.amount.toString(),
             currency: b.currency
           }
         })
@@ -3895,7 +4147,8 @@ export default class TigerBeetleLedger implements Ledger {
         return {
           id: s.id,
           settlementModel: s.model,
-          state: s.state,
+          // state: s.state,
+          state: mapInternalSettlementStateToLegacy(s.state),
           reason: s.reason ?? '',
           createdDate: s.created_at,
           changedDate: s.created_at,
@@ -3909,150 +4162,6 @@ export default class TigerBeetleLedger implements Ledger {
     } catch (err: any) {
       logger.error(`TigerBeetleLedger.getSettlements() failed: ${err.message}`, { err })
       return { type: 'FAILURE', error: err }
-    }
-  }
-
-  // public async closeSettlementWindow(thing: unknown): Promise<unknown> {
-  //   throw new Error('not implemented')
-  // }
-
-  // public async settleClosedWindows(thing: unknown): Promise<unknown> {
-  //   throw new Error('not implemented')
-  // }
-
-  // public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<SettlementPrepareResult> {
-  //   // Each Physical Transfer is 128 bytes
-  //   // MAX_TRANSFERS = 100k: (128 * 100000)   / 1024 / 1024 = 12   MB
-  //   // MAX_TRANSFERS = 1M:   (128 * 1000000)  / 1024 / 1024 = 128  MB
-  //   // MAX_TRANSFERS = 10M:  (128 * 10000000) / 1024 / 1024 = 1280 MB
-  //   const MAX_TRANSFERS = 100_000
-  //   assert(cmd.settlementId)
-  //   assert(cmd.settlementId <= (2 ** 64 - 1), 'Settlement id must be a 64 bit bigint')
-  //   assert(cmd.currency)
-  //   assert(cmd.selector)
-
-  //   try {
-  //     const currency = cmd.currency
-  //     const { ledgerControl, ledgerOperation } = this.currencyManager.get(currency)
-  //     const dfspAndIds: Array<{
-  //       dfspId: string,
-  //       participantId: number,
-  //       accountIdOutgoing: bigint,
-  //       accountIdIncoming: bigint,
-
-  //     }> = (await this.deps.specStore.queryAccountsAll())
-  //       .filter(accounts => accounts.currency === currency)
-  //       .map(accounts => ({
-  //         dfspId: accounts.dfspId,
-  //         participantId: accounts.participantId,
-  //         // TODO(LD): double check these!
-  //         accountIdOutgoing: cmd.settlementId * 10n ** 64n + 1n * 10n ** 32n + BigInt(accounts.participantId),
-  //         accountIdIncoming: cmd.settlementId * 10n ** 64n + 2n * 10n ** 32n + BigInt(accounts.participantId)
-  //       }))
-
-  //     const accounts: Array<Account> = dfspAndIds.flatMap((dfspAndId) => {
-  //       return [{
-  //         ...Helper.createAccountTemplate,
-  //         id: dfspAndId.accountIdOutgoing,
-  //         ledger: ledgerControl,
-  //         code: AccountCode.Settlement_Outgoing,
-  //         flags: 0
-  //       }, {
-  //         ...Helper.createAccountTemplate,
-  //         id: dfspAndId.accountIdIncoming,
-  //         ledger: ledgerControl,
-  //         code: AccountCode.Settlement_Incoming,
-  //         flags: 0
-  //       }]
-  //     })
-  //     const fatalErrors: Array<AccountFailureResult<SettlementPrepareCreateAccountsFailureType>> = []
-  //     const createAccountsResults = await this.deps.client.createAccounts(accounts)
-  //     createAccountsResults.forEach(result => {
-  //       switch (result.result) {
-  //         case CreateAccountError.ok:
-  //         case CreateAccountError.exists:
-  //           return
-  //         default:
-  //           fatalErrors.push({ type: 'UNKNOWN', ...result })
-  //       }
-  //     })
-  //     if (fatalErrors.length > 0) {
-  //       const errorMessage = fatalErrors.map(error => `account at index: ${error.index} \
-  //         ${CreateAccountError[error.result]}`)
-  //         .join(';')
-  //       return {
-  //         type: 'SETUP_FAILURE',
-  //         error: new Error(`settlementPrepare failed when creating accounts with errors: \
-  //           ${errorMessage}`)
-  //       }
-  //     }
-
-  //     // Look up all of the transfers matching the selector
-  //     assert(cmd.selector.type === 'LEDGER_TIMERANGE', 'Only LEDGER_TIMERANGE currently supported')
-  //     const transferFilter: QueryFilter = {
-  //       user_data_128: 0n,
-  //       user_data_64: 0n,
-  //       user_data_32: 0,
-  //       ledger: ledgerOperation,
-  //       code: TransferCode.Clearing_Fulfil,
-  //       timestamp_min: BigInt(cmd.selector.timestampMin),
-  //       timestamp_max: BigInt(cmd.selector.timestampMax),
-  //       limit: Helper.maxBatchSize,
-  //       flags: 0
-  //     }
-  //     const fulfilledTransfers = await this.deps.client.queryTransfers(transferFilter)
-  //     let keepPaging = fulfilledTransfers.length === Helper.maxBatchSize
-  //     // Keep paging
-  //     while (fulfilledTransfers.length < MAX_TRANSFERS && keepPaging === true) {
-  //       const nextPage = await this.deps.client.queryTransfers({
-  //         ...transferFilter,
-  //         timestamp_min: fulfilledTransfers.at(-1).timestamp
-  //       })
-  //       keepPaging = nextPage.length === Helper.maxBatchSize
-  //       fulfilledTransfers.push(...nextPage)
-  //     }
-  //     logger.debug(`settlementPrepare(): found ${fulfilledTransfers.length} fulfilled Transfers`)
-
-  //     // Map from the account => dfspId => settlement calculation account
-  //     const mapDebitAccount = (debitAccountId: bigint): bigint => {
-  //       return 0n
-  //     }
-  //     const mapCreditAccount = (debitAccountId: bigint): bigint => {
-  //       return 0n
-  //     } 
-  //     // For each fulfilled transfer, create a new transfer on the Control Ledger
-  //     const transfers = fulfilledTransfers.map(transfer => {
-  //       return {
-  //         ...transfer,
-  //         id: transfer.user_data_128 + 1n,
-  //         // need to map from these 
-  //         debit_account_id: mapDebitAccount(transfer.debit_account_id),
-  //         credit_account_id: mapCreditAccount(transfer.credit_account_id),
-  //         timestamp: 0n
-  //       }
-  //     })
-
-
-
-  //   } catch (err) {
-  //     return {
-  //       type: 'UNKNOWN_FAILURE',
-  //       error: err
-  //     }
-  //   }
-
-  // }
-
-  public async querySettlementReport(selector: SettlementSelector): Promise<QueryResult<SettlementReport>> {
-
-    // lookup all of the transferIds based on the selector
-    // lookup all the payments in TigerBeetle based on the transferIds
-    // this may be sub optimal, since  
-
-
-    return {
-      type: 'FAILURE',
-      error: new Error('not implemented')
     }
   }
 

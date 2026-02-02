@@ -598,7 +598,11 @@ export type SettlementUpdateCommand = {
 export type SettlementWindowState =  'OPEN' | 'CLOSED' | 'PENDING_SETTLEMENT' | 'SETTLED' 
   | 'ABORTED' | 'PROCESSING' | 'FAILED'
 
-export type SettlementState = 'PENDING' | 'PROCESSING' | 'COMMITTED' | 'ABORTED'
+export type InternalSettlementState = 'PENDING' | 'PROCESSING' | 'COMMITTED' | 'ABORTED'
+
+// TODO: we should remove this completely
+export type LegacySettlementState = 'PENDING_SETTLEMENT' | 'PS_TRANSFERS_RECORDED' | 'PS_TRANSFERS_RESERVED'
+  | 'PS_TRANSFERS_COMMITTED' | 'SETTLING' | 'SETTLED' | 'ABORTED'
 
 export type GetSettlementWindowsQuery = {
   participantId?: number
@@ -621,7 +625,7 @@ export type GetSettlementsQuery = {
   currency?: string
   participantId?: number
   settlementWindowId?: number
-  state?: SettlementState
+  state?: InternalSettlementState
   fromDateTime?: Date
   toDateTime?: Date,
 }
@@ -658,10 +662,9 @@ export type SettlementAccount = {
 
 export type Settlement = {
   id: number
-  // TODO(LD): better typing
   settlementModel: string,
-  // TODO(LD): better typing
-  state: string,
+  // TODO(LD): refactor to just SettlementState, and adapt on the outside
+  state: LegacySettlementState,
   reason: string,
   createdDate: Date,
   changedDate: Date,

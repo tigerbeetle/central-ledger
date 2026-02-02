@@ -36,7 +36,7 @@ import * as EventSdk from '@mojaloop/event-sdk'
 import type { Request, ResponseToolkit, ResponseObject } from '@hapi/hapi'
 import { Util, Enum } from '@mojaloop/central-services-shared'
 import { getLedger } from '../../../api/helper'
-import { GetSettlementQuery, GetSettlementsQuery, SettlementPrepareCommand, SettlementState } from '../../../domain/ledger-v2/types'
+import { GetSettlementQuery, GetSettlementsQuery, InternalSettlementState, SettlementPrepareCommand } from '../../../domain/ledger-v2/types'
 import assert from 'assert'
 
 const Settlements = require('../../domain/settlement/index')
@@ -109,15 +109,15 @@ async function get(
     }
 
     // Helper to validate settlement state
-    const parseState = (stateStr: string): SettlementState => {
-      const validStates: SettlementState[] = ['PENDING', 'PROCESSING', 'COMMITTED', 'ABORTED']
-      if (!validStates.includes(stateStr as SettlementState)) {
+    const parseState = (stateStr: string): InternalSettlementState => {
+      const validStates: InternalSettlementState[] = ['PENDING', 'PROCESSING', 'COMMITTED', 'ABORTED']
+      if (!validStates.includes(stateStr as InternalSettlementState)) {
         throw ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
           `Invalid state: ${stateStr}. Must be one of: ${validStates.join(', ')}`
         )
       }
-      return stateStr as SettlementState
+      return stateStr as InternalSettlementState
     }
 
     // Build query object with validation
