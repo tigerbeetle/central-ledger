@@ -6,7 +6,7 @@ import { checkSnapshotLedgerDfsp, unwrapSnapshot } from '../../testing/snapshot'
 import { IntegrationHarness } from '../../testing/harness/harness';
 import { TestUtils } from '../../testing/testutils';
 import TigerBeetleLedger from "./TigerBeetleLedger";
-import { AccountCode, FulfilResultType, PrepareResultType } from './types';
+import { AccountCode, FulfilResultType, LedgerDfsp, PrepareResultType } from './types';
 
 const participantService = require('../participant')
 
@@ -530,7 +530,7 @@ describe('TigerBeetleLedger', () => {
       const currency = 'USD'
 
       await setupDfsp(dfspId, 2500)
-      let ledgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
+      let ledgerDfsp: LedgerDfsp = TestUtils.unwrapSuccess(await ledger.getDfspV2({ dfspId }))
       const depositAccount = ledgerDfsp.accounts.find(acc => acc.code === AccountCode.Deposit)
       assert(depositAccount, 'deposit account not found')
 

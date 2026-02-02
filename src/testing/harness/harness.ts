@@ -24,6 +24,8 @@ import DFSPProvisioner, { DFSPProvisionerConfig } from '../dfsp-provisioner';
 import { Harness } from './base';
 import { DatabaseConfig, HarnessDatabase, HarnessDatabaseConfig } from './harness-database';
 import { HarnessTigerBeetle, HarnessTigerBeetleConfig, TigerBeetleConfig } from './harness-tigerbeetle';
+import { Knex } from "knex";
+
 
 /**
  * Configuration for IntegrationHarness
@@ -78,6 +80,7 @@ export interface IntegrationHarnessResources {
   config: ApplicationConfig;
   dbConfig: DatabaseConfig;
   tbConfig: TigerBeetleConfig;
+  db: Knex
 }
 
 /**
@@ -268,6 +271,7 @@ export class IntegrationHarness implements Harness {
         config: this.config,
         dbConfig: dbResult,
         tbConfig: tbResult,
+        db: Db.getKnex()
       };
 
       logger.info('IntegrationHarness started successfully');

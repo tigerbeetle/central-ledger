@@ -1,0 +1,141 @@
+import { Knex } from 'knex';
+import assert from 'node:assert';
+import { randomUUID } from 'node:crypto';
+import { after, before, describe, it } from 'node:test';
+import { CommitTransferDto, CreateTransferDto } from '../../handlers-v2/types';
+import { IntegrationHarness } from '../../testing/harness/harness';
+import { TestUtils } from '../../testing/testutils';
+import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
+import TigerBeetleLedger from "./TigerBeetleLedger";
+import TigerBeetleSettlementModel from './TigerBeetleSettlementModel';
+import { GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse } from './types';
+
+const participantService = require('../participant')
+
+describe('TigerBeetleSettlementModel', () => {
+  let harness: IntegrationHarness;
+  let ledger: TigerBeetleLedger;
+  let db: Knex
+  let settlementModel: TigerBeetleSettlementModel
+
+
+  const setupDfsp = async (dfspId: string, depositAmount: number, currency: string = 'USD') => {
+    await participantService.ensureExists(dfspId)
+    TestUtils.unwrapSuccess(await ledger.createDfsp({
+      dfspId,
+      currencies: [currency]
+    }))
+    TestUtils.unwrapSuccess(await ledger.deposit({
+      transferId: randomUUID(),
+      dfspId,
+      currency,
+      amount: depositAmount,
+      reason: 'Initial deposit'
+    }))
+  }
+
+  const sendFromTo = async (payer: string, payee: string, amount: string, currency: string = 'USD') => {
+    // Send 50 from b1 -> b2, so that b2 will have Clearing Credit of 50
+    const transferId = randomUUID()
+    const mockQuoteResponse = TestUtils.generateMockQuoteILPResponse(transferId, new Date(Date.now() + 60000))
+    const { fulfilment, ilpPacket, condition } = TestUtils.generateQuoteILPResponse(mockQuoteResponse)
+    const payload: CreateTransferDto = {
+      transferId,
+      payerFsp: payer,
+      payeeFsp: payee,
+      amount: { amount: amount, currency: currency },
+      ilpPacket,
+      condition,
+      expiration: new Date(Date.now() + 60000).toISOString()
+    }
+    const prepareInput = TestUtils.buildValidPrepareInput(transferId, payload)
+    const prepareResult = await ledger.prepare(prepareInput)
+    assert.equal(prepareResult.type, 'PASS')
+
+    const fulfilPayload: CommitTransferDto = {
+      transferState: 'COMMITTED',
+      fulfilment,
+      completedTimestamp: new Date().toISOString()
+    }
+    const fulfilInput = TestUtils.buildValidFulfilInput(transferId, fulfilPayload, payee)
+    const fulfilResult = await ledger.fulfil(fulfilInput)
+    assert.equal(fulfilResult.type, 'PASS')
+  }
+
+  before(async () => {
+    harness = await IntegrationHarness.create({
+      hubCurrencies: ['USD'],
+      provisionDfsps: [
+        { dfspId: 'dfsp_a', currencies: ['USD'], startingDeposits: [100000] },
+        { dfspId: 'dfsp_b', currencies: ['USD'], startingDeposits: [100000] }
+      ]
+    })
+
+    ledger = harness.getResources().ledger as TigerBeetleLedger
+    db = harness.getResources().db
+    settlementModel = new TigerBeetleSettlementModel(db)
+
+    // Global middleware to log all queries
+    // TODO: add into an option on the harness
+    // db.on('query', (query) => {
+    //   console.log('SQL:', query.sql);
+    //   console.log('Bindings:', query.bindings);
+    // });
+  })
+
+  after(async () => {
+    await harness.teardown()
+  })
+
+  describe('getSettlementWindows', () => {
+    it('gets the default settlement window', async () => {
+      // Arrange
+      const query: GetSettlementWindowsQuery = {
+        fromDateTime: new Date(0)
+      }
+
+      // Act
+      const window = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+        await settlementModel.getSettlementWindows(query)
+      )
+
+      // Assert
+      const snapshot = [
+        {
+          id: 1,
+          createdDate: new Date(0),
+          reason: 'Initial settlement window',
+          state: 'OPEN',
+          content: []
+        }
+      ]
+      unwrapSnapshot(checkSnapshotObject(window, snapshot))
+    })
+
+    it.only('gets the settlement window after creating a transfer', async () => {
+      // Arrange
+      await sendFromTo('dfsp_a', 'dfsp_b', '50.00')
+      // need to close the window
+      // TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+      //   await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
+      // )
+
+      // Act
+      const window = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+        await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
+      )
+
+      // Assert
+      const snapshot = [
+        {
+          id: 1,
+          createdDate: new Date(0),
+          reason: 'Initial settlement window',
+          state: 'OPEN',
+          content: []
+        }
+      ]
+      unwrapSnapshot(checkSnapshotObject(window, snapshot))
+    })
+  })
+})

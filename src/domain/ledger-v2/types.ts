@@ -635,6 +635,7 @@ export type SettlementWindow = {
   state: SettlementWindowState,
   reason: string,
   createdDate: Date,
+  // TODO(LD): I don't know what this is meant to be. The closed date? or does that not get used?
   changedDate: Date,
   content: Array<{
     id: number,
