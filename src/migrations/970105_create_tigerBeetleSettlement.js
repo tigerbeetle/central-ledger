@@ -27,7 +27,15 @@
 'use strict'
 
 exports.up = async (knex) => {
-  // Create tigerbeetleSettlementWindow table
+  await knex.schema.hasTable('tigerbeetleSettlementModel').then(function (exists) {
+    if (!exists) {
+      return knex.schema.createTable('tigerbeetleSettlementModel', (t) => {
+        t.string('name', 512).primary().notNullable()
+        t.string('currency', 3).notNullable()
+      })
+    }
+  })
+
   await knex.schema.hasTable('tigerbeetleSettlementWindow').then(function (exists) {
     if (!exists) {
       return knex.schema.createTable('tigerbeetleSettlementWindow', (t) => {
@@ -43,7 +51,6 @@ exports.up = async (knex) => {
     }
   })
 
-  // Create tigerbeetleSettlement table
   await knex.schema.hasTable('tigerbeetleSettlement').then(function (exists) {
     if (!exists) {
       return knex.schema.createTable('tigerbeetleSettlement', (t) => {
@@ -51,7 +58,7 @@ exports.up = async (knex) => {
         t.enum('state', ['PENDING', 'PROCESSING', 'COMMITTED', 'ABORTED']).notNullable()
 
         t.string('model', 128).notNullable()
-        t.foreign('model').references('name').inTable('settlementModel')
+        t.foreign('model').references('name').inTable('tigerbeetleSettlementModel')
         t.string('reason', 512).nullable()
         t.dateTime('created_at').notNullable().defaultTo(knex.fn.now())
         t.index('state')
@@ -59,7 +66,6 @@ exports.up = async (knex) => {
     }
   })
 
-  // Create tigerbeetleSettlementWindowMapping table
   await knex.schema.hasTable('tigerbeetleSettlementWindowMapping').then(function (exists) {
     if (!exists) {
       return knex.schema.createTable('tigerbeetleSettlementWindowMapping', (t) => {
@@ -72,7 +78,6 @@ exports.up = async (knex) => {
     }
   })
 
-  // Create tigerbeetleSettlementBalance table
   await knex.schema.hasTable('tigerbeetleSettlementBalance').then(function (exists) {
     if (!exists) {
       return knex.schema.createTable('tigerbeetleSettlementBalance', (t) => {
@@ -80,7 +85,8 @@ exports.up = async (knex) => {
         t.bigInteger('settlement_id').unsigned().notNullable()
         t.string('dfspId', 128).notNullable()
         t.string('currency', 3).notNullable()
-        // record the balances as gross, they should always be positive
+        // Record the balances as gross, they should always be positive
+        // TODO(LD): change these to string!
         t.decimal('owing', 18, 4).notNullable()
         t.decimal('owed', 18, 4).notNullable()
         t.enum('state', ['PENDING', 'RESERVED', 'COMMITTED', 'ABORTED']).notNullable()
@@ -103,4 +109,5 @@ exports.down = async (knex) => {
   await knex.schema.dropTableIfExists('tigerbeetleSettlementWindowMapping')
   await knex.schema.dropTableIfExists('tigerbeetleSettlement')
   await knex.schema.dropTableIfExists('tigerbeetleSettlementWindow')
+  await knex.schema.dropTableIfExists('tigerbeetleSettlementModel')
 }

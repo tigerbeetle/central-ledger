@@ -1,5 +1,5 @@
 import { Knex } from "knex";
-import { CommandResult, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, SettlementCloseWindowCommand, SettlementPrepareCommand } from "./types";
+import { CommandResult, GetSettlementQuery, GetSettlementQueryResponse, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, InternalSettlementState, LegacySettlementState, SettlementAccount, SettlementCloseWindowCommand, SettlementModel, SettlementParticipant, SettlementPrepareCommand, SettlementWindow, SettlementWindowState } from "./types";
 import { QueryResult } from "src/shared/results";
 import { logger } from '../../shared/logger';
 import assert from "assert";
@@ -46,6 +46,14 @@ interface SettlementLookupRecord {
   settlement_created_at: Date,
 }
 
+type SettlementRecord = {
+  id: bigint,
+  state: InternalSettlementState,
+  model: string,
+  reason?: string,
+  created_at: Date
+}
+
 function dedupeArray<T>(input: Array<T>, accessor: (accessor: T) => string | number): Array<T> {
   const map: Record<string | number, T> = {}
   input.forEach(item => map[accessor(item)] = item)
@@ -72,6 +80,19 @@ function extractSettlementWindowRecords(records: Array<SettlementLookupRecord>):
     })
 
   return dedupeArray(settlementWindowRecords, (r) => r.id)
+}
+
+const mapInternalSettlementStateToLegacy = (state: InternalSettlementState): LegacySettlementState => {
+  switch (state) {
+    case 'PENDING': return 'PENDING_SETTLEMENT'
+    case 'PROCESSING': return 'PS_TRANSFERS_RECORDED'
+    // case 'COMMITTED': return 'PS_TRANSFERS_COMMITTED'
+    case 'COMMITTED': return 'SETTLED'
+    case 'ABORTED': return 'ABORTED'
+    default: {
+      throw new Error(`unexpected state: ${state}. Expected it to be one of [PENDING | PROCESSED | COMMITTED | ABORTED]`)
+    }
+  }
 }
 
 export default class TigerBeetleSettlementModel {
@@ -220,10 +241,10 @@ export default class TigerBeetleSettlementModel {
     assert(model)
     assert(typeof model === 'string')
     try {
-      const [row] = await trx<{currency: string}>('settlementModel')
+      const [row] = await trx<{ currency: string }>('tigerbeetleSettlementModel')
         .where('name', model)
-        .select('currencyId as currency')
-        .limit(1) as Array<{currency: string}>
+        .select('currency')
+        .limit(1) as Array<{ currency: string }>
       assert(row, `could not find currency for model: ${model}`)
       assert(row.currency, `could not find currency for model: ${model}`)
 
@@ -239,9 +260,14 @@ export default class TigerBeetleSettlementModel {
     paymentSummer: (startTime: Date, endTime: Date, currency: string) => Promise<Record<string, { owing: number, owed: number }>>):
     Promise<CommandResult<{ id: number }>> {
 
-    const { windowIds, model, reason , now} = cmd
+    const { windowIds, model, reason, now } = cmd
     assert(windowIds)
     assert(Array.isArray(windowIds))
+    windowIds.forEach(windowId => {
+      assert(typeof windowId === 'number', `expected windowId to be a number, instead found: \
+        ${typeof windowId}`
+      )
+    })
     assert(model)
     assert(reason)
     assert(now)
@@ -259,11 +285,10 @@ export default class TigerBeetleSettlementModel {
         })
 
         // Link windows to this settlement
-        const windowMappings: Array<{settlement_id: number, window_id: number}> = windowIds.map(windowId => {
-          assert(typeof windowIds === 'number')
-          return { 
-            settlement_id: settlementId, 
-            window_id: windowId 
+        const windowMappings: Array<{ settlement_id: number, window_id: number }> = windowIds.map(windowId => {
+          return {
+            settlement_id: settlementId,
+            window_id: windowId
           }
         })
         await trx(TABLE_SETTLEMENT_WINDOW_MAPPING).insert(windowMappings)
@@ -323,6 +348,137 @@ export default class TigerBeetleSettlementModel {
       }
     }
 
+  }
+
+  public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
+    try {
+      logger.info(`TigerBeetleSettlementModel.getSettlement() with id: ${query.id}`)
+
+      // Get settlement record
+      const settlement = await this.db<SettlementRecord>(TABLE_SETTLEMENT)
+        .where('id', query.id)
+        .first()
+
+      if (!settlement) {
+        return { type: 'NOT_FOUND' }
+      }
+
+      // Get settlement windows
+      const windowRows = await this.db(`${TABLE_SETTLEMENT_WINDOW_MAPPING} as tswm`)
+        .join('tigerbeetleSettlementWindow as tsw', 'tsw.id', 'tswm.window_id')
+        .where('tswm.settlement_id', query.id)
+        .select(
+          'tsw.id',
+          'tsw.state',
+          'tsw.reason',
+          'tsw.opened_at',
+          'tsw.closed_at'
+        )
+
+      // Get window content (same pattern as getSettlementWindows)
+      const windowIds = windowRows.map((w: any) => w.id)
+      const contentRows = windowIds.length > 0
+        ? await this.db(`${TABLE_SETTLEMENT_WINDOW_MAPPING} as tswm`)
+          .join('tigerbeetleSettlement as ts', 'ts.id', 'tswm.settlement_id')
+          .join('tigerbeetleSettlementBalance as tsb', 'tsb.settlement_id', 'ts.id')
+          .whereIn('tswm.window_id', windowIds)
+          .select(
+            'tswm.window_id',
+            'tsb.id',
+            'ts.state',
+            'tsb.currency as currencyId',
+            'ts.created_at as createdDate',
+            'ts.created_at as changedDate'
+          )
+        : []
+
+      // Group content by window_id
+      const contentByWindow = new Map<number, Array<any>>()
+      for (const row of contentRows) {
+        if (!contentByWindow.has(row.window_id)) {
+          contentByWindow.set(row.window_id, [])
+        }
+        contentByWindow.get(row.window_id)!.push({
+          id: row.id,
+          state: row.state,
+          ledgerAccountType: 'POSITION',
+          currencyId: row.currencyId,
+          createdDate: row.createdDate,
+          changedDate: row.changedDate
+        })
+      }
+
+      // Transform windows with content
+      const settlementWindows: SettlementWindow[] = windowRows.map((w: any) => ({
+        id: w.id,
+        state: w.state as SettlementWindowState,
+        reason: w.reason ?? '',
+        createdDate: w.opened_at,
+        changedDate: w.closed_at ?? w.opened_at,
+        content: contentByWindow.get(w.id) || []
+      }))
+
+      // 5. Get participant balances with participantId from participant table
+      const balanceRows = await this.db(`${TABLE_SETTLEMENT_BALANCE} as tsb`)
+        .join('participant as p', 'p.name', 'tsb.dfspId')
+        .where('tsb.settlement_id', query.id)
+        .select(
+          'tsb.id',
+          'p.participantId',
+          'tsb.currency',
+          'tsb.owing',
+          'tsb.owed',
+          'tsb.state'
+        )
+
+      // 6. Group and transform participant balances
+      const participantMap = new Map<number, SettlementAccount[]>()
+
+      for (const balance of balanceRows) {
+        const account: SettlementAccount = {
+          id: balance.id,
+          state: balance.state,
+          reason: '',
+          owing: balance.owing,
+          owed: balance.owed,
+          currency: balance.currency,
+          netSettlementAmount: {
+            amount: `${balance.owing - balance.owed}`,
+            currency: balance.currency
+          }
+        }
+
+        if (!participantMap.has(balance.participantId)) {
+          participantMap.set(balance.participantId, [])
+        }
+        participantMap.get(balance.participantId)!.push(account)
+      }
+
+      const participants: SettlementParticipant[] = Array.from(participantMap.entries())
+        .map(([participantId, accounts]) => ({
+          id: participantId,
+          accounts
+        }))
+
+      // 7. Return response
+      return {
+        type: 'FOUND',
+        id: Number(settlement.id),
+        settlementModel: settlement.model,
+        state: mapInternalSettlementStateToLegacy(settlement.state),
+        reason: settlement.reason ?? '',
+        createdDate: settlement.created_at,
+        changedDate: settlement.created_at,
+        settlementWindows,
+        participants
+      }
+    } catch (err: any) {
+      logger.error(`TigerBeetleSettlementModel.getSettlement() failed: ${err.message}`, { err })
+      return {
+        type: 'FAILED',
+        error: err
+      }
+    }
   }
 
 

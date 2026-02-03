@@ -250,12 +250,13 @@ export class IntegrationHarness implements Harness {
         ],
         oracles: []
       };
-      const provisioner = new Provisioner(provisionConfig, { ledger });
-      await provisioner.run();
+      const provisioner = new Provisioner(provisionConfig, { ledger })
+      await provisioner.run()
+      await provisioner.run()
 
       // Provision DFSPs if requested
       if (provisionDfsps.length > 0) {
-        const participantService = require('../../domain/participant');
+        const participantService = require('../../domain/participant')
         const dfspProvisioner = new DFSPProvisioner({
           ledger,
           participantService

@@ -8,7 +8,8 @@ import { TestUtils } from '../../testing/testutils';
 import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 import TigerBeetleLedger from "./TigerBeetleLedger";
 import TigerBeetleSettlementModel from './TigerBeetleSettlementModel';
-import { GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, SettlementPrepareCommand, SettlementPrepareResult } from './types';
+import { GetSettlementQueryResponse, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, SettlementPrepareCommand, SettlementPrepareResult } from './types';
+import * as snapshots from './__snapshots__/TigerBeetleSettlementModel.int.snapshot'
 
 const participantService = require('../participant')
 
@@ -119,7 +120,7 @@ describe('TigerBeetleSettlementModel', () => {
         await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
       )
       TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
-        await settlementModel.closeSettlementWindow({id: windows[0].id, reason: 'test close'})
+        await settlementModel.closeSettlementWindow({ id: windows[0].id, reason: 'test close' })
       )
 
       // Act
@@ -157,11 +158,14 @@ describe('TigerBeetleSettlementModel', () => {
       await sendFromTo('dfsp_a', 'dfsp_c', '10.00')
       await sendFromTo('dfsp_c', 'dfsp_b', '10.00')
       await sendFromTo('dfsp_c', 'dfsp_a', '45.00')
+
+      
+
       let windows = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
         await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
       )
       TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
-        await settlementModel.closeSettlementWindow({id: windows[0].id, reason: 'test close'})
+        await settlementModel.closeSettlementWindow({ id: windows[0].id, reason: 'test close' })
       )
 
       // Act
@@ -172,14 +176,17 @@ describe('TigerBeetleSettlementModel', () => {
         reason: 'settlement prepare test',
         now,
       }
-      const result =  await settlementModel.settlementPrepare(
-        cmdSettlementPrepare, ledger.paymentSummer
+      const result = await settlementModel.settlementPrepare(
+        cmdSettlementPrepare, ledger.paymentSummer.bind(ledger)
       )
 
       // Assert
       assert(result.type === 'SUCCESS', 'expected settlementPrepare() to return .type of SUCCESS')
-      
-      // TODO: lookup the settlement!
+      const settlementId = result.result.id
+      const { type, ...settlement } = await settlementModel.getSettlement({ id: settlementId })
+      assert(type === 'FOUND')
+      const snapshot = snapshots.prepares_the_settlement
+      unwrapSnapshot(checkSnapshotObject(settlement, snapshot))
     })
   })
 })

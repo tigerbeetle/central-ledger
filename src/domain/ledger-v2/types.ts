@@ -655,6 +655,11 @@ export type SettlementAccount = {
   // TODO(LD): better typing
   state: string
   reason: string,
+  owing: number,
+  owed: number,
+  currency: string
+
+  // legacy amount
   netSettlementAmount: {
     // TODO(LD): should this be a number?
     amount: string,
