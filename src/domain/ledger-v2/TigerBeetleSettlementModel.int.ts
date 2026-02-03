@@ -8,7 +8,7 @@ import { TestUtils } from '../../testing/testutils';
 import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 import TigerBeetleLedger from "./TigerBeetleLedger";
 import TigerBeetleSettlementModel from './TigerBeetleSettlementModel';
-import { GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse } from './types';
+import { GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, SettlementPrepareCommand, SettlementPrepareResult } from './types';
 
 const participantService = require('../participant')
 
@@ -67,7 +67,8 @@ describe('TigerBeetleSettlementModel', () => {
       hubCurrencies: ['USD'],
       provisionDfsps: [
         { dfspId: 'dfsp_a', currencies: ['USD'], startingDeposits: [100000] },
-        { dfspId: 'dfsp_b', currencies: ['USD'], startingDeposits: [100000] }
+        { dfspId: 'dfsp_b', currencies: ['USD'], startingDeposits: [100000] },
+        { dfspId: 'dfsp_c', currencies: ['USD'], startingDeposits: [100000] },
       ]
     })
 
@@ -112,16 +113,17 @@ describe('TigerBeetleSettlementModel', () => {
       unwrapSnapshot(checkSnapshotObject(window, snapshot))
     })
 
-    it.only('gets the settlement window after creating a transfer', async () => {
+    it('gets the settlement windows after closing the settlement window', async () => {
       // Arrange
-      await sendFromTo('dfsp_a', 'dfsp_b', '50.00')
-      // need to close the window
-      // TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
-      //   await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
-      // )
+      let windows = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+        await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
+      )
+      TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+        await settlementModel.closeSettlementWindow({id: windows[0].id, reason: 'test close'})
+      )
 
       // Act
-      const window = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+      windows = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
         await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
       )
 
@@ -130,12 +132,54 @@ describe('TigerBeetleSettlementModel', () => {
         {
           id: 1,
           createdDate: new Date(0),
-          reason: 'Initial settlement window',
+          changedDate: ':ignore',
+          reason: 'test close',
+          state: 'CLOSED',
+          content: []
+        },
+        {
+          id: 2,
+          createdDate: ':ignore',
+          reason: 'New settlement window opened',
           state: 'OPEN',
           content: []
         }
       ]
-      unwrapSnapshot(checkSnapshotObject(window, snapshot))
+      unwrapSnapshot(checkSnapshotObject(windows, snapshot))
+    })
+  })
+
+  describe('settlementPrepare', () => {
+    it.only('prepares the settlement', async () => {
+      // Arrange
+      await sendFromTo('dfsp_a', 'dfsp_b', '50.00')
+      await sendFromTo('dfsp_b', 'dfsp_c', '75.00')
+      await sendFromTo('dfsp_a', 'dfsp_c', '10.00')
+      await sendFromTo('dfsp_c', 'dfsp_b', '10.00')
+      await sendFromTo('dfsp_c', 'dfsp_a', '45.00')
+      let windows = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+        await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
+      )
+      TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
+        await settlementModel.closeSettlementWindow({id: windows[0].id, reason: 'test close'})
+      )
+
+      // Act
+      const now = new Date()
+      const cmdSettlementPrepare: SettlementPrepareCommand = {
+        windowIds: [windows[0].id],
+        model: 'DEFERRED_MULTILATERAL_NET_USD',
+        reason: 'settlement prepare test',
+        now,
+      }
+      const result =  await settlementModel.settlementPrepare(
+        cmdSettlementPrepare, ledger.paymentSummer
+      )
+
+      // Assert
+      assert(result.type === 'SUCCESS', 'expected settlementPrepare() to return .type of SUCCESS')
+      
+      // TODO: lookup the settlement!
     })
   })
 })

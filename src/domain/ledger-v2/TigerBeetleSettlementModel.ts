@@ -1,8 +1,9 @@
 import { Knex } from "knex";
-import { GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse } from "./types";
+import { CommandResult, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, SettlementCloseWindowCommand, SettlementPrepareCommand } from "./types";
 import { QueryResult } from "src/shared/results";
 import { logger } from '../../shared/logger';
 import assert from "assert";
+import Helper from './TigerBeetleLedgerHelper'
 
 
 const TABLE_SETTLEMENT_WINDOW = `tigerbeetleSettlementWindow`
@@ -45,7 +46,7 @@ interface SettlementLookupRecord {
   settlement_created_at: Date,
 }
 
-function dedupeArray<T>(input:Array<T>, accessor: (accessor: T) => string | number): Array<T> {
+function dedupeArray<T>(input: Array<T>, accessor: (accessor: T) => string | number): Array<T> {
   const map: Record<string | number, T> = {}
   input.forEach(item => map[accessor(item)] = item)
   return Object.values(map)
@@ -53,28 +54,84 @@ function dedupeArray<T>(input:Array<T>, accessor: (accessor: T) => string | numb
 
 function extractSettlementWindowRecords(records: Array<SettlementLookupRecord>): Array<SettlementWindowRecord> {
   const settlementWindowRecords = records
-  .filter(record => record.settlement_window_id!!)
-  .map(record => {
-    const settlementWindowRecord: SettlementWindowRecord = {
-      id: record.settlement_window_id,
-      state: record.settlement_window_state,
-      opened_at: record.settlement_window_opened_at,
-      closed_at: record.settlement_window_closed_at,
-      reason: record.settlement_window_reason
-    }
-    assert(settlementWindowRecord.id, 'extractSettlementWindowRecords missing .id')
-    assert(settlementWindowRecord.state, 'extractSettlementWindowRecords missing .state')
-    assert(settlementWindowRecord.opened_at, 'extractSettlementWindowRecords missing .opened_at')
-    assert(settlementWindowRecord.reason, 'extractSettlementWindowRecords missing .reason')
+    .filter(record => record.settlement_window_id!!)
+    .map(record => {
+      const settlementWindowRecord: SettlementWindowRecord = {
+        id: record.settlement_window_id,
+        state: record.settlement_window_state,
+        opened_at: record.settlement_window_opened_at,
+        closed_at: record.settlement_window_closed_at,
+        reason: record.settlement_window_reason
+      }
+      assert(settlementWindowRecord.id, 'extractSettlementWindowRecords missing .id')
+      assert(settlementWindowRecord.state, 'extractSettlementWindowRecords missing .state')
+      assert(settlementWindowRecord.opened_at, 'extractSettlementWindowRecords missing .opened_at')
+      assert(settlementWindowRecord.reason, 'extractSettlementWindowRecords missing .reason')
 
-    return settlementWindowRecord
-  })
+      return settlementWindowRecord
+    })
 
   return dedupeArray(settlementWindowRecords, (r) => r.id)
 }
 
 export default class TigerBeetleSettlementModel {
   constructor(private db: Knex) { }
+
+  public async closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>> {
+    const { id, reason } = cmd
+
+    try {
+      return await this.db.transaction(async (trx) => {
+        // Special case: if id = 1, ensure it exists first
+        if (id === 1) {
+          await this.ensureOpenSettlementWindow(trx)
+        }
+
+        // 1. Verify the window exists and is OPEN
+        const window = await trx('tigerbeetleSettlementWindow')
+          .where('id', id)
+          .first()
+
+        if (!window) {
+          return {
+            type: 'FAILURE',
+            error: new Error(`no existing window found`)
+          }
+        }
+
+        if (window.state !== 'OPEN') {
+          return {
+            type: 'FAILURE',
+            error: new Error(`Settlement window ${id} is not open (current state: ${window.state})`)
+          }
+        }
+
+        // 2. Close the current window
+        await trx('tigerbeetleSettlementWindow')
+          .where('id', id)
+          .update({
+            state: 'CLOSED',
+            closed_at: new Date(),
+            reason
+          })
+
+        // 3. Create a new OPEN window
+        await trx('tigerbeetleSettlementWindow').insert({
+          state: 'OPEN',
+          opened_at: new Date(),
+          reason: 'New settlement window opened'
+        })
+
+        return { type: 'SUCCESS' }
+      })
+    } catch (err: any) {
+      logger.error(`closeSettlementWindow failed: ${err.message}`, { err })
+      return {
+        type: 'FAILURE',
+        error: new Error(`Failed to close settlement window: ${err.message}`)
+      }
+    }
+  }
 
   public async getSettlementWindows(query: GetSettlementWindowsQuery):
     Promise<QueryResult<GetSettlementWindowsQueryResponse>> {
@@ -98,7 +155,7 @@ export default class TigerBeetleSettlementModel {
           )
           .leftJoin(
             `${TABLE_SETTLEMENT} as settlement`,
-            'settlement.id', 
+            'settlement.id',
             'settlement_window_mapping.settlement_id'
           )
           .select(
@@ -112,8 +169,8 @@ export default class TigerBeetleSettlementModel {
             'settlement_balance.settlement_id as settlement_balance_settlement_id',
             'settlement_balance.dfspId as settlement_balance_dfspId',
             'settlement_balance.currency as settlement_balance_currency',
-            'settlement_balance.amount as settlement_balance_amount',
-            'settlement_balance.direction as settlement_balance_direction',
+            'settlement_balance.owing as settlement_balance_owing',
+            'settlement_balance.owed as settlement_balance_owed',
             'settlement_balance.state as settlement_balance_state',
             'settlement_balance.external_reference as settlement_balance_external_reference',
             'settlement_balance.created_at as settlement_balance_created_at',
@@ -128,12 +185,12 @@ export default class TigerBeetleSettlementModel {
 
         settlementLookupQuery = this.applySettlementWindowFilters(settlementLookupQuery, query)
         const settlementLookupRows: Array<SettlementLookupRecord> = await settlementLookupQuery
-        
+
         // Now map and turn into what we need to!
         const windowRows = extractSettlementWindowRecords(settlementLookupRows)
-        
+
         if (settlementLookupRows.length === 0) return { type: 'SUCCESS', result: [] }
-        
+
         const windows = windowRows.map((row: SettlementWindowRecord) => ({
           id: row.id,
           state: row.state,
@@ -157,6 +214,117 @@ export default class TigerBeetleSettlementModel {
       }
     }
   }
+
+  private async lookupCurrencyForSettlementModel(trx: Knex.Transaction, model: string): Promise<string> {
+    assert(trx)
+    assert(model)
+    assert(typeof model === 'string')
+    try {
+      const [row] = await trx<{currency: string}>('settlementModel')
+        .where('name', model)
+        .select('currencyId as currency')
+        .limit(1) as Array<{currency: string}>
+      assert(row, `could not find currency for model: ${model}`)
+      assert(row.currency, `could not find currency for model: ${model}`)
+
+      return row.currency
+    } catch (err) {
+      logger.error(`lookupCurrencyForSettlementModel: failed with error: ${err.message}`)
+      throw err
+    }
+  }
+
+  public async settlementPrepare(
+    cmd: SettlementPrepareCommand,
+    paymentSummer: (startTime: Date, endTime: Date, currency: string) => Promise<Record<string, { owing: number, owed: number }>>):
+    Promise<CommandResult<{ id: number }>> {
+
+    const { windowIds, model, reason , now} = cmd
+    assert(windowIds)
+    assert(Array.isArray(windowIds))
+    assert(model)
+    assert(reason)
+    assert(now)
+
+    try {
+      return await this.db.transaction(async (trx) => {
+        const currency = await this.lookupCurrencyForSettlementModel(trx, model)
+
+        // Create the settlement record
+        const [settlementId] = await trx(TABLE_SETTLEMENT).insert({
+          state: 'PENDING',
+          model,
+          reason,
+          created_at: now
+        })
+
+        // Link windows to this settlement
+        const windowMappings: Array<{settlement_id: number, window_id: number}> = windowIds.map(windowId => {
+          assert(typeof windowIds === 'number')
+          return { 
+            settlement_id: settlementId, 
+            window_id: windowId 
+          }
+        })
+        await trx(TABLE_SETTLEMENT_WINDOW_MAPPING).insert(windowMappings)
+
+        // Get time ranges for all windows
+        const windows = await trx('tigerbeetleSettlementWindow')
+          .whereIn('id', windowIds)
+          .select('id', 'opened_at', 'closed_at')
+
+        // Get the net movements for each window, and sum together
+        const [firstWindow, ...remainingWindows] = windows
+        let settlementSum = await paymentSummer(
+          firstWindow.opened_at,
+          firstWindow.closed_at,
+          currency
+        )
+        for (const window of remainingWindows) {
+          const windowNet = await paymentSummer(
+            window.opened_at, window.closed_at, currency
+          )
+
+          // Merge together
+          settlementSum = Helper.mergeWith(settlementSum, windowNet, (a, b) => {
+            return {
+              owing: a.owing + b.owing,
+              owed: a.owed + b.owed
+            }
+          })
+        }
+
+        // Convert to settlement balances and insert
+        const balances = []
+        for (const dfspId of Object.keys(settlementSum)) {
+          const { owing, owed } = settlementSum[dfspId]
+
+          balances.push({
+            settlement_id: settlementId,
+            dfspId,
+            currency,
+            owing,
+            owed,
+            state: 'PENDING'
+          })
+        }
+
+        if (balances.length > 0) {
+          await trx(TABLE_SETTLEMENT_BALANCE).insert(balances)
+        }
+
+        return { type: 'SUCCESS', result: { id: settlementId } }
+      })
+    } catch (err: any) {
+      logger.error(`settlementPrepare failed: ${err.message}`, { err })
+      return {
+        type: 'FAILURE',
+        error: new Error(`Failed to prepare settlement: ${err.message}`)
+      }
+    }
+
+  }
+
 
   /**
    * Apply filters to settlement window query

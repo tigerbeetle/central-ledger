@@ -50,12 +50,10 @@ exports.up = async (knex) => {
         t.bigIncrements('id').primary().notNullable()
         t.enum('state', ['PENDING', 'PROCESSING', 'COMMITTED', 'ABORTED']).notNullable()
 
-        // TODO(LD): TODO: this should probably be modelId, and a foreign reference to the
-        // Settlement model table
         t.string('model', 128).notNullable()
+        t.foreign('model').references('name').inTable('settlementModel')
         t.string('reason', 512).nullable()
         t.dateTime('created_at').notNullable().defaultTo(knex.fn.now())
-
         t.index('state')
       })
     }
@@ -67,7 +65,6 @@ exports.up = async (knex) => {
       return knex.schema.createTable('tigerbeetleSettlementWindowMapping', (t) => {
         t.bigInteger('settlement_id').unsigned().notNullable()
         t.bigInteger('window_id').unsigned().notNullable()
-
         t.primary(['settlement_id', 'window_id'])
         t.foreign('settlement_id').references('id').inTable('tigerbeetleSettlement')
         t.foreign('window_id').references('id').inTable('tigerbeetleSettlementWindow')
@@ -83,8 +80,9 @@ exports.up = async (knex) => {
         t.bigInteger('settlement_id').unsigned().notNullable()
         t.string('dfspId', 128).notNullable()
         t.string('currency', 3).notNullable()
-        t.decimal('amount', 18, 4).notNullable()
-        t.enum('direction', ['INBOUND', 'OUTBOUND']).notNullable()
+        // record the balances as gross, they should always be positive
+        t.decimal('owing', 18, 4).notNullable()
+        t.decimal('owed', 18, 4).notNullable()
         t.enum('state', ['PENDING', 'RESERVED', 'COMMITTED', 'ABORTED']).notNullable()
         t.string('external_reference', 256).nullable()
         t.dateTime('created_at').notNullable().defaultTo(knex.fn.now())

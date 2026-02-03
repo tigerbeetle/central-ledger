@@ -245,7 +245,9 @@ export class IntegrationHarness implements Harness {
       // Provision hub
       const provisionConfig: ProvisioningConfig = {
         currencies: hubCurrencies,
-        settlementModels: [],
+        settlementModels: [
+          
+        ],
         oracles: []
       };
       const provisioner = new Provisioner(provisionConfig, { ledger });

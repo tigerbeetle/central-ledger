@@ -546,6 +546,7 @@ export type SettlementPrepareCommand = {
   windowIds: Array<number>,
   model: string,
   reason: string,
+  now: Date
 }
 
 export type SettlementAbortCommand = {
