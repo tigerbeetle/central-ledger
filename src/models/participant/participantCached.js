@@ -30,6 +30,7 @@
 const Cache = require('../../lib/cache')
 const ParticipantModel = require('../../models/participant/participant')
 const rethrow = require('../../shared/rethrow')
+const assert = require('assert')
 
 let cacheClient
 const participantsAllCacheKey = 'all'
@@ -64,7 +65,23 @@ const buildUnifiedParticipantsData = (allParticipants) => {
   return unifiedParticipants
 }
 
+<<<<<<< HEAD
 const getParticipantsCached = () => cacheClient.get(participantsAllCacheKey)
+=======
+const getParticipantsCached = async () => {
+  const histTimer = Metrics.getHistogram(
+    'model_participant',
+    'model_getParticipantsCached - Metrics for participant model',
+    ['success', 'queryName', 'hit']
+  ).startTimer()
+  // Do we have valid participants list in the cache ?
+  assert(cacheClient, 'Expected cacheClient to be initialized')
+  let cachedParticipants = cacheClient.get(participantsAllCacheKey)
+  if (!cachedParticipants) {
+    // No participants in the cache, so fetch from participant API
+    const allParticipants = await ParticipantModel.getAll()
+    cachedParticipants = buildUnifiedParticipantsData(allParticipants)
+>>>>>>> 32184496 (update imports for ts, improve loggingPlugin context)
 
 const generate = async function (key) {
   const allParticipants = await ParticipantModel.getAll()
