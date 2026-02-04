@@ -18,6 +18,8 @@
   ],
   "exclude": [
     "node_modules",
+    "config/knexfile.js",
+    "src/seeds/**/*.js",
     "src/**/*.int.ts",
     "src/**/*.unit.ts",
   ]
