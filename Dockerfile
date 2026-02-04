@@ -25,7 +25,6 @@ COPY package.json package-lock.json* tsconfig.json /opt/app/
 RUN stat package.json
 RUN stat package-lock.json
 RUN npm ci
-COPY src /opt/app/src
 RUN npm run build
 RUN npm prune --omit=dev
 
