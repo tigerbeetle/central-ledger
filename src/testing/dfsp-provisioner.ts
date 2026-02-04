@@ -35,6 +35,7 @@ export default class DFSPProvisioner {
 
   constructor(private deps: DFSPProvisionerDependencies) { }
 
+
   public async run(config: DFSPProvisionerConfig): Promise<void> {
     assert(config.currencies.length > 0, 'DFSP should have at least 1 currency')
     assert.equal(config.currencies.length, config.startingDeposits.length)
@@ -43,21 +44,32 @@ export default class DFSPProvisioner {
 
     try {
       await this.deps.participantService.ensureExists(config.dfspId)
-      const result = await this.deps.ledger.createDfsp(config)
-      if (result.type === 'FAILURE') {
-        throw result.error
-      }
+      // const result = await this.deps.ledger.createDfsp(config)
+      // if (result.type === 'FAILURE') {
+      //   throw result.error
+      // }
 
-      if (result.type === 'ALREADY_EXISTS') {
-        childLogger.info('DFSP already created')
-        return
-      }
+      // if (result.type === 'ALREADY_EXISTS') {
+      //   childLogger.info('DFSP already created')
+      //   return
+      // }
 
       for (let i = 0; i < config.currencies.length; i++) {
         const currency = config.currencies[i];
         const startingDeposit = config.startingDeposits[i]
         assert(currency)
         assert(startingDeposit)
+
+        const result = await this.deps.ledger.createDfsp({
+          dfspId: config.dfspId,
+          currencies: [currency]
+        })
+        if (result.type === 'ALREADY_EXISTS') {
+          continue;
+        }
+        if (result.type === 'FAILURE') {
+          throw result.error
+        }
 
         const depositResult = await this.deps.ledger.deposit({
           transferId: randomUUID(),
@@ -82,7 +94,7 @@ export default class DFSPProvisioner {
           amount: startingDeposit
         })
 
-        childLogger.info(`deposited collateral of: ${currency} ${startingDeposit}`)
+        childLogger.debug(`deposited collateral of: ${currency} ${startingDeposit}`)
       }
 
       childLogger.info('DFSP provisioning completed successfully');

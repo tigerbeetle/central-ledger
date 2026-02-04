@@ -175,14 +175,6 @@ export default class TigerBeetleLedger implements Ledger {
     assert(cmd.currency)
     assert(cmd.settlementModel)
 
-    // TODO(LD): I don't know if we need this at the moment, since we won't have common accounts
-    // but instead use separate collateral accounts for each Dfsp + Currency combination
-    //
-    // We will however need to set up:
-    // 1. Settlement Models/Configuration
-    // 2. Enable certain currencies
-    logger.warn('createHubAccount() - noop')
-
     try {
       await this.deps.knex('tigerbeetleSettlementModel')
         .insert({
@@ -3229,8 +3221,10 @@ export default class TigerBeetleLedger implements Ledger {
   public async paymentSummer(startTime: Date, endTime: Date, currency: string):
     Promise<Record<string, { owing: number, owed: number }>> {
     assert(this.currencyManager)
+    assert(Helper)
 
     const assetScale = this.currencyManager.getAssetScale(currency)
+    const ledgerOperation = this.currencyManager.getLedgerOperation(currency)
     const accountDfspMap = (await this.deps.specStore.queryAccountsAll())
       .filter(meta => meta.currency === currency)
       .reduce((acc, curr) => {
@@ -3248,7 +3242,7 @@ export default class TigerBeetleLedger implements Ledger {
       user_data_128: 0n,
       user_data_64: 0n,
       user_data_32: 0,
-      ledger: 0,
+      ledger: ledgerOperation,
       code: TransferCode.Clearing_Fulfil,
       timestamp_min: timestampMin,
       timestamp_max: timestampMax,
@@ -4254,20 +4248,33 @@ export default class TigerBeetleLedger implements Ledger {
       accountIds.add(transfer.credit_account_id);
     }
 
-    // Look up all accounts from TigerBeetle
-    const accounts = await this.deps.client.lookupAccounts(Array.from(accountIds));
-
     // Build account ID to spec mapping
-    const accountIdToSpec = new Map<string, { dfspId: string, accountCode: AccountCode }>();
-    const allSpecs = await this.deps.specStore.queryAccountsAll();
+    const accountIdToSpec = new Map<string, { dfspId: string, accountCode: AccountCode }>()
 
-    for (const spec of allSpecs) {
+    // Look up all accounts from TigerBeetle
+    // const accounts = await this.deps.client.lookupAccounts(Array.from(accountIds))
+    // for (const account of accounts) {
+    //   accountIdToSpec.set
+    // }
+
+
+    const allDfspSpecs = await this.deps.specStore.queryDfspsAll();
+    for (const dfspSpec of allDfspSpecs) {
+      accountIdToSpec.set(dfspSpec.accountId.toString(), {dfspId: dfspSpec.dfspId, accountCode: AccountCode.Dfsp})
+    }
+    
+    const allAccountSpecs = await this.deps.specStore.queryAccountsAll();
+
+    for (const spec of allAccountSpecs) {
       accountIdToSpec.set(spec.deposit.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Deposit });
       accountIdToSpec.set(spec.unrestricted.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Unrestricted });
       accountIdToSpec.set(spec.unrestrictedLock.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Unrestricted_Lock });
       accountIdToSpec.set(spec.restricted.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Restricted });
       accountIdToSpec.set(spec.reserved.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Reserved });
       accountIdToSpec.set(spec.commitedOutgoing.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Committed_Outgoing });
+      accountIdToSpec.set(spec.clearingCredit.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Clearing_Credit });
+      accountIdToSpec.set(spec.clearingSetup.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Clearing_Setup});
+      accountIdToSpec.set(spec.clearingLimit.toString(), { dfspId: spec.dfspId, accountCode: AccountCode.Clearing_Limit});
     }
 
     // Enrich transfers with account information

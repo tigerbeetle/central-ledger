@@ -8,7 +8,7 @@ import { TestUtils } from '../../testing/testutils';
 import { checkSnapshotObject, checkSnapshotString, unwrapSnapshot } from '../../testing/snapshot';
 import TigerBeetleLedger from "./TigerBeetleLedger";
 import TigerBeetleSettlementModel from './TigerBeetleSettlementModel';
-import { GetSettlementQueryResponse, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, SettlementPrepareCommand, SettlementPrepareResult } from './types';
+import { GetSettlementQueryResponse, GetSettlementWindowsQuery, GetSettlementWindowsQueryResponse, LedgerDfsp, SettlementPrepareCommand, SettlementPrepareResult } from './types';
 import * as snapshots from './__snapshots__/TigerBeetleSettlementModel.int.snapshot'
 
 const participantService = require('../participant')
@@ -64,13 +64,32 @@ describe('TigerBeetleSettlementModel', () => {
   }
 
   before(async () => {
+    const currencies = ['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG', 'HHH']
+    const startingDeposits = currencies.map(c => 100000)
+    const currencyLedgerTemplate = (currency: string, currencyIdx: number) => {
+      return {
+        currency,
+        assetScale: 4,
+        clearingLedgerId: parseInt(`${currencyIdx}2`),
+        settlementLedgerId: parseInt(`${currencyIdx}3`),
+        controlLedgerId: parseInt(`${currencyIdx}4`),
+        ledgerOperation: 1000 + currencyIdx, 
+        ledgerControl: 2000 + currencyIdx,
+        accountIdSettlementBalance: BigInt(`${currencyIdx}000000023429842`)
+      }
+    }
+    const currencyLedgers = currencies.map((currency, idx) => currencyLedgerTemplate(currency, idx))
+    console.log('currencyLedgers', currencyLedgers)
+
     harness = await IntegrationHarness.create({
-      hubCurrencies: ['USD'],
+      // deploy a new currency for each describe block, making it easy to separate out settlements
+      hubCurrencies: currencies,
       provisionDfsps: [
-        { dfspId: 'dfsp_a', currencies: ['USD'], startingDeposits: [100000] },
-        { dfspId: 'dfsp_b', currencies: ['USD'], startingDeposits: [100000] },
-        { dfspId: 'dfsp_c', currencies: ['USD'], startingDeposits: [100000] },
-      ]
+        { dfspId: 'dfsp_a', currencies, startingDeposits },
+        { dfspId: 'dfsp_b', currencies, startingDeposits },
+        { dfspId: 'dfsp_c', currencies, startingDeposits },
+      ],
+      currencyLedgers: currencies.map((currency, idx) => currencyLedgerTemplate(currency, idx))
     })
 
     ledger = harness.getResources().ledger as TigerBeetleLedger
@@ -120,7 +139,7 @@ describe('TigerBeetleSettlementModel', () => {
         await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
       )
       TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
-        await settlementModel.closeSettlementWindow({ id: windows[0].id, reason: 'test close' })
+        await settlementModel.closeSettlementWindow({ id: windows[0].id, reason: 'test close', now: new Date() })
       )
 
       // Act
@@ -153,34 +172,43 @@ describe('TigerBeetleSettlementModel', () => {
   describe('settlementPrepare', () => {
     it.only('prepares the settlement', async () => {
       // Arrange
-      await sendFromTo('dfsp_a', 'dfsp_b', '50.00')
-      await sendFromTo('dfsp_b', 'dfsp_c', '75.00')
-      await sendFromTo('dfsp_a', 'dfsp_c', '10.00')
-      await sendFromTo('dfsp_c', 'dfsp_b', '10.00')
-      await sendFromTo('dfsp_c', 'dfsp_a', '45.00')
-
-      
+      const model = 'DEFERRED_MULTILATERAL_NET_BBB'
+      await sendFromTo('dfsp_a', 'dfsp_b', '50.00', 'BBB')
+      await sendFromTo('dfsp_b', 'dfsp_c', '75.00', 'BBB')
+      await sendFromTo('dfsp_a', 'dfsp_c', '10.00', 'BBB')
+      await sendFromTo('dfsp_c', 'dfsp_b', '10.00', 'BBB')
+      await sendFromTo('dfsp_c', 'dfsp_a', '45.00', 'BBB')
+      // sleep here to wait for the cluster time to catch up with the process time.
+      // ideally we would simply expose the cluster time, and open/close settlement windows
+      // based on that.
+      await TestUtils.sleep(1000)
 
       let windows = TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
         await settlementModel.getSettlementWindows({ fromDateTime: new Date(0) })
       )
       TestUtils.unwrapSuccess<GetSettlementWindowsQueryResponse>(
-        await settlementModel.closeSettlementWindow({ id: windows[0].id, reason: 'test close' })
+        await settlementModel.closeSettlementWindow(
+          { id: windows[0].id, reason: 'test close', now: new Date() }
+        )
       )
 
       // Act
       const now = new Date()
       const cmdSettlementPrepare: SettlementPrepareCommand = {
         windowIds: [windows[0].id],
-        model: 'DEFERRED_MULTILATERAL_NET_USD',
+        model,
         reason: 'settlement prepare test',
         now,
       }
       const result = await settlementModel.settlementPrepare(
-        cmdSettlementPrepare, ledger.paymentSummer.bind(ledger)
+        cmdSettlementPrepare, (startTime, endTime, currency) => ledger.paymentSummer(startTime, endTime, currency)
       )
 
       // Assert
+
+      const transfers = await ledger.getRecentTransfers(15)
+      TestUtils.printTransferHistory(transfers)
+
       assert(result.type === 'SUCCESS', 'expected settlementPrepare() to return .type of SUCCESS')
       const settlementId = result.result.id
       const { type, ...settlement } = await settlementModel.getSettlement({ id: settlementId })

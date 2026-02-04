@@ -132,14 +132,14 @@ export default class TigerBeetleSettlementModel {
           .where('id', id)
           .update({
             state: 'CLOSED',
-            closed_at: new Date(),
+            closed_at: cmd.now,
             reason
           })
 
         // 3. Create a new OPEN window
         await trx('tigerbeetleSettlementWindow').insert({
           state: 'OPEN',
-          opened_at: new Date(),
+          opened_at: cmd.now,
           reason: 'New settlement window opened'
         })
 

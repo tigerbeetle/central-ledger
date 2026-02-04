@@ -6,11 +6,11 @@ export const prepares_the_settlement = {
     {
       "accounts": [
         {
-          "currency": "USD",
+          "currency": "BBB",
           "id": 3,
           "netSettlementAmount": {
             "amount": "15",
-            "currency": "USD"
+            "currency": "BBB"
           },
           "owed": "45.0000",
           "owing": "60.0000",
@@ -23,11 +23,11 @@ export const prepares_the_settlement = {
     {
       "accounts": [
         {
-          "currency": "USD",
+          "currency": "BBB",
           "id": 2,
           "netSettlementAmount": {
             "amount": "15",
-            "currency": "USD"
+            "currency": "BBB"
           },
           "owed": "60.0000",
           "owing": "75.0000",
@@ -40,11 +40,11 @@ export const prepares_the_settlement = {
     {
       "accounts": [
         {
-          "currency": "USD",
+          "currency": "BBB",
           "id": 1,
           "netSettlementAmount": {
             "amount": "-30",
-            "currency": "USD"
+            "currency": "BBB"
           },
           "owed": "85.0000",
           "owing": "55.0000",
@@ -56,7 +56,7 @@ export const prepares_the_settlement = {
     }
   ],
   "reason": "settlement prepare test",
-  "settlementModel": "DEFERRED_MULTILATERAL_NET_USD",
+  "settlementModel": "DEFERRED_MULTILATERAL_NET_BBB",
   "settlementWindows": [
     {
       "changedDate": ":ignore",
@@ -64,7 +64,7 @@ export const prepares_the_settlement = {
         {
           "changedDate": ":ignore",
           "createdDate": ":ignore",
-          "currencyId": "USD",
+          "currencyId": "BBB",
           "id": 3,
           "ledgerAccountType": "POSITION",
           "state": "PENDING"
@@ -72,7 +72,7 @@ export const prepares_the_settlement = {
         {
           "changedDate": ":ignore",
           "createdDate": ":ignore",
-          "currencyId": "USD",
+          "currencyId": "BBB",
           "id": 2,
           "ledgerAccountType": "POSITION",
           "state": "PENDING"
@@ -80,7 +80,7 @@ export const prepares_the_settlement = {
         {
           "changedDate": ":ignore",
           "createdDate": ":ignore",
-          "currencyId": "USD",
+          "currencyId": "BBB",
           "id": 1,
           "ledgerAccountType": "POSITION",
           "state": "PENDING"

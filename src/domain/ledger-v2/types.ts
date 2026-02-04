@@ -540,6 +540,7 @@ export type SweepResult = {
 export type SettlementCloseWindowCommand = {
   id: number,
   reason: string,
+  now: Date
 }
 
 export type SettlementPrepareCommand = {

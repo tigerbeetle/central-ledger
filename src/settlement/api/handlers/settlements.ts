@@ -196,6 +196,7 @@ async function post(
       windowIds,
       model: request.payload.settlementModel,
       reason: request.payload.reason,
+      now: new Date()
     }
     const settlementResult = await ledger.settlementPrepare(command)
     if (settlementResult.type === 'FAILURE') {

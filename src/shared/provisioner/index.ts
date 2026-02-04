@@ -73,11 +73,11 @@ export default class Provisioner {
       }
 
       if (result.type === 'ALREADY_EXISTS') {
-        logger.warn(`Provisioner.run() - Hub account already created for: ${command.currency}, ${command.settlementModel.name}`)
+        logger.info(`Provisioner.run() - Hub account already created for: ${command.currency}, ${command.settlementModel.name}`)
         return
       }
 
-      logger.warn(`Provisioner.run() - Hub account created for: ${command.currency}, ${command.settlementModel.name}`)
+      logger.info(`Provisioner.run() - Hub account created for: ${command.currency}, ${command.settlementModel.name}`)
     })
 
     if (errorMessages.length > 0) {

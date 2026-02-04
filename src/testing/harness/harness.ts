@@ -252,7 +252,6 @@ export class IntegrationHarness implements Harness {
       };
       const provisioner = new Provisioner(provisionConfig, { ledger })
       await provisioner.run()
-      await provisioner.run()
 
       // Provision DFSPs if requested
       if (provisionDfsps.length > 0) {

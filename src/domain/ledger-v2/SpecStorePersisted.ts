@@ -553,7 +553,7 @@ export class PersistedSpecStore implements SpecStore {
   }
 
   async getSpecNetDebitCaps(dfspCurrencies: Array<{ dfspId: string; currency: string; }>): Promise<Array<GetSpecNetDebitCapResult>> {
-    logger.warn(`getSpecNetDebitCaps - fetching: ${JSON.stringify(dfspCurrencies)}`)
+    logger.debug(`getSpecNetDebitCaps - fetching: ${JSON.stringify(dfspCurrencies)}`)
     try {
       // Build WHERE IN clause for bulk query
       const queryBuilder = this.db.from(TABLE_NET_DEBIT_CAP)
