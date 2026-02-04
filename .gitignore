@@ -70,3 +70,6 @@ devspace*
 
 # Build output
 dist
+
+# Sql checkpoint
+*.checkpoint.sql

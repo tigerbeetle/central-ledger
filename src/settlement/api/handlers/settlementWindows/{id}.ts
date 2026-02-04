@@ -128,7 +128,7 @@ async function post(
     await span.audit(request.payload, EventSdk.AuditEventAction.start)
 
     const cmd: SettlementCloseWindowCommand = {
-      id, reason
+      id, reason, now: new Date()
     }
     const result = await ledger.closeSettlementWindow(cmd)
     if (result.type === 'FAILURE') {

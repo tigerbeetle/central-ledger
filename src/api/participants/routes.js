@@ -28,7 +28,6 @@
 
 'use strict'
 
-// const Handler = require('./handler')
 const Joi = require('joi')
 const currencyList = require('../../seeds/currency.js').currencyList
 

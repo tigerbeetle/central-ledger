@@ -59,7 +59,17 @@
         "retryCount": 3,
         "retryDelay": 200,
         "retryJitter": 100,
-        "redisConfigs": [{ "type": "redis-cluster", "cluster": [{ "host": "localhost", "port": 6379 }] }]
+        "redisConfigs": [
+          {
+            "type": "redis-cluster",
+            "cluster": [
+              {
+                "host": "localhost",
+                "port": 6379
+              }
+            ]
+          }
+        ]
       }
     }
   },
@@ -539,7 +549,11 @@
     },
     "PROVISIONING": {
       "enabled": true,
-      "currencies": ["USD", "EUR", "KES"],
+      "currencies": [
+        "USD",
+        "EUR",
+        "KES"
+      ],
       "hubAlertEmailAddress": "example@email.com",
       "settlementModels": [],
       "oracles": []
