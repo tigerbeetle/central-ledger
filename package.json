@@ -159,7 +159,8 @@
   "overrides": {
     "brace-expansion": "2.0.2",
     "form-data": "4.0.4",
-    "undici": "6.21.2",
+    "lodash": "4.17.23",
+    "undici": "6.23.0",
     "shins": {
       "ajv": "6.12.3",
       "ejs": "3.1.10",
