@@ -125,10 +125,16 @@ export function assertProxyCacheConfig(input: unknown): void {
   if ((input as RedisClusterProxyCacheConfig).cluster) {
     const unsafeConfigCluster = input as RedisClusterProxyCacheConfig
     assert(Array.isArray(unsafeConfigCluster.cluster), 'Expected `cluster` to be an array')
+    assert(unsafeConfigCluster.cluster.length > 0, 'Expected .cluster to contain at least 1 item')
     for (const node of unsafeConfigCluster.cluster) {
       assertString(node.host)
       assertNumber(node.port)
     }
+    assertStringIfDefined(unsafeConfigCluster.username)
+    assertStringIfDefined(unsafeConfigCluster.password)
+    assertBooleanIfDefined(unsafeConfigCluster.lazyConnect)
+    assertNumberIfDefined(unsafeConfigCluster.db)
+
     return
   }
   const unsafeEither = input as RedisProxyCacheConfig | MySqlProxyCacheConfig;
@@ -173,6 +179,77 @@ export function assertKafkaProducerConfig(input: unknown): void {
   assert(unsafeProducerConfig.config.options)
   assert(unsafeProducerConfig.config.rdkafkaConf)
   assert(unsafeProducerConfig.config.topicConf)
+}
+
+/**
+ * @function assertKafkaConfig
+ * @description Assert that the Kafka config is valid.
+ */
+export function assertKafkaConfig(input: unknown): void {
+  // Check the EVENT_TYPE_ACTION_TOPIC_MAP.
+  const unsafeConfig = input as KafkaConfig
+  assertNestedFields(unsafeConfig, 'EVENT_TYPE_ACTION_TOPIC_MAP.POSITION')
+
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.PREPARE)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_PREPARE)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.BULK_PREPARE)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.COMMIT)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.BULK_COMMIT)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.RESERVE)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_RESERVE)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.TIMEOUT_RESERVED)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_TIMEOUT_RESERVED)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.ABORT)
+  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_ABORT)
+
+  assertNestedFields(unsafeConfig, 'TOPIC_TEMPLATES.PARTICIPANT_TOPIC_TEMPLATE.TEMPLATE')
+  assertNestedFields(unsafeConfig, 'TOPIC_TEMPLATES.PARTICIPANT_TOPIC_TEMPLATE.REGEX')
+  assertNestedFields(unsafeConfig, 'TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.TEMPLATE')
+  assertNestedFields(unsafeConfig, 'TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE.REGEX')
+
+  // Check the Consumer Configs. We can just check the leaf nodes
+  assertNestedFields(unsafeConfig, 'CONSUMER.BULK.PREPARE')
+  assertNestedFields(unsafeConfig, 'CONSUMER.BULK.PROCESSING')
+  assertNestedFields(unsafeConfig, 'CONSUMER.BULK.FULFIL')
+  assertNestedFields(unsafeConfig, 'CONSUMER.BULK.GET')
+  assertNestedFields(unsafeConfig, 'CONSUMER.TRANSFER.PREPARE')
+  assertNestedFields(unsafeConfig, 'CONSUMER.TRANSFER.GET')
+  assertNestedFields(unsafeConfig, 'CONSUMER.TRANSFER.FULFIL')
+  assertNestedFields(unsafeConfig, 'CONSUMER.TRANSFER.POSITION')
+  assertNestedFields(unsafeConfig, 'CONSUMER.TRANSFER.POSITION_BATCH')
+  assertNestedFields(unsafeConfig, 'CONSUMER.ADMIN.TRANSFER')
+  assertNestedFields(unsafeConfig, 'CONSUMER.NOTIFICATION.EVENT')
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PREPARE)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PROCESSING)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.FULFIL)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.GET)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.PREPARE)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.GET)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.FULFIL)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.POSITION)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.POSITION_BATCH)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.ADMIN.TRANSFER)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.NOTIFICATION.EVENT)
+
+  // Check the Producer Configs.
+  assert(unsafeConfig.PRODUCER)
+  assert(unsafeConfig.PRODUCER.BULK)
+  assert(unsafeConfig.PRODUCER.BULK.PROCESSING)
+  assert(unsafeConfig.PRODUCER.TRANSFER)
+  assert(unsafeConfig.PRODUCER.TRANSFER.PREPARE)
+  assert(unsafeConfig.PRODUCER.TRANSFER.FULFIL)
+  assert(unsafeConfig.PRODUCER.TRANSFER.POSITION)
+  assert(unsafeConfig.PRODUCER.NOTIFICATION)
+  assert(unsafeConfig.PRODUCER.NOTIFICATION.EVENT)
+  assert(unsafeConfig.PRODUCER.ADMIN)
+  assert(unsafeConfig.PRODUCER.ADMIN.TRANSFER)
+
+  assertKafkaProducerConfig(unsafeConfig.PRODUCER.BULK.PROCESSING)
+  assertKafkaProducerConfig(unsafeConfig.PRODUCER.TRANSFER.PREPARE)
+  assertKafkaProducerConfig(unsafeConfig.PRODUCER.TRANSFER.FULFIL)
+  assertKafkaProducerConfig(unsafeConfig.PRODUCER.TRANSFER.POSITION)
+  assertKafkaProducerConfig(unsafeConfig.PRODUCER.NOTIFICATION.EVENT)
+  assertKafkaProducerConfig(unsafeConfig.PRODUCER.ADMIN.TRANSFER)
 }
 
 /**
@@ -268,92 +345,6 @@ export function assertProvisioning(input: unknown): void {
   assertStringIfDefined(unsafeConfig.hubAlertEmailAddress)
 }
 
-/**
- * @function assertKafkaConfig
- * @description Assert that the Kafka config is valid.
- */
-export function assertKafkaConfig(input: unknown): void {
-  // Check the EVENT_TYPE_ACTION_TOPIC_MAP.
-  const unsafeConfig = input as KafkaConfig
-  if (!unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP) {
-    throw new ConfigValidationError(`missing EVENT_TYPE_ACTION_TOPIC_MAP`)
-  }
-  if (!unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION) {
-    throw new ConfigValidationError(`missing EVENT_TYPE_ACTION_TOPIC_MAP.POSITION`)
-  }
-
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.PREPARE)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_PREPARE)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.BULK_PREPARE)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.COMMIT)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.BULK_COMMIT)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.RESERVE)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_RESERVE)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.TIMEOUT_RESERVED)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_TIMEOUT_RESERVED)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.ABORT)
-  assertStringOrNull(unsafeConfig.EVENT_TYPE_ACTION_TOPIC_MAP.POSITION.FX_ABORT)
-
-  // Check the TOPIC_TEMPLATES.
-  if (!unsafeConfig.TOPIC_TEMPLATES) {
-    throw new ConfigValidationError(`missing TOPIC_TEMPLATES`)
-  }
-  if (!unsafeConfig.TOPIC_TEMPLATES.PARTICIPANT_TOPIC_TEMPLATE) {
-    throw new ConfigValidationError(`missing TOPIC_TEMPLATES.PARTICIPANT_TOPIC_TEMPLATE`)
-  }
-  if (!unsafeConfig.TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE) {
-    throw new ConfigValidationError(`missing TOPIC_TEMPLATES.GENERAL_TOPIC_TEMPLATE`)
-  }
-
-  // Check the Consumer Configs.
-  assert(unsafeConfig.CONSUMER)
-  assert(unsafeConfig.CONSUMER.BULK)
-  assert(unsafeConfig.CONSUMER.BULK.PREPARE)
-  assert(unsafeConfig.CONSUMER.BULK.PROCESSING)
-  assert(unsafeConfig.CONSUMER.BULK.FULFIL)
-  assert(unsafeConfig.CONSUMER.BULK.GET)
-  assert(unsafeConfig.CONSUMER.TRANSFER)
-  assert(unsafeConfig.CONSUMER.TRANSFER.PREPARE)
-  assert(unsafeConfig.CONSUMER.TRANSFER.GET)
-  assert(unsafeConfig.CONSUMER.TRANSFER.FULFIL)
-  assert(unsafeConfig.CONSUMER.TRANSFER.POSITION)
-  assert(unsafeConfig.CONSUMER.TRANSFER.POSITION_BATCH)
-  assert(unsafeConfig.CONSUMER.ADMIN)
-  assert(unsafeConfig.CONSUMER.ADMIN.TRANSFER)
-  assert(unsafeConfig.CONSUMER.NOTIFICATION)
-  assert(unsafeConfig.CONSUMER.NOTIFICATION.EVENT)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PREPARE)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PROCESSING)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.FULFIL)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.GET)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.PREPARE)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.GET)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.FULFIL)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.POSITION)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.POSITION_BATCH)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.ADMIN.TRANSFER)
-  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.NOTIFICATION.EVENT)
-
-  // Check the Producer Configs.
-  assert(unsafeConfig.PRODUCER)
-  assert(unsafeConfig.PRODUCER.BULK)
-  assert(unsafeConfig.PRODUCER.BULK.PROCESSING)
-  assert(unsafeConfig.PRODUCER.TRANSFER)
-  assert(unsafeConfig.PRODUCER.TRANSFER.PREPARE)
-  assert(unsafeConfig.PRODUCER.TRANSFER.FULFIL)
-  assert(unsafeConfig.PRODUCER.TRANSFER.POSITION)
-  assert(unsafeConfig.PRODUCER.NOTIFICATION)
-  assert(unsafeConfig.PRODUCER.NOTIFICATION.EVENT)
-  assert(unsafeConfig.PRODUCER.ADMIN)
-  assert(unsafeConfig.PRODUCER.ADMIN.TRANSFER)
-
-  assertKafkaProducerConfig(unsafeConfig.PRODUCER.BULK.PROCESSING)
-  assertKafkaProducerConfig(unsafeConfig.PRODUCER.TRANSFER.PREPARE)
-  assertKafkaProducerConfig(unsafeConfig.PRODUCER.TRANSFER.FULFIL)
-  assertKafkaProducerConfig(unsafeConfig.PRODUCER.TRANSFER.POSITION)
-  assertKafkaProducerConfig(unsafeConfig.PRODUCER.NOTIFICATION.EVENT)
-  assertKafkaProducerConfig(unsafeConfig.PRODUCER.ADMIN.TRANSFER)
-}
 
 /**
  * @function defaultTo
@@ -390,25 +381,23 @@ export function stringToBoolean(input: string): boolean {
  * @function defaultEnvString
  * @description Get an environment variable or return a default value.
  */
-export function defaultEnvString(envName: string, defaultValue: string): string {
-  assert(defaultValue, 'expected a default value')
+export function defaultEnvString(env: NodeJS.ProcessEnv, name: string, defaultValue: string): string {
+  assert(env, 'Expected env to be defined.')
+  assert(typeof name === 'string', 'Expected `name` to be a string.')
+  assert(defaultValue, 'Expected a default value.')
+  assert(typeof defaultValue === 'string', 'Expected default value to be a string')
 
-  let processEnvValue = process.env[envName]
-  // need to protect for cases where the value may intentionally false!
-  if (processEnvValue === undefined) {
-    logger.warn(`defaultEnvString - ${envName} not set - defaulting to: ${defaultValue}`)
-    return defaultValue
-  }
-
+  let processEnvValue = env[name]
   if (Array.isArray(processEnvValue)) {
     processEnvValue = processEnvValue[0]
   }
+  // need to protect for cases where the value may intentionally false!
   if (processEnvValue === undefined) {
-    logger.warn(`defaultEnvString - ${envName} not set - defaulting to: ${defaultValue}`)
+    logger.warn(`defaultEnvString - ${name} not set - defaulting to: ${defaultValue}`)
     return defaultValue
   }
 
-  logger.warn(`defaultEnvString - ${envName} is  set - resolved   to: ${processEnvValue}`)
+  logger.warn(`defaultEnvString - ${name} is  set - resolved   to: ${processEnvValue}`)
   return processEnvValue
 }
 

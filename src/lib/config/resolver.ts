@@ -189,6 +189,7 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
 
 const makeConfig = (): ApplicationConfig => {
   const PATH_TO_CONFIG_FILE = defaultEnvString(
+    process.env,
     'PATH_TO_CONFIG_FILE', 
     path.join(__dirname, '../../..', 'config/default.json')
   )

@@ -232,14 +232,14 @@ interface KafkaConsumerGeneralOptions {
 }
 
 interface KafkaProducerGeneralOptions {
-  mode: 0 | 1 | 2,
-  batchSize: number,
-  pollFrequency: number,
-  recursiveTimeout: number,
-  messageCharset: string
-  messageAsJSON: boolean,
-  sync: boolean
-  consumeTimeout: number
+  mode?: 0 | 1 | 2,
+  batchSize?: number,
+  pollFrequency?: number,
+  recursiveTimeout?: number,
+  messageCharset?: string
+  messageAsJSON?: boolean,
+  sync?: boolean
+  consumeTimeout?: number
 }
 
 interface KafkaConsumerRdKafkaConfig {
