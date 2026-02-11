@@ -40,6 +40,8 @@ exclude: [
   'src/shared/fspiopErrorFactory.js',
   'src/lib/proxyCache.js', # todo: remove this line after adding test coverage
   'src/seeds/**',
-  'src/**/*.test.ts'
+  'src/**/*.test.ts',
+  'src/testing/**',     # Exclude test runner from coverage
+  'src/**/*.unit.ts'    # Exclude unit test files from coverage
 ]
 ## todo: increase test coverage before merging feat/fx-impl to main branch

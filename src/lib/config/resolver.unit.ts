@@ -27,18 +27,48 @@
 
 import { describe, it } from 'node:test'
 import assert from 'node:assert'
-import { makeConfig } from './resolver'
+import { makeConfig, parseAndValidateConfig, resolveConfig } from './resolver'
+import parseStringsInObject from 'parse-strings-in-object'
+import RC from 'rc'
+import path from 'node:path'
 
-describe('config/resolver', () => {
 
+
+describe('lib/config/resolver', () => {
   it('loads the config', () => {
-    // Arrange
+    const config = makeConfig()
+    assert.ok(config)
+  })
 
+  it('throws if LEDGER !== LEGACY', () => {
+    // Arrange
+    const pathToConfigFile = path.join(__dirname, '../../..', 'config/default.json')
+    const raw = parseStringsInObject(RC('CLEDG', require(pathToConfigFile)))
+    const resolved = resolveConfig(raw)
 
     // Act
-    const config = makeConfig()
+    resolved.LEDGER = 'LOCKSTEP'
 
     // Assert
-    assert.ok(config)
+    assert.throws(() => parseAndValidateConfig(resolved))
+  })
+
+  it('throws if EXPERIMENTAL.PROVISIONING is enabled', () => {
+    // Arrange
+    const pathToConfigFile = path.join(__dirname, '../../..', 'config/default.json')
+    const raw = parseStringsInObject(RC('CLEDG', require(pathToConfigFile)))
+    const resolved = resolveConfig(raw)
+
+    // Act
+    resolved.EXPERIMENTAL = {
+      PROVISIONING: {
+        enabled: true,
+        currencies: ['USD'],
+        hubAlertEmailAddress: 'test@email.com'
+      }
+    }
+
+    // Assert
+    assert.throws(() => parseAndValidateConfig(resolved))
   })
 })
