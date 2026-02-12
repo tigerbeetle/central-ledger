@@ -31,7 +31,7 @@
 const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
 const EnumUncached = require('../../../src/lib/enum')
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const Cache = require('../../../src/lib/cache')
 const Model = require('../../../src/lib/enumCached')
 

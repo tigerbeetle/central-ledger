@@ -27,7 +27,7 @@
  **********/
 
 const { Enum, Util } = require('@mojaloop/central-services-shared')
-const Config = require('#src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const TestConsumer = require('./testConsumer')
 
 /**

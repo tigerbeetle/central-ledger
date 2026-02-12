@@ -1,6 +1,6 @@
 'use strict'
 
-const Config = require('./lib/config')
+const Config = require('./lib/config/index').default
 
 module.exports = {
   client: 'mysql',

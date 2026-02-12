@@ -34,7 +34,7 @@
  */
 
 const Logger = require('../shared/logger').logger
-const Config = require('../lib/config')
+const Config = require('../lib/config/index').default
 const Setup = require('../shared/setup')
 const PJson = require('../../package.json')
 const Plugin = require('./api/plugin')

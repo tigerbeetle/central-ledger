@@ -33,7 +33,7 @@
 
 'use strict'
 
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const Enum = require('@mojaloop/central-services-shared').Enum
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const ParticipantService = require('../../../src/domain/participant')

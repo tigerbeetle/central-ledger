@@ -34,7 +34,7 @@ const Sinon = require('sinon')
 const { processFxPositionPrepareBin } = require('../../../../src/domain/position/fx-prepare')
 const Logger = require('../../../../src/shared/logger').logger
 const { randomUUID } = require('crypto')
-const Config = require('../../../../src/lib/config')
+const Config = require('../../../../src/lib/config/index').default
 
 const constructFxTransferTestData = (initiatingFsp, counterPartyFsp, sourceAmount, sourceCurrency, targetAmount, targetCurrency) => {
   const commitRequestId = randomUUID()

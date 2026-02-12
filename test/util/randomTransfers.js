@@ -29,7 +29,7 @@
 'use strict'
 
 const { randomUUID } = require('crypto')
-const Config = require('../../src/lib/config')
+const Config = require('../../src/lib/config/index').default
 const Db = require('@mojaloop/database-lib').Db
 const Enum = require('../../src/lib/enum')
 const TS = Enum.TransferState

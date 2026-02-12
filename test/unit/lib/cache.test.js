@@ -2,7 +2,7 @@
 
 const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const Cache = require('../../../src/lib/cache')
 const Enums = require('../../../src/lib/enum')
 

@@ -34,7 +34,7 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Time = require('@mojaloop/central-services-shared').Util.Time
 const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
 const CentralEnums = require('@mojaloop/central-services-shared').Enum
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const Enums = require('../../../src/lib/enumCached')
 
 const recordFundsInSampleData = {

@@ -33,7 +33,7 @@ const Db = require('../../../../src/lib/db')
 const Cache = require('../../../../src/lib/cache')
 const ProxyCache = require('../../../../src/lib/proxyCache')
 const Logger = require('@mojaloop/central-services-logger')
-const Config = require('../../../../src/lib/config')
+const Config = require('../../../../src/lib/config/index').default
 const Model = require('../../../../src/models/transfer/transferError')
 const HelperModule = require('../../helpers')
 

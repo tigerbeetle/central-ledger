@@ -10,7 +10,7 @@ const EnumCached = require('../../../../src/lib/enumCached')
 const FSPIOPError = require('@mojaloop/central-services-error-handling').Factory.FSPIOPError
 const SettlementModel = require('../../../../src/domain/settlement')
 const ProxyCache = require('#src/lib/proxyCache')
-const Config = require('#src/lib/config')
+const Config = require('../../../../src/lib/config/index').default
 const Metrics = require('@mojaloop/central-services-metrics')
 
 const createRequest = ({ payload, params, query }) => {

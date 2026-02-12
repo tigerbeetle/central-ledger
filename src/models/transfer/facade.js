@@ -44,7 +44,7 @@ const Time = require('@mojaloop/central-services-shared').Util.Time
 
 const { logger } = require('../../shared/logger')
 const Db = require('../../lib/db')
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 const ParticipantFacade = require('../participant/facade')
 const ParticipantCachedModel = require('../participant/participantCached')
 const TransferExtensionModel = require('./transferExtension')

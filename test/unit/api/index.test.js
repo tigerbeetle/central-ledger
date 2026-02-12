@@ -32,7 +32,7 @@ const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
 
 const Logger = require('../../../src/shared/logger').logger
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const ProxyCache = require('#src/lib/proxyCache')
 const Routes = require('../../../src/api/routes')
 const Setup = require('../../../src/shared/setup')

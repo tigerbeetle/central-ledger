@@ -43,10 +43,9 @@ const Validator = require('../../../../../src/handlers/bulk/shared/validator')
 const BulkTransferService = require('../../../../../src/domain/bulkTransfer')
 const BulkTransferModel = require('../../../../../src/models/bulkTransfer/bulkTransfer')
 const ilp = require('../../../../../src/models/transfer/ilpPacket')
+const Config = require('../../../../../src/lib/config/index').default
 // const TransferState = Enum.Transfers.TransferState
 // const TransferInternalState = Enum.Transfers.TransferInternalState
-
-require('../../../../../src/lib/config').MONGODB_DISABLED = false
 
 const bulkTransfer = {
   bulkTransferId: 'fake-bulk-transfer-id',
@@ -155,6 +154,7 @@ Test('Bulk Transfer GET handler', getHandlerTest => {
 
   getHandlerTest.beforeEach(test => {
     sandbox = Sinon.createSandbox()
+    sandbox.stub(Config, 'MONGODB_DISABLED').value(false)
     sandbox.stub(ProxyCache, 'getCache').returns({
       connect: sandbox.stub(),
       disconnect: sandbox.stub()

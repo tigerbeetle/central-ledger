@@ -33,7 +33,7 @@ const Joi = require('joi')
 const Logger = require('@mojaloop/central-services-logger')
 const Db = require('../../../src/lib/db')
 
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const ProxyCache = require('../../../src/lib/proxyCache')
 const Consumer = require('@mojaloop/central-services-stream').Util.Consumer
 // const Producer = require('@mojaloop/central-services-stream').Util.Producer

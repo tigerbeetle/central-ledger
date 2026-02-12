@@ -29,7 +29,7 @@
 
 'use strict'
 
-const Config = require('./config')
+const Config = require('./config/index').default
 
 const participantRegex = new RegExp(`${Config.HOSTNAME}/participants/([A-Za-z0-9_]*)/?`, 'i')
 const transfersRegex = new RegExp(`${Config.HOSTNAME}/transfers/([a-f\\d]{8}(-[a-f\\d]{4}){3}-[a-f\\d]{12})`, 'i')

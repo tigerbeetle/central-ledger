@@ -4,7 +4,7 @@ const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
 const Proxyquire = require('proxyquire')
 const ParticipantService = require('../../../src/domain/participant')
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 
 const connectStub = Sinon.stub()
 const disconnectStub = Sinon.stub()

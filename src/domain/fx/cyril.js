@@ -35,7 +35,7 @@ const TransferModel = require('../../models/transfer/transfer')
 const TransferFacade = require('../../models/transfer/facade')
 const ParticipantPositionChangesModel = require('../../models/position/participantPositionChanges')
 const { fxTransfer, watchList } = require('../../models/fxTransfer')
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 const ProxyCache = require('../../lib/proxyCache')
 
 const checkIfDeterminingTransferExistsForTransferMessage = async (payload, proxyObligation) => {

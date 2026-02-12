@@ -28,7 +28,7 @@
  ******/
 
 'use strict'
-const Config = require('../lib/config')
+const Config = require('../lib/config/index').default
 
 const participant = [
   {

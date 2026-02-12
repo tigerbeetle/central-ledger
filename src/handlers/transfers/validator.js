@@ -39,7 +39,7 @@
 
 const Logger = require('../../shared/logger').logger
 const Decimal = require('decimal.js')
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 const Participant = require('../../domain/participant')
 const Transfer = require('../../domain/transfer')
 const FxTransferModel = require('../../models/fxTransfer')

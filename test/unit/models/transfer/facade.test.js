@@ -33,7 +33,7 @@
 
 const Test = require('tapes')(require('tape'))
 const Sinon = require('sinon')
-const Config = require('../../../../src/lib/config')
+const Config = require('../../../../src/lib/config/index').default
 const Db = require('../../../../src/lib/db')
 const Logger = require('../../../../src/shared/logger').logger
 const MLNumber = require('@mojaloop/ml-number')
