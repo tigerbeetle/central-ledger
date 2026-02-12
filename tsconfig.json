@@ -14,7 +14,7 @@
     "module": "commonjs",
     "target": "es2020",
     "allowJs": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
   },
   "include": [
     "src/**/*.ts",
@@ -34,7 +34,9 @@
     "ignore": [
       "(?:^|/)node_modules/",
       // We ignore .d.ts files as ts-node fails if it tries to execute them.
-      "\\.d\\.ts$"
+      "\\.d\\.ts$",
+      "src/**/*.int.ts",
+      "src/**/*.unit.ts",
     ]
   }
 }
