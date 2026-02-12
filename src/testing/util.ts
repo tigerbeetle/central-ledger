@@ -1,5 +1,9 @@
 
 import assert from 'node:assert'
+import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import path from 'node:path'
+import { PROJECT_ROOT } from './run'
 
 /**
  * @function enumeratePaths
@@ -33,7 +37,7 @@ export function enumeratePaths(input: any): Array<string> {
     }
     return []
   }
-  
+
   _enumerateNode(input, '')
 
   // deduplicate the intermediate paths
@@ -77,4 +81,99 @@ export function replaceAtPath(input: any, path: string, newValue: any): void {
     }
     input = input[pathComponent]
   }
+}
+
+/**
+ * Find all files matching a glob pattern
+ * Simple implementation that handles basic patterns
+ * @param baseDir - Base directory to search in
+ * @param pattern - Glob pattern (supports ** and *)
+ * @returns Array of matching file paths
+ */
+export function findFiles(baseDir: string, pattern: string): string[] {
+  const results: string[] = []
+
+  // Convert glob pattern to regex
+  // Important: escape dots BEFORE converting wildcards
+  const regexPattern = pattern
+    .replace(/\./g, '\\.')           // Escape dots first
+    .replace(/\*\*/g, '{{DOUBLESTAR}}')
+    .replace(/\*/g, '[^/]*')
+    .replace(/{{DOUBLESTAR}}/g, '.*')
+
+  const regex = new RegExp(`^${regexPattern}$`)
+
+  function walkDir(dir: string, relativePath: string = '') {
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name)
+        const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name
+
+        if (entry.isDirectory()) {
+          if (entry.name !== 'node_modules' && entry.name !== '.git') {
+            walkDir(fullPath, relPath)
+          }
+        } else if (entry.isFile()) {
+          if (regex.test(relPath)) {
+            results.push(relPath)
+          }
+        }
+      }
+    } catch (err) {
+      // Ignore permission errors
+    }
+  }
+
+  walkDir(baseDir)
+  return results
+}
+
+/**
+ * @function converToXunit
+ * @description Convert TAP output to xunit XML format. Requires `tap-xunit`.
+ */
+export async function convertToXunit(output: string, outputFile: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('npx', ['tap-xunit'], {
+      cwd: PROJECT_ROOT,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+
+    let xml = ''
+    let stderr = ''
+
+    proc.stdout.on('data', (data: Buffer) => {
+      xml += data.toString()
+    })
+
+    proc.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
+
+    proc.on('close', (code) => {
+      if (code !== 0 || !xml) {
+        console.warn('Warning: Could not generate xunit report:', stderr)
+        reject(stderr)
+        return
+      }
+      // Ensure directory exists
+      const dir = path.dirname(outputFile)
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+      fs.writeFileSync(outputFile, xml)
+      console.log(`\nXUnit report written to: ${outputFile}`)
+      resolve()
+    })
+
+    proc.on('error', () => {
+      console.warn('Warning: tap-xunit not available')
+      resolve()
+    })
+
+    proc.stdin.write(output)
+    proc.stdin.end()
+  })
 }

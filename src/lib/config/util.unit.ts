@@ -406,7 +406,6 @@ describe('lib/config/util', () => {
 
             const elements = path.split('|')
             if (elements.length >= 1 && elements.length <= 5) {
-              console.log(`    -> marking as FAIL`)
               expectPassOrFail = 'FAIL'
               break;
             }
@@ -440,7 +439,6 @@ describe('lib/config/util', () => {
             }
 
             expectPassOrFail = 'FAIL'
-            console.log(`    -> marking as FAIL`)
             break
           }
         }
