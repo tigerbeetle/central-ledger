@@ -32,7 +32,7 @@
 
 const Test = require('tape')
 const { randomUUID } = require('crypto')
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 const UrlParser = require('../../../src/lib/urlParser')
 
 Test('nameFromParticipantUri', nameFromParticipantUriTest => {

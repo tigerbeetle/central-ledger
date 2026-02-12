@@ -42,7 +42,7 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const EventSdk = require('@mojaloop/event-sdk')
 const Metrics = require('@mojaloop/central-services-metrics')
 
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 const TimeoutService = require('../../domain/timeout')
 const rethrow = require('../../shared/rethrow')
 const { createLock } = require('../../lib/distLock')

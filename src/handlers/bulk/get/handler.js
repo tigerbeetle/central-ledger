@@ -37,11 +37,11 @@ const Consumer = require('@mojaloop/central-services-stream').Util.Consumer
 const Enum = require('@mojaloop/central-services-shared').Enum
 const Metrics = require('@mojaloop/central-services-metrics')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
-const Config = require('../../../lib/config')
+const Config = require('../../../lib/config/index').default
 const BulkTransferService = require('../../../domain/bulkTransfer')
 const BulkTransferModel = require('../../../models/bulkTransfer/bulkTransfer')
 const Validator = require('../shared/validator')
-const { ERROR_HANDLING } = require('../../../lib/config')
+const { ERROR_HANDLING } = require('../../../lib/config/index').default
 
 const location = { module: 'BulkGetHandler', method: '', path: '' }
 const rethrow = require('../../../shared/rethrow')

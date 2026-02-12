@@ -36,7 +36,7 @@
 
 const Participant = require('../../../domain/participant')
 const BulkTransferService = require('../../../domain/bulkTransfer')
-const Config = require('../../../lib/config')
+const Config = require('../../../lib/config/index').default
 const Enum = require('@mojaloop/central-services-shared').Enum
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 

@@ -47,7 +47,7 @@ const { Consumer, Producer } = require('@mojaloop/central-services-stream').Util
 
 const { logger } = require('../../shared/logger')
 const { ERROR_MESSAGES } = require('../../shared/constants')
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 const TransferService = require('../../domain/transfer')
 const FxService = require('../../domain/fx')
 const FxTransferModel = require('../../models/fxTransfer')

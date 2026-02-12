@@ -33,7 +33,7 @@ const { Enum } = require('@mojaloop/central-services-shared')
 const Sinon = require('sinon')
 const { processPositionFxFulfilBin } = require('../../../../src/domain/position/fx-fulfil')
 const { randomUUID } = require('crypto')
-const Config = require('../../../../src/lib/config')
+const Config = require('../../../../src/lib/config/index').default
 
 const constructFxTransferCallbackTestData = (initiatingFsp, counterPartyFsp) => {
   const commitRequestId = randomUUID()

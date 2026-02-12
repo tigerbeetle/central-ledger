@@ -43,7 +43,7 @@ const ParticipantCached = require('../../../src/models/participant/participantCa
 const ParticipantCurrencyCached = require('../../../src/models/participant/participantCurrencyCached')
 const ParticipantLimitCached = require('../../../src/models/participant/participantLimitCached')
 const SettlementModelCached = require('../../../src/models/settlement/settlementModelCached')
-const Config = require('../../../src/lib/config')
+const Config = require('../../../src/lib/config/index').default
 
 const settlementModels = [
   {

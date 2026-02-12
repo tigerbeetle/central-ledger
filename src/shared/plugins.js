@@ -43,7 +43,7 @@ const Vision = require('@hapi/vision')
 const Blipp = require('blipp')
 const ErrorHandling = require('@mojaloop/central-services-error-handling')
 const { APIDocumentation, loggingPlugin } = require('@mojaloop/central-services-shared').Util.Hapi
-const Config = require('../lib/config')
+const Config = require('../lib/config/index').default
 const { logger } = require('./logger')
 
 const registerPlugins = async (server) => {

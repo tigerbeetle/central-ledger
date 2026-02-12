@@ -37,7 +37,7 @@ const {
   getSubServiceHealthBroker,
   getSubServiceHealthProxyCache
 } = require('../../lib/healthCheck/subServiceHealth')
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 
 const subServiceChecks = Config.PROXY_CACHE_CONFIG?.enabled
   ? [

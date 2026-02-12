@@ -219,18 +219,29 @@ async function runUnitTestsTape(): Promise<ResultUnitTest> {
       '**/*.test.js'
     ).map(file => path.join(PROJECT_ROOT, 'test/unit', file))
 
+    // Manually enter your own test files here!
+    const manualTestFiles = [
+      // e.g:
+      // '/test/unit/handlers/bulk/prepare/handler.test.js',
+    ].map(file => path.join(PROJECT_ROOT, file))
+
     if (testFiles.length === 0) {
       console.warn(`runUnitTestsTape() - no test files found.`)
       resolve({ output: '', exitCode: 0 })
       return
     }
 
-    const proc = spawn('npx', ['tape', ...testFiles], {
+    // Run node directly with tape module to allow debugging
+    const tapeEntry = path.join(PROJECT_ROOT, 'node_modules/tape/bin/tape')
+    const proc = spawn('node', [
+      '-r', 'ts-node/register',
+      '--inspect',
+      tapeEntry,
+      ...testFiles
+      // ...manualTestFiles
+    ], {
       cwd: PROJECT_ROOT,
-      env: {
-        ...process.env,
-        NODE_OPTIONS: '-r ts-node/register'
-      },
+      env: process.env,
       stdio: ['inherit', 'pipe', 'pipe']
     })
 

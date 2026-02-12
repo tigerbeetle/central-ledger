@@ -33,7 +33,7 @@ const { Enum } = require('@mojaloop/central-services-shared')
 const Sinon = require('sinon')
 const { processPositionFulfilBin } = require('../../../../src/domain/position/fulfil')
 const { randomUUID } = require('crypto')
-const Config = require('../../../../src/lib/config')
+const Config = require('../../../../src/lib/config/index').default
 
 const constructTransferCallbackTestData = (payerFsp, payeeFsp, transferState, eventAction, amount, currency) => {
   const transferId = randomUUID()

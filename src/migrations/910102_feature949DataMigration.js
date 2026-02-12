@@ -28,7 +28,7 @@
  ******/
 
 'use strict'
-const Config = require('../lib/config')
+const Config = require('../lib/config/index').default
 const RUN_DATA_MIGRATIONS = Config.DB_RUN_DATA_MIGRATIONS
 
 /**

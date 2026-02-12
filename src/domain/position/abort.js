@@ -34,7 +34,7 @@
  ******/
 const { Enum } = require('@mojaloop/central-services-shared')
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 const Utility = require('@mojaloop/central-services-shared').Util
 const MLNumber = require('@mojaloop/ml-number')
 const Logger = require('../../shared/logger').logger

@@ -32,7 +32,7 @@ const { Enum, Util } = require('@mojaloop/central-services-shared')
 const { Consumer, Producer } = require('@mojaloop/central-services-stream').Util
 
 const { logger } = require('../../shared/logger')
-const Config = require('../../lib/config')
+const Config = require('../../lib/config/index').default
 const TransferObjectTransform = require('../../domain/transfer/transform')
 const Participant = require('../../domain/participant')
 

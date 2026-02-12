@@ -33,7 +33,7 @@ const { Enum } = require('@mojaloop/central-services-shared')
 const Sinon = require('sinon')
 const { processPositionPrepareBin } = require('../../../../src/domain/position/prepare')
 const Logger = require('../../../../src/shared/logger').logger
-const Config = require('../../../../src/lib/config')
+const Config = require('../../../../src/lib/config/index').default
 
 // Each transfer is for $2.00 USD
 const transferMessage1 = {
