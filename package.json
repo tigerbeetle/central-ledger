@@ -37,7 +37,7 @@
   "scripts": {
     "build": "tsc",
     "start": "npm run start:api",
-    "start:api": "node src/api/index.js",
+    "start:api": "node dist/api/index.js",
     "start:handlers": "node src/handlers/index.js",
     "start:debug": "npm start --node-options --inspect=0.0.0.0",
     "start:tsnode": "ts-node ./src/api/index.ts",
