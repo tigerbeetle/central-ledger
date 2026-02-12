@@ -20,7 +20,8 @@
     "node_modules",
     "src/**/*.int.ts",
     "src/**/*.unit.ts",
-    "src/**/*.d.ts"
+    "src/**/*.d.ts",
+    "src/testing/**"
   ],
   "ts-node": {
     "transpileOnly": true,
