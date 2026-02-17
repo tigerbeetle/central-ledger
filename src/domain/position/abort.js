@@ -133,20 +133,20 @@ const processPositionAbortBin = async (
         for (const positionChange of cyrilResult.positionChanges) {
           if (positionChange.isFxTransferStateChange) {
             if (positionChange.notifyTo) {
-              // Construct notification message for fx transfer state change
-              const resultMessage = _constructAbortResultMessage(binItem, positionChange.commitRequestId, from, positionChange.notifyTo, positionChange.isOriginalId, true)
+              // Construct/Forward the error message
+              const resultMessage = _constructOrForwardAbortResultMessage(binItem, positionChange.commitRequestId, from, positionChange.notifyTo, positionChange.isOriginalId, true)
               resultMessages.push({ binItem, message: Utility.clone(resultMessage) })
             }
           } else {
-            // Construct notification message for transfer state change
-            const resultMessage = _constructAbortResultMessage(binItem, positionChange.transferId, from, positionChange.notifyTo, positionChange.isOriginalId, false)
+            // Construct/Forward the error message
+            const resultMessage = _constructOrForwardAbortResultMessage(binItem, positionChange.transferId, from, positionChange.notifyTo, positionChange.isOriginalId, false)
             resultMessages.push({ binItem, message: Utility.clone(resultMessage) })
           }
         }
         // Add notifications in the transferStateChanges if available
         if (Array.isArray(cyrilResult.transferStateChanges)) {
           for (const transferStateChange of cyrilResult.transferStateChanges) {
-            const resultMessage = _constructAbortResultMessage(binItem, transferStateChange.transferId, from, transferStateChange.notifyTo, transferStateChange.isOriginalId, false)
+            const resultMessage = _constructOrForwardAbortResultMessage(binItem, transferStateChange.transferId, from, transferStateChange.notifyTo, transferStateChange.isOriginalId, false)
             resultMessages.push({ binItem, message: Utility.clone(resultMessage) })
             delete transferStateChange.isOriginalId
             delete transferStateChange.notifyTo
@@ -180,30 +180,34 @@ const processPositionAbortBin = async (
   }
 }
 
-const _constructAbortResultMessage = (binItem, id, from, notifyTo, isOriginalId, isFx) => {
-  let apiErrorCode = ErrorHandler.Enums.FSPIOPErrorCodes.PAYEE_REJECTION
+const _constructOrForwardAbortResultMessage = (binItem, id, from, notifyTo, isOriginalId, isFx) => {
+  const errorInformation = binItem.decodedPayload?.errorInformation
   let fromCalculated = from
+  let fspiopError
+
   if (binItem.message?.value.metadata.event.action === Enum.Events.Event.Action.FX_ABORT_VALIDATION || binItem.message?.value.metadata.event.action === Enum.Events.Event.Action.ABORT_VALIDATION) {
     fromCalculated = Config.HUB_NAME
-    apiErrorCode = ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR
+    const apiErrorCode = ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR
+    fspiopError = ErrorHandler.Factory.createFSPIOPError(
+      apiErrorCode,
+      null,
+      null,
+      null,
+      null
+    ).toApiErrorObject(Config.ERROR_HANDLING)
+  } else {
+    fspiopError = ErrorHandler.Factory.createFSPIOPErrorFromErrorInformation(errorInformation, null, null).toApiErrorObject(Config.ERROR_HANDLING)
   }
+
   if (!isOriginalId) {
     fromCalculated = Config.HUB_NAME
   }
-  const fspiopError = ErrorHandler.Factory.createFSPIOPError(
-    apiErrorCode,
-    null,
-    null,
-    null,
-    null
-  ).toApiErrorObject(Config.ERROR_HANDLING)
 
   const state = Utility.StreamingProtocol.createEventState(
     Enum.Events.EventStatus.FAILURE.status,
     fspiopError.errorInformation.errorCode,
     fspiopError.errorInformation.errorDescription
   )
-
   // Create metadata for the message
   const metadata = Utility.StreamingProtocol.createMetadataWithCorrelatedEvent(
     id,
