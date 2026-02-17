@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [19.12.6](https://github.com/mojaloop/central-ledger/compare/v19.12.5...v19.12.6) (2026-02-17)
+
+
+### Bug Fixes
+
+* do not modify the abort message in position handler [#4317](https://github.com/mojaloop/central-ledger/issues/4317) ([#1253](https://github.com/mojaloop/central-ledger/issues/1253)) ([b24e4d1](https://github.com/mojaloop/central-ledger/commit/b24e4d10c5676c7a367f76c4c4fb40d42805e61e))
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([bb4e00a](https://github.com/mojaloop/central-ledger/commit/bb4e00af92eea46bb9ceafc3f97ce43e5504fbd0))
+
 ### [19.12.5](https://github.com/mojaloop/central-ledger/compare/v19.12.4...v19.12.5) (2026-02-05)
 
 
