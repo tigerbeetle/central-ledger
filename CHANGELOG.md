@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [19.12.7](https://github.com/mojaloop/central-ledger/compare/v19.12.6...v19.12.7) (2026-02-19)
+
+
+### Bug Fixes
+
+* remove deprecated mongodb option ([#1258](https://github.com/mojaloop/central-ledger/issues/1258)) ([7a490fe](https://github.com/mojaloop/central-ledger/commit/7a490fef4dc3d33edad944fba762fc00a9efddfe))
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([14a29f3](https://github.com/mojaloop/central-ledger/commit/14a29f3341dfc9d32c550838032d2758dceeea2d))
+
 ### [19.12.6](https://github.com/mojaloop/central-ledger/compare/v19.12.5...v19.12.6) (2026-02-17)
 
 
