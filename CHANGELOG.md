@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [19.12.8](https://github.com/mojaloop/central-ledger/compare/v19.12.7...v19.12.8) (2026-02-20)
+
+
+### Bug Fixes
+
+* grype scan override ([#1259](https://github.com/mojaloop/central-ledger/issues/1259)) ([6a64210](https://github.com/mojaloop/central-ledger/commit/6a642106bdd18dfd8eb15501845dff1f162ab960))
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([fb0e383](https://github.com/mojaloop/central-ledger/commit/fb0e38387b2111f7faab5e5ddac30f5a3fc9ed69))
+
 ### [19.12.7](https://github.com/mojaloop/central-ledger/compare/v19.12.6...v19.12.7) (2026-02-19)
 
 
