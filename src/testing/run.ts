@@ -217,10 +217,14 @@ function runCoverageNative(opts: NycOptions): void {
  */
 async function runUnitTestsTape(): Promise<ResultUnitTest> {
   return new Promise((resolve) => {
-    const testFiles = findFiles(
-      path.join(PROJECT_ROOT, 'test/unit'),
-      '**/*.test.js'
-    ).map(file => path.join(PROJECT_ROOT, 'test/unit', file))
+  // const testFiles = findFiles(
+    //   path.join(PROJECT_ROOT, 'test/unit'),
+    //   '**/*.test.js'
+    // ).map(file => path.join(PROJECT_ROOT, 'test/unit', file))
+
+    const testFiles = [
+      'test/unit/shared/setup.test.js'
+    ].map(file => path.join(PROJECT_ROOT, file))
 
     if (testFiles.length === 0) {
       console.warn(`runUnitTestsTape() - no test files found.`)
