@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [19.12.8](https://github.com/mojaloop/central-ledger/compare/v19.12.7...v19.12.8) (2026-02-20)
+
+
+### Bug Fixes
+
+* grype scan override ([#1259](https://github.com/mojaloop/central-ledger/issues/1259)) ([6a64210](https://github.com/mojaloop/central-ledger/commit/6a642106bdd18dfd8eb15501845dff1f162ab960))
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([fb0e383](https://github.com/mojaloop/central-ledger/commit/fb0e38387b2111f7faab5e5ddac30f5a3fc9ed69))
+
+### [19.12.7](https://github.com/mojaloop/central-ledger/compare/v19.12.6...v19.12.7) (2026-02-19)
+
+
+### Bug Fixes
+
+* remove deprecated mongodb option ([#1258](https://github.com/mojaloop/central-ledger/issues/1258)) ([7a490fe](https://github.com/mojaloop/central-ledger/commit/7a490fef4dc3d33edad944fba762fc00a9efddfe))
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([14a29f3](https://github.com/mojaloop/central-ledger/commit/14a29f3341dfc9d32c550838032d2758dceeea2d))
+
+### [19.12.6](https://github.com/mojaloop/central-ledger/compare/v19.12.5...v19.12.6) (2026-02-17)
+
+
+### Bug Fixes
+
+* do not modify the abort message in position handler [#4317](https://github.com/mojaloop/central-ledger/issues/4317) ([#1253](https://github.com/mojaloop/central-ledger/issues/1253)) ([b24e4d1](https://github.com/mojaloop/central-ledger/commit/b24e4d10c5676c7a367f76c4c4fb40d42805e61e))
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([bb4e00a](https://github.com/mojaloop/central-ledger/commit/bb4e00af92eea46bb9ceafc3f97ce43e5504fbd0))
+
 ### [19.12.5](https://github.com/mojaloop/central-ledger/compare/v19.12.4...v19.12.5) (2026-02-05)
 
 

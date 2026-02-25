@@ -1,6 +1,6 @@
 {
   "name": "@mojaloop/central-ledger",
-  "version": "19.12.5",
+  "version": "19.12.8",
   "description": "Central ledger hosted by a scheme to record and settle transfers",
   "license": "Apache-2.0",
   "author": "ModusBox",
@@ -89,22 +89,22 @@
     "@hapi/catbox": "12.1.1",
     "@hapi/catbox-memory": "6.0.2",
     "@hapi/good": "9.0.1",
-    "@hapi/hapi": "21.4.4",
+    "@hapi/hapi": "21.4.6",
     "@hapi/inert": "7.1.0",
     "@hapi/vision": "7.0.3",
-    "@mojaloop/central-services-error-handling": "13.1.5",
-    "@mojaloop/central-services-health": "15.2.1",
-    "@mojaloop/central-services-logger": "11.10.3",
-    "@mojaloop/central-services-metrics": "12.8.3",
+    "@mojaloop/central-services-error-handling": "13.1.6",
+    "@mojaloop/central-services-health": "15.2.2",
+    "@mojaloop/central-services-logger": "11.10.4",
+    "@mojaloop/central-services-metrics": "12.8.5",
     "@mojaloop/central-services-shared": "18.35.3",
-    "@mojaloop/central-services-stream": "11.9.0",
-    "@mojaloop/database-lib": "github:tigerbeetle/database-lib#main",
-    "@mojaloop/event-sdk": "14.8.2",
+    "@mojaloop/central-services-stream": "11.9.1",
+    "@mojaloop/database-lib": "11.3.7",
+    "@mojaloop/event-sdk": "14.8.3",
     "@mojaloop/inter-scheme-proxy-cache-lib": "2.9.0",
-    "@mojaloop/ml-number": "11.4.2",
-    "@mojaloop/object-store-lib": "12.2.2",
+    "@mojaloop/ml-number": "11.4.3",
+    "@mojaloop/object-store-lib": "12.2.3",
     "@now-ims/hapi-now-auth": "2.1.0",
-    "ajv": "8.17.1",
+    "ajv": "8.18.0",
     "ajv-keywords": "5.1.0",
     "base64url": "3.0.1",
     "blipp": "4.0.2",
@@ -133,16 +133,16 @@
   },
   "devDependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.69.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.70.0",
     "@types/mock-knex": "0.4.8",
     "async-retry": "1.3.3",
     "audit-ci": "^7.1.0",
     "get-port": "5.1.1",
     "jsdoc": "4.0.5",
-    "jsonpath": "1.2.0",
+    "jsonpath": "1.2.1",
     "mock-knex": "0.4.13",
-    "nodemon": "3.1.11",
-    "npm-check-updates": "19.3.2",
+    "nodemon": "3.1.13",
+    "npm-check-updates": "19.4.1",
     "nyc": "17.1.0",
     "pre-commit": "1.2.2",
     "proxyquire": "2.1.3",
@@ -157,12 +157,23 @@
     "ts-node": "^10.9.2"
   },
   "overrides": {
+    "ajv": "8.18.0",
+    "eslint": {
+      "ajv": "6.12.6"
+    },
+    "eslint@9.39.2": {
+      "ajv": "6.12.6"
+    },
+    "@eslint/eslintrc": {
+      "ajv": "6.12.6"
+    },
+    "axios": "1.13.5",
     "brace-expansion": "2.0.2",
     "form-data": "4.0.4",
     "lodash": "4.17.23",
     "undici": "6.23.0",
     "shins": {
-      "ajv": "6.12.3",
+      "ajv": "8.18.0",
       "ejs": "3.1.10",
       "sanitize-html": "2.12.1",
       "markdown-it": "12.3.2"
@@ -183,7 +194,7 @@
     "trim": "0.0.3",
     "cross-spawn": "7.0.6",
     "yargs-parser": "21.1.1",
-    "fast-xml-parser": "5.3.4"
+    "fast-xml-parser": "5.3.6"
   },
   "config": {
     "knex": "--knexfile ./src/knexfile.js",
