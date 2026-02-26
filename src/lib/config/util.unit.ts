@@ -42,8 +42,12 @@ import {
   defaultEnvString,
   assertKafkaConfig,
   assertProvisioning,
+<<<<<<< HEAD
   kafkaWithBrokerDefaults,
   deepMerge
+=======
+  kafkaWithBrokerDefaults
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 } from './util'
 import { KafkaConfig, KafkaConsumerConfig, KafkaProducerConfig } from './types'
 import PRNG from '../../testing/prng'
@@ -373,9 +377,14 @@ describe('lib/config/util', () => {
       return acc
     }, [] as Array<MutationOption>)
 
+<<<<<<< HEAD
     const mutateConfigKafka = (input: any, times: number): [any, 'FAIL' | 'PASS', any] => {
       assert(times > 0, 'Expected times to be a positive integer')
       const choices: Array<string> = []
+=======
+    const mutateConfigKafka = (input: any, times: number): [any, 'FAIL' | 'PASS'] => {
+      assert(times > 0, 'Expected times to be a positive integer')
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
       // By default we expect to start with a valid config.
       let expectPassOrFail: 'FAIL' | 'PASS' = 'PASS' as unknown as 'FAIL' | 'PASS'
       const mutatablePaths = enumeratePaths(input).filter(path =>
@@ -386,14 +395,21 @@ describe('lib/config/util', () => {
         const paths = enumeratePaths(input)
         const path = prng.randomElementFrom(paths)
 
+<<<<<<< HEAD
         // Mark this path as uneligible to be mutated in future rounds.
+=======
+        // Mark this path as uneligible to be mutated.
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
         const idxPath = mutatablePaths.indexOf(path)
         if (idxPath >= 0) {
           mutatablePaths.splice(idxPath, 1)
         }
 
         deleteAtPath(input, path)
+<<<<<<< HEAD
         choices.push(`DELETE_ELEMENT: ${path}`)
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 
         // Once it's failed, it can't be saved.
         if (expectPassOrFail === 'FAIL') return
@@ -423,7 +439,10 @@ describe('lib/config/util', () => {
 
         const newValue = prng.randomElementFrom([null, 'test-string', undefined, 1323])
         replaceAtPath(input, path, newValue)
+<<<<<<< HEAD
         choices.push(`MUTATE_ACTION_TOPIC_MAP: ${path} : newValue: ${newValue}`)
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 
         if (expectPassOrFail === 'FAIL') return
 
@@ -451,13 +470,18 @@ describe('lib/config/util', () => {
       for (let idx = times; idx >= 0; idx--) {
         input = _mutateConfig(input)
       }
+<<<<<<< HEAD
       return [input, expectPassOrFail, choices]
+=======
+      return [input, expectPassOrFail]
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
     }
 
     it('fuzz: fails for an invalid kafka config', () => {
       const ITERATIONS = 100
       for (let idx = 0; idx < ITERATIONS; idx++) {
         const baseConfig = makeBaseConfig()
+<<<<<<< HEAD
         const [mutated, expectPassOrFail, choices] = mutateConfigKafka(baseConfig, 4)
         switch (expectPassOrFail) {
           // Mutation has made config invalid.
@@ -472,13 +496,29 @@ describe('lib/config/util', () => {
                 throw err
               }
             }
+=======
+        const [mutated, expectPassOrFail] = mutateConfigKafka(baseConfig, 5)
+        switch (expectPassOrFail) {
+          // Mutation has made config invalid.
+          case 'FAIL': {
+            assert.throws(
+              () => assertKafkaConfig(mutated), 
+              `Expected mutated kafka config to fail validation: (iteration: ${idx}).\n\
+              ${JSON.stringify(mutated, null, 2)}`
+            )
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
             break
           }
           // Mutation hasn't made config invalid.
           case 'PASS': {
             assert.doesNotThrow(
               () => assertKafkaConfig(mutated),
+<<<<<<< HEAD
               `Expected mutated kafka config to pass validation: (iteration: ${idx}).`
+=======
+              `Expected mutated kafka config to pass validation: (iteration: ${idx}).\n\
+              ${JSON.stringify(mutated, null, 2)}`
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
             )
           }
         }
@@ -593,6 +633,7 @@ describe('lib/config/util', () => {
       assert.throws(() => defaultEnvString({}, 'LOG_ENABLED', {} as unknown as string))
     })
   })
+<<<<<<< HEAD
 
   describe('deepMerge', () => {
     it('merges top-level', () => {
@@ -703,6 +744,8 @@ describe('lib/config/util', () => {
       assert.strictEqual(result, target)
     })
   })
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 })
 
 const makeBaseConfig = (): KafkaConfig => {
@@ -751,9 +794,12 @@ const makeBaseConfig = (): KafkaConfig => {
       },
       NOTIFICATION: {
         EVENT: generateValidConsumer()
+<<<<<<< HEAD
       },
       DEFERREDSETTLEMENT: {
         CLOSE: generateValidConsumer()
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
       }
     },
     PRODUCER: {

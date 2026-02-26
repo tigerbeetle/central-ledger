@@ -29,6 +29,7 @@ import path from 'node:path'
 import parseStringsInObject from 'parse-strings-in-object'
 import RC from 'rc'
 import { ApplicationConfig } from './types'
+<<<<<<< HEAD
 import {
   assertBoolean,
   assertDatabaseConfig,
@@ -45,6 +46,9 @@ import {
   defaultTo,
   kafkaWithBrokerDefaults
 } from './util'
+=======
+import { assertBoolean, assertDatabaseConfig, assertDistLockConfig, assertInstrumentationConfig, assertInstrumentationMetricsLabels, assertKafkaConfig, assertNestedFields, assertNumber, assertProvisioning, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo, kafkaWithBrokerDefaults } from './util'
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 import assert from 'node:assert'
 import { logger } from '../../shared/logger'
 
@@ -64,11 +68,16 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
   assertNestedFields(rawConfig, 'HANDLERS.TIMEOUT')
   assertNestedFields(rawConfig, 'HANDLERS.TIMEOUT.DIST_LOCK')
   assertNestedFields(rawConfig, 'HANDLERS.TIMEOUT.DIST_LOCK.redisConfigs')
+<<<<<<< HEAD
   assertNestedFields(rawConfig, 'HANDLERS.SETTINGS.RULES')
   assertNestedFields(rawConfig, 'INSTRUMENTATION')
   assertNestedFields(rawConfig, 'HUB_PARTICIPANT')
   assertNestedFields(rawConfig, 'WINDOW_AGGREGATION.RETRY_COUNT')
   assertNestedFields(rawConfig, 'WINDOW_AGGREGATION.RETRY_INTERVAL')
+=======
+  assertNestedFields(rawConfig, 'INSTRUMENTATION')
+  assertNestedFields(rawConfig, 'HUB_PARTICIPANT')
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 
   const unsafeConfig: UnsafeApplicationConfig = {
     PORT: rawConfig.PORT,
@@ -109,9 +118,12 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
     MONGODB_DEBUG: rawConfig.MONGODB.DEBUG === true,
     MONGODB_DISABLED: rawConfig.MONGODB.DISABLED === true,
     ERROR_HANDLING: rawConfig.ERROR_HANDLING,
+<<<<<<< HEAD
     HANDLERS: {
       SETTINGS: rawConfig.HANDLERS.SETTINGS
     },
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
     HANDLERS_DISABLED: rawConfig.HANDLERS.DISABLED,
     HANDLERS_API_DISABLED: rawConfig.HANDLERS.API.DISABLED,
     HANDLERS_TIMEOUT: rawConfig.HANDLERS.TIMEOUT,
@@ -131,8 +143,11 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
     CACHE_CONFIG: rawConfig.CACHE,
     PROXY_CACHE_CONFIG: rawConfig.PROXY_CACHE,
     API_DOC_ENDPOINTS_ENABLED: defaultTo(rawConfig.API_DOC_ENDPOINTS_ENABLED, false),
+<<<<<<< HEAD
     WINDOW_AGGREGATION_RETRY_COUNT: rawConfig.WINDOW_AGGREGATION.RETRY_COUNT,
     WINDOW_AGGREGATION_RETRY_INTERVAL: rawConfig.WINDOW_AGGREGATION.RETRY_INTERVAL,
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
     KAFKA_CONFIG: kafka,
     SERVER_PRINT_ROUTES_ON_STARTUP: defaultTo(rawConfig.SERVER_PRINT_ROUTES_ON_STARTUP, true),
     LEDGER: defaultTo(rawConfig.LEDGER, 'LEGACY'),
@@ -158,15 +173,23 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
   assertString(unsafeConfig.MONGODB_DATABASE)
   assertBoolean(unsafeConfig.MONGODB_DEBUG)
   assertBoolean(unsafeConfig.MONGODB_DISABLED)
+<<<<<<< HEAD
   assert(unsafeConfig.AMOUNT)
   assertNumber(unsafeConfig.AMOUNT.PRECISION)
   assertNumber(unsafeConfig.AMOUNT.SCALE)
   assert(unsafeConfig.ERROR_HANDLING)
+=======
+  assertNumber(unsafeConfig.AMOUNT.PRECISION)
+  assertNumber(unsafeConfig.AMOUNT.SCALE)
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   assertBoolean(unsafeConfig.ERROR_HANDLING.includeCauseExtension)
   assertBoolean(unsafeConfig.ERROR_HANDLING.truncateExtensions)
   assertBoolean(unsafeConfig.HANDLERS_DISABLED)
   assertBoolean(unsafeConfig.HANDLERS_API_DISABLED)
+<<<<<<< HEAD
   assert(unsafeConfig.HANDLERS_TIMEOUT)
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   assertDistLockConfig(unsafeConfig.HANDLERS_TIMEOUT.DIST_LOCK)
   assertBoolean(unsafeConfig.HANDLERS_TIMEOUT.DISABLED)
   assertString(unsafeConfig.HANDLERS_TIMEOUT.TIMEXP)
@@ -174,11 +197,17 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
   assertBoolean(unsafeConfig.HANDLERS_TIMEOUT_DISABLED)
   assertString(unsafeConfig.HANDLERS_TIMEOUT_TIMEXP)
   assertString(unsafeConfig.HANDLERS_TIMEOUT_TIMEZONE)
+<<<<<<< HEAD
   assert(unsafeConfig.CACHE_CONFIG)
   assertBoolean(unsafeConfig.CACHE_CONFIG.CACHE_ENABLED)
   assertNumber(unsafeConfig.CACHE_CONFIG.MAX_BYTE_SIZE)
   assertNumber(unsafeConfig.CACHE_CONFIG.EXPIRES_IN_MS)
   assert(unsafeConfig.PROXY_CACHE_CONFIG)
+=======
+  assertBoolean(unsafeConfig.CACHE_CONFIG.CACHE_ENABLED)
+  assertNumber(unsafeConfig.CACHE_CONFIG.MAX_BYTE_SIZE)
+  assertNumber(unsafeConfig.CACHE_CONFIG.EXPIRES_IN_MS)
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   assertBoolean(unsafeConfig.PROXY_CACHE_CONFIG.enabled)
   assertString(unsafeConfig.PROXY_CACHE_CONFIG.type)
   assertProxyCacheConfig(unsafeConfig.PROXY_CACHE_CONFIG.proxyConfig)
@@ -217,10 +246,17 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
 const makeConfig = (): ApplicationConfig => {
   const PATH_TO_CONFIG_FILE = defaultEnvString(
     process.env,
+<<<<<<< HEAD
     'PATH_TO_CONFIG_FILE',
     path.join(__dirname, '../../..', 'config/default.json')
   )
   logger.info(`makeConfig() - Loading config from: ${PATH_TO_CONFIG_FILE}`)
+=======
+    'PATH_TO_CONFIG_FILE', 
+    path.join(__dirname, '../../..', 'config/default.json')
+  )
+  logger.warn(`makeConfig() - Loading config from: ${PATH_TO_CONFIG_FILE}`)
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   const raw = parseStringsInObject(RC('CLEDG', require(PATH_TO_CONFIG_FILE)))
   const resolved = resolveConfig(raw)
   const validated = parseAndValidateConfig(resolved)

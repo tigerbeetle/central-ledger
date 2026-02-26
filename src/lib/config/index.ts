@@ -26,12 +26,16 @@
  ******/
 
 import { makeConfig } from "./resolver"
+<<<<<<< HEAD
 import { deepMerge } from "./util"
 import type { ApplicationConfig } from './types'
+=======
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 
 const config = makeConfig()
 
 /**
+<<<<<<< HEAD
  * Override config values for testing. Ideally we wouldn't need to do this, but because config is
  * typically imported as a global, we need a way to override some config parameters in test.
  */
@@ -58,3 +62,9 @@ module.exports = config
 module.exports.default = config
 module.exports.overrideForTesting = overrideForTesting
 module.exports.resetOverride = resetOverride
+=======
+ * Make config available as a global, useful for backwards compatibility
+ */
+export default config
+export * from './types'
+>>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
