@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [19.13.1](https://github.com/mojaloop/central-ledger/compare/v19.13.0...v19.13.1) (2026-02-26)
+
+
+### Bug Fixes
+
+* make fxQuoteConversionTerms.sourceAmount nullable ([#1267](https://github.com/mojaloop/central-ledger/issues/1267)) ([f770970](https://github.com/mojaloop/central-ledger/commit/f770970159fdf5624c0763562edff89db97beb5c))
+
+
+### Chore
+
+* **sbom:** update sbom [skip ci] ([b834732](https://github.com/mojaloop/central-ledger/commit/b834732ce99fd8639a5e35f410294f1fef391c82))
+
 ## [19.13.0](https://github.com/mojaloop/central-ledger/compare/v19.12.8...v19.13.0) (2026-02-26)
 
 
