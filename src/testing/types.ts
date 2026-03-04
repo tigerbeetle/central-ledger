@@ -37,10 +37,14 @@ export type RunTask = {
   tag: 'TEST_COVERAGE',
   type: 'TAPE' | 'NATIVE' | 'BOTH',
   onlyReport: boolean
+} | {
+  tag: 'TEST_FUNCTIONAL',
+  quiet: boolean
 }
 
 export type RunTaskUnit = Extract<RunTask, { tag: 'TEST_UNIT' }>
 export type RunTaskCoverage = Extract<RunTask, { tag: 'TEST_COVERAGE' }>
+export type RunTaskFunctional = Extract<RunTask, { tag: 'TEST_FUNCTIONAL' }>
 
 export type ResultUnitTest = {
   output: string,
