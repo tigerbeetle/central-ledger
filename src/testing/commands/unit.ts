@@ -31,13 +31,39 @@ import { spawn, spawnSync } from 'node:child_process'
 import { ResultUnitTest, RunTaskUnit, RunTaskCoverage } from '../types'
 import { findFiles, convertToXunit } from '../util'
 import { mergeTapStreams } from '../tap-stream'
+import { PROJECT_ROOT, NYC_BIN, TAPE_BIN } from '../constants'
 
-export const PROJECT_ROOT = path.resolve(__dirname, '../../..')
+export const usageUnit = `Usage:
+  ./testing/run.ts unit [options]
 
-// Local binaries.
-export const NYC_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/nyc')
-export const TAPE_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tape')
-export const TAP_XUNIT_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tap-xunit')
+Options:
+  --type=<type>          Test type to run.
+                         - tape:   Run legacy tape tests only.
+                         - native: Run native Node.js tests only.
+                         - both:   Run both tape and native tests (default).
+
+  --output=<format>      Output format.
+                         - default: Standard TAP output (default).
+                         - xunit:   Generate xunit XML report.
+
+  --outputPath=<path>    Path for xunit output file (required when --output=xunit).
+
+  --help, -h             Show this help message.
+
+Examples:
+  # Run all unit tests.
+  ./testing/run.ts unit
+
+  # Run only tape tests.
+  ./testing/run.ts unit --type=tape
+
+  # Run only native Node.js tests.
+  ./testing/run.ts unit --type=native
+
+  # Generate xunit XML report.
+  ./testing/run.ts unit --output=xunit --outputPath=./test/results/xunit.xml
+
+`
 
 /**
  * @function runUnitTests

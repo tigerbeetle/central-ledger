@@ -172,17 +172,56 @@ Logs are sent to standard output by default.
 
 ## Tests
 
-Tests include unit, functional, and integration.
+Central Ledger uses a unified TypeScript-based test runner (`src/testing/run.ts`) for all test types.
 
-Running the tests:
+### Test Types
 
+**Unit Tests** - Fast, isolated tests with no external dependencies
 ```bash
-    npm run test:all
+npm run test:unit              # Run all unit tests
+npm run test:unit:spec         # Run with spec reporter
+npm run test:coverage          # Run with coverage report
+npm run test:coverage-check    # Run and check coverage thresholds
 ```
 
-Tests include code coverage via istanbul. See the test/ folder for testing scripts.
+**Integration Tests** - Tests requiring Docker services (MySQL, Kafka, MongoDB)
+```bash
+npm run test:integration       # Run all integration tests (starts Docker automatically)
+npm run test:int               # Run standard integration tests only
+npm run test:int-override      # Run override integration tests only
+```
 
-### Running Integration Tests interactively
+**Functional Tests** - End-to-end tests using ml-core-test-harness
+```bash
+npm run test:functional        # Run full functional test suite
+```
+
+**All Tests**
+```bash
+npm run test:all               # Run all test suites
+```
+
+### Advanced Test Runner Usage
+
+The test runner supports additional options via the CLI:
+
+```bash
+# Unit tests
+ts-node src/testing/run.ts unit --type=native              # Native Node.js tests only
+ts-node src/testing/run.ts unit --output=xunit             # Generate xunit report
+
+# Integration tests
+ts-node src/testing/run.ts integration --skip-docker       # Docker already running
+ts-node src/testing/run.ts integration --skip-shutdown     # Leave Docker running
+ts-node src/testing/run.ts integration --type=standard     # Standard tests only
+
+# Functional tests
+ts-node src/testing/run.ts functional --quiet              # Minimal output
+```
+
+For more details on the test runner, see `src/testing/run.ts`.
+
+### Running Integration Tests Interactively
 
 If you want to run integration tests in a repetitive manner, you can startup the test containers using `docker-compose` via one of the following methods:
 
@@ -278,49 +317,79 @@ npm run test:int-override
 ```
 
 
-If you want to just run all of the integration suite non-interactively then use npm run `test:integration`.
-It will handle docker start up, migration, service starting and testing. Be sure to exit any previously ran handlers or docker commands.
+The recommended approach is to use `npm run test:integration` which automatically:
+- Starts required Docker services (MySQL, Kafka, MongoDB)
+- Runs the integration tests
+- Cleans up Docker services afterward
+
+To leave Docker services running for debugging:
+```bash
+ML_CORE_TEST_SKIP_SHUTDOWN=true npm run test:integration
+```
 
 ### Running Functional Tests
 
-If you want to run functional tests locally utilizing the [ml-core-test-harness](https://github.com/mojaloop/ml-core-test-harness), you can run the following commands:
+Functional tests use the [ml-core-test-harness](https://github.com/mojaloop/ml-core-test-harness) to run end-to-end tests against a full Mojaloop deployment.
+
+**Prerequisites:** Build the local Docker image first:
 
 ```bash
+npm run docker:build
+# OR manually:
 export NODE_VERSION="$(cat .nvmrc)-alpine"
 docker build \
   --build-arg NODE_VERSION=$NODE_VERSION \
-  -t mojaloop/central-ledger:local \
+  -t central-ledger:local \
   .
 ```
+
+**Run functional tests:**
 
 ```bash
 npm run test:functional
 ```
 
-By default this will clone the [ml-core-test-harness](https://github.com/mojaloop/ml-core-test-harness) into `$ML_CORE_TEST_HARNESS_DIR`.
+The test runner will automatically:
+1. Clone the ml-core-test-harness (default: `/tmp/ml-core-test-harness`)
+2. Patch configuration to use your local central-ledger image
+3. Optimize health checks for faster startup
+4. Start all required services via Docker Compose
+5. Run the functional test suite
+6. Collect results and clean up
 
-See default values as specified in the [test-functional.sh](./test/scripts/test-functional.sh) script.
+**Configuration via environment variables:**
 
-Check test container logs for test results into `$ML_CORE_TEST_HARNESS_DIR` directory.
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ML_CORE_TEST_HARNESS_VERSION` | Test harness version to use | `v2.12.0` |
+| `ML_CORE_TEST_HARNESS_DIR` | Directory to clone test harness | `/tmp/ml-core-test-harness` |
+| `ML_CORE_TEST_SKIP_SHUTDOWN` | Leave services running after tests | `false` |
+| `CENTRAL_LEDGER_VERSION` | Docker image version to test | `local` |
 
-If you want to not have the [ml-core-test-harness](https://github.com/mojaloop/ml-core-test-harness) shutdown automatically by the script, make sure you set the following env var `export ML_CORE_TEST_SKIP_SHUTDOWN=true`.
+**Debugging functional tests:**
 
-By doing so, you are then able access TTK UI using the following URI: <http://localhost:9660>.
-
-Or alternatively, you can monitor the `ttk-func-ttk-tests-1` (See `ML_CORE_TEST_HARNESS_TEST_FUNC_CONT_NAME` in the [test-functional.sh](./test/scripts/test-functional.sh) script) container for test results with the following command:
-
+To keep services running for debugging:
 ```bash
-docker logs -f ttk-func-ttk-tests-1
+ML_CORE_TEST_SKIP_SHUTDOWN=true npm run test:functional
 ```
 
-TTK Test files:
+Access the TTK UI at: <http://localhost:9660>
 
-- **Test Collection**: `$ML_CORE_TEST_HARNESS_DIR/docker/ml-testing-toolkit/test-cases/collections/tests/p2p.json`
-- **Env Config**: `$ML_CORE_TEST_HARNESS_DIR//docker/ml-testing-toolkit/test-cases/environments/default-env.json`
+Monitor test execution:
+```bash
+docker logs -f ttk-func-ttk-fx-tests-1
+```
 
-Configuration modifiers:
+Check test results:
+```bash
+cat /tmp/ml-core-test-harness/reports/ttk-tests-console.log
+```
 
-- **central-ledger**: [./docker/config-modifier/configs/central-ledger.js](./docker/config-modifier/configs/central-ledger.js)
+**Test configuration:**
+
+- **central-ledger config**: [./docker/config-modifier/configs/central-ledger.js](./docker/config-modifier/configs/central-ledger.js)
+- **Test collections**: Located in the ml-core-test-harness repository
+- **Environment config**: Automatically configured by the test runner
 
 ## Development environment
 

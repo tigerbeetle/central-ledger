@@ -30,7 +30,7 @@ services:
     command:
       - "sh"
       - "-c"
-      - "sh /opt/wait-for/wait-for-central-ledger.sh && node src/api/index.js"
+      - "sh /opt/wait-for/wait-for-central-ledger.sh && node dist/api/index.js"
     ports:
       - "3001:3001"
     volumes:
@@ -65,7 +65,7 @@ services:
     command:
       - "sh"
       - "-c"
-      - "sh /opt/wait-for/wait-for-ml-api-adapter.sh && node src/api/index.js"
+      - "sh /opt/wait-for/wait-for-ml-api-adapter.sh && node dist/api/index.js"
     ports:
       - "3000:3000"
     volumes:

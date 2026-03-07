@@ -31,7 +31,9 @@ export type RunTask = {
   tag: 'TEST_UNIT',
   type: 'TAPE' | 'NATIVE' | 'BOTH',
   output: 'DEFAULT' | 'XUNIT',
-  /* If set, will write the output to this file. */
+  /** 
+   * If set, will write the output to this file. 
+   */
   outputPath?: string
 } | {
   tag: 'TEST_COVERAGE',
@@ -40,15 +42,33 @@ export type RunTask = {
 } | {
   tag: 'TEST_FUNCTIONAL',
   quiet: boolean
+} | {
+  tag: 'TEST_INTEGRATION',
+  type: 'STANDARD' | 'OVERRIDE' | 'BOTH',
+  output: 'DEFAULT' | 'XUNIT',
+  /** 
+   * If set, will write the output to this file. 
+   */
+  outputPath?: string
+  /**
+   * If `true`, will skip starting docker services. Useful for running the integration tests
+   * interactively.
+   */
+  skipDocker: boolean
+  /**
+   * If `true`, will skip shutting down docker services. Useful for running the integration tests
+   * interactively.
+   */
+  skipShutdown: boolean
 }
 
 export type RunTaskUnit = Extract<RunTask, { tag: 'TEST_UNIT' }>
 export type RunTaskCoverage = Extract<RunTask, { tag: 'TEST_COVERAGE' }>
 export type RunTaskFunctional = Extract<RunTask, { tag: 'TEST_FUNCTIONAL' }>
+export type RunTaskIntegration = Extract<RunTask, { tag: 'TEST_INTEGRATION' }>
 
 export type ResultUnitTest = {
   output: string,
-
   /**
    * `null` if the process exited early.
    */

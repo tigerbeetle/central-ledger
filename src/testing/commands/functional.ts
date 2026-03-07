@@ -25,22 +25,11 @@
 
  ******/
 
-import { spawn, spawnSync } from 'node:child_process'
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { RunTaskFunctional } from '../types'
-
-const PROJECT_ROOT = path.resolve(__dirname, '../../..')
-
-// ANSI color codes
-const colors = {
-  reset: '\x1b[0m',
-  bold: '\x1b[1m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m'
-}
+import { PROJECT_ROOT, colors } from '../constants'
+import { $ } from '../util'
 
 interface FunctionalTestConfig {
   centralLedgerVersion: string
@@ -52,7 +41,71 @@ interface FunctionalTestConfig {
 }
 
 /**
- * Build configuration from task options and environment variables
+ * Main function to run functional tests
+ */
+export async function runFunctionalTests(task: RunTaskFunctional): Promise<number> {
+  const config = buildConfig(task)
+
+  console.log(`\n${colors.bold}--=== Running Functional Test Runner ===--${colors.reset}\n`)
+  console.log(`${colors.cyan}==>${colors.reset} Configuration:`)
+  console.log(`    Central Ledger Version: ${config.centralLedgerVersion}`)
+  console.log(`    Test Harness Version:   ${config.testHarnessVersion}`)
+  console.log(`    Test Harness Dir:       ${config.testHarnessDir}`)
+  console.log(`    Skip Shutdown:          ${config.skipShutdown}`)
+  console.log(`    Quiet:                  ${config.quiet}`)
+  console.log('')
+
+  // Register SIGINT handler for graceful teardown.
+  const sigintHandler = async () => {
+    console.log(`\n${colors.yellow}Received SIGINT, tearing down...${colors.reset}`)
+    await dockerComposeDown(config).catch(() => {})
+    await cleanup(config).catch(() => {})
+    process.exit(1)
+  }
+  process.on('SIGINT', sigintHandler)
+
+  let exitCode = 1
+  try {
+    await cloneTestHarness(config)
+    await patchDockerCompose(config)
+    await patchWait4Config(config)
+    await copyConfigs(config)
+    await dockerComposeUp(config)
+
+    exitCode = await waitForContainer('ttk-func-ttk-fx-tests-1')
+
+    await collectLogs(config)
+
+    if (!config.skipShutdown) {
+      await dockerComposeDown(config)
+      await cleanup(config)
+    } else {
+      console.log(`\n${colors.yellow}==>${colors.reset} Skipping shutdown (containers still running)`)
+      console.log(`    You can debug with:`)
+      console.log(`    docker ps --filter "name=ttk-func"`)
+      console.log(`    docker logs ttk-func-ttk-fx-tests-1`)
+    }
+
+    const statusColor = exitCode === 0 ? colors.green : colors.red
+    const statusText = exitCode === 0 ? 'PASS' : 'FAIL'
+    console.log(`\n${colors.cyan}==>${colors.reset} Functional tests: ${statusColor}${statusText}${colors.reset} (exit code: ${exitCode})`)
+    return exitCode
+  } catch (err: any) {
+    console.error(`${colors.red}Error:${colors.reset}`, err.message)
+
+    if (!config.skipShutdown) {
+      await dockerComposeDown(config).catch(() => {})
+      await cleanup(config).catch(() => {})
+    }
+    return 1
+  } finally {
+    process.off('SIGINT', sigintHandler)
+  }
+}
+
+
+/**
+ * Build configuration from task options and environment variables.
  */
 function buildConfig(task: RunTaskFunctional): FunctionalTestConfig {
   return {
@@ -66,47 +119,21 @@ function buildConfig(task: RunTaskFunctional): FunctionalTestConfig {
 }
 
 /**
- * Run a shell command and return the result
- */
-function runCommand(command: string, args: string[], options: { cwd?: string, quiet?: boolean } = {}): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const stdio = options.quiet ? 'ignore' : 'inherit'
-    const proc = spawn(command, args, {
-      cwd: options.cwd || PROJECT_ROOT,
-      stdio,
-      shell: true
-    })
-
-    proc.on('close', (code) => {
-      resolve(code ?? 1)
-    })
-
-    proc.on('error', (err) => {
-      reject(err)
-    })
-  })
-}
-
-/**
- * Clone the test harness repository
+ * Clone the test harness repository.
  */
 async function cloneTestHarness(config: FunctionalTestConfig): Promise<void> {
-  // Clean up any existing directory first
-  try {
-    await rm(config.testHarnessDir, { recursive: true, force: true })
-  } catch (err) {
-    // Ignore errors if directory doesn't exist
-  }
+  // Clean up any existing directory first.
+  await rm(config.testHarnessDir, { recursive: true, force: true })
 
   console.log(`${colors.cyan}==>${colors.reset} Cloning ${config.testHarnessGit}:${config.testHarnessVersion} into ${config.testHarnessDir}`)
 
-  const exitCode = await runCommand('git', [
+  const exitCode = await $('git', [
     'clone',
     '--depth', '1',
     '--branch', config.testHarnessVersion,
     config.testHarnessGit,
     config.testHarnessDir
-  ], { quiet: config.quiet })
+  ], { quiet: config.quiet }).spawn()
 
   if (exitCode !== 0) {
     throw new Error(`Failed to clone test harness (exit code: ${exitCode})`)
@@ -114,17 +141,17 @@ async function cloneTestHarness(config: FunctionalTestConfig): Promise<void> {
 }
 
 /**
- * Patch docker-compose.yml for optimizations
+ * Patch docker-compose.yml for optimizations.
+ * Eventually these should make their way upstream.
  */
 async function patchDockerCompose(config: FunctionalTestConfig): Promise<void> {
   const composeFile = path.join(config.testHarnessDir, 'docker-compose.yml')
 
   console.log(`${colors.cyan}==>${colors.reset} Patching docker-compose.yml`)
 
-  // Read the file
   let content = await readFile(composeFile, 'utf-8')
 
-  // Replace central-ledger image with the locally built version
+  // Replace central-ledger image with the locally built version.
   const localImage = `central-ledger:${config.centralLedgerVersion}`
   content = content.replace(
     /^(\s*)(image:\s*)mojaloop\/central-ledger:[^\s]+$/gm,
@@ -133,14 +160,14 @@ async function patchDockerCompose(config: FunctionalTestConfig): Promise<void> {
 
   console.log(`${colors.cyan}==>${colors.reset} Using local central-ledger image: ${localImage}`)
 
-  // Replace central-ledger specific entrypoints with dist/ (TypeScript build output)
+  // Replace central-ledger specific entrypoints with dist/ (TypeScript build output).
   content = content
     .replace(/(central-ledger\.js.*?)node src\/api\//g, '$1node dist/api/')
     .replace(/(central-ledger\.js.*?)node src\/handlers\//g, '$1node dist/handlers/')
 
   console.log(`${colors.cyan}==>${colors.reset} Patched central-ledger entrypoints: src/* -> dist/*`)
 
-  // Optimize health check intervals for faster local testing
+  // Optimize health check intervals for faster local testing.
   content = content
     .replace(/interval:\s*30s/g, 'interval: 10s')
     .replace(/interval:\s*15s/g, 'interval: 8s')
@@ -149,12 +176,12 @@ async function patchDockerCompose(config: FunctionalTestConfig): Promise<void> {
 
   console.log(`${colors.cyan}==>${colors.reset} Optimized health check intervals`)
 
-  // Write back
+  // Write back.
   await writeFile(composeFile, content, 'utf-8')
 }
 
 /**
- * Optimize wait4 configuration for faster startup
+ * Optimize wait4 configuration for faster startup.
  */
 async function patchWait4Config(config: FunctionalTestConfig): Promise<void> {
   const wait4ConfigFile = path.join(config.testHarnessDir, 'docker/wait4/wait4.config.js')
@@ -167,14 +194,14 @@ async function patchWait4Config(config: FunctionalTestConfig): Promise<void> {
 }
 
 /**
- * Copy configuration files to test harness
+ * Copy configuration files to test harness.
  */
 async function copyConfigs(config: FunctionalTestConfig): Promise<void> {
   const srcDir = path.join(PROJECT_ROOT, 'docker/config-modifier/configs')
   const destDir = path.join(config.testHarnessDir, 'docker/config-modifier/configs')
   console.log(`${colors.cyan}==>${colors.reset} Copying configs from ${srcDir} to ${destDir}`)
 
-  const exitCode = await runCommand('cp', ['-rf', `${srcDir}/*`, destDir], { quiet: config.quiet })
+  const exitCode = await $('cp', ['-rf', `${srcDir}/*`, destDir], { quiet: config.quiet }).spawn()
 
   if (exitCode !== 0) {
     throw new Error(`Failed to copy configs (exit code: ${exitCode})`)
@@ -182,12 +209,12 @@ async function copyConfigs(config: FunctionalTestConfig): Promise<void> {
 }
 
 /**
- * Start docker compose with all required profiles
+ * Start docker compose with all required profiles.
  */
-async function startDockerCompose(config: FunctionalTestConfig): Promise<void> {
+async function dockerComposeUp(config: FunctionalTestConfig): Promise<void> {
   console.log(`${colors.cyan}==>${colors.reset} Starting Docker compose`)
 
-  const exitCode = await runCommand('docker', [
+  const exitCode = await $('docker', [
     'compose',
     '--project-name', 'ttk-func',
     '--ansi', 'never',
@@ -196,7 +223,7 @@ async function startDockerCompose(config: FunctionalTestConfig): Promise<void> {
     '--profile', 'ttk-provisioning-fx',
     '--profile', 'ttk-fx-tests',
     'up', '-d'
-  ], { cwd: config.testHarnessDir, quiet: config.quiet })
+  ], { cwd: config.testHarnessDir, quiet: config.quiet }).spawn()
 
   if (exitCode !== 0) {
     throw new Error(`Failed to start Docker compose (exit code: ${exitCode})`)
@@ -204,42 +231,41 @@ async function startDockerCompose(config: FunctionalTestConfig): Promise<void> {
 }
 
 /**
- * Wait for a container to exit and return its exit code
+ * Wait for a container to exit and return its exit code.
  */
 async function waitForContainer(containerName: string, pollIntervalMs: number = 5000): Promise<number> {
   console.log(`${colors.cyan}==>${colors.reset} Waiting for ${containerName} to complete...`)
 
-  return new Promise((resolve) => {
-    const checkStatus = () => {
-      const proc = spawnSync('docker', ['inspect', '--format={{.State.Status}}', containerName], {
-        encoding: 'utf-8'
-      })
+  while (true) {
+    const statusResult = $('docker', ['inspect', '--format={{.State.Status}}', containerName]).nothrow()
 
-      const status = proc.stdout.trim().replace(/'/g, '')
-
-      if (status === 'exited') {
-        const exitCodeProc = spawnSync('docker', ['inspect', '--format={{.State.ExitCode}}', containerName], {
-          encoding: 'utf-8'
-        })
-        const exitCode = parseInt(exitCodeProc.stdout.trim(), 10)
-
-        const statusColor = exitCode === 0 ? colors.green : colors.red
-        const statusText = exitCode === 0 ? 'PASS' : 'FAIL'
-        console.log(`${colors.cyan}==>${colors.reset} Container ${containerName}: ${statusColor}${statusText}${colors.reset}`)
-
-        resolve(exitCode)
-        return
-      }
-
-      setTimeout(checkStatus, pollIntervalMs)
+    if (!statusResult.success) {
+      throw new Error(`Failed to inspect container ${containerName}: ${statusResult.stderr}`)
     }
 
-    checkStatus()
-  })
+    const status = statusResult.stdout.trim().replace(/'/g, '')
+
+    if (status === 'exited') {
+      const exitCodeResult = $('docker', ['inspect', '--format={{.State.ExitCode}}', containerName]).nothrow()
+
+      if (!exitCodeResult.success) {
+        throw new Error(`Failed to get exit code for ${containerName}: ${exitCodeResult.stderr}`)
+      }
+
+      const exitCode = parseInt(exitCodeResult.stdout.trim(), 10)
+      const statusColor = exitCode === 0 ? colors.green : colors.red
+      const statusText = exitCode === 0 ? 'PASS' : 'FAIL'
+      console.log(`${colors.cyan}==>${colors.reset} Container ${containerName}: ${statusColor}${statusText}${colors.reset}`)
+
+      return exitCode
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
+  }
 }
 
 /**
- * Parse TTK summary from logs
+ * Parse TTK summary from logs.
  */
 function parseTtkSummary(logs: string): Record<string, string> | null {
   const summary: Record<string, string> = {}
@@ -260,7 +286,7 @@ function parseTtkSummary(logs: string): Record<string, string> | null {
 }
 
 /**
- * Print TTK summary in a nice table format
+ * Print TTK summary in a nice table format.
  */
 function printTtkSummary(summary: Record<string, string>): void {
   const keys = Object.keys(summary)
@@ -308,7 +334,7 @@ function printTtkSummary(summary: Record<string, string>): void {
 }
 
 /**
- * Collect logs from containers
+ * Collect logs from containers.
  */
 async function collectLogs(config: FunctionalTestConfig): Promise<void> {
   const reportsDir = path.join(config.testHarnessDir, 'reports')
@@ -317,16 +343,12 @@ async function collectLogs(config: FunctionalTestConfig): Promise<void> {
   await mkdir(reportsDir, { recursive: true })
 
   // Get provisioning logs
-  const provProc = spawnSync('docker', ['logs', 'ttk-func-ttk-provisioning-fx-1'], {
-    encoding: 'utf-8'
-  })
-  await writeFile(path.join(reportsDir, 'ttk-provisioning-console.log'), provProc.stdout + provProc.stderr, 'utf-8')
+  const provResult = $('docker', ['logs', 'ttk-func-ttk-provisioning-fx-1']).nothrow()
+  await writeFile(path.join(reportsDir, 'ttk-provisioning-console.log'), provResult.stdout + provResult.stderr, 'utf-8')
 
   // Get test logs
-  const testProc = spawnSync('docker', ['logs', 'ttk-func-ttk-fx-tests-1'], {
-    encoding: 'utf-8'
-  })
-  const testLogs = testProc.stdout + testProc.stderr
+  const testResult = $('docker', ['logs', 'ttk-func-ttk-fx-tests-1']).nothrow()
+  const testLogs = testResult.stdout + testResult.stderr
   await writeFile(path.join(reportsDir, 'ttk-tests-console.log'), testLogs, 'utf-8')
 
   // Parse and print summary
@@ -341,12 +363,12 @@ async function collectLogs(config: FunctionalTestConfig): Promise<void> {
 }
 
 /**
- * Shutdown docker compose
+ * Shutdown docker compose.
  */
-async function shutdownDockerCompose(config: FunctionalTestConfig): Promise<void> {
+async function dockerComposeDown(config: FunctionalTestConfig): Promise<void> {
   console.log(`${colors.cyan}==>${colors.reset} Shutting down Docker compose`)
 
-  await runCommand('docker', [
+  await $('docker', [
     'compose',
     '--project-name', 'ttk-func',
     '--ansi', 'never',
@@ -355,7 +377,7 @@ async function shutdownDockerCompose(config: FunctionalTestConfig): Promise<void
     '--profile', 'ttk-provisioning-fx',
     '--profile', 'ttk-fx-tests',
     'down', '-v'
-  ], { cwd: config.testHarnessDir, quiet: config.quiet })
+  ], { cwd: config.testHarnessDir, quiet: config.quiet }).spawn()
 }
 
 /**
@@ -365,67 +387,4 @@ async function cleanup(config: FunctionalTestConfig): Promise<void> {
   console.log(`${colors.cyan}==>${colors.reset} Cleaning up ${config.testHarnessDir}`)
 
   await rm(config.testHarnessDir, { recursive: true, force: true })
-}
-
-/**
- * Main function to run functional tests
- */
-export async function runFunctionalTests(task: RunTaskFunctional): Promise<number> {
-  const config = buildConfig(task)
-
-  console.log(`\n${colors.bold}--=== Running Functional Test Runner ===--${colors.reset}\n`)
-  console.log(`${colors.cyan}==>${colors.reset} Configuration:`)
-  console.log(`    Central Ledger Version: ${config.centralLedgerVersion}`)
-  console.log(`    Test Harness Version:   ${config.testHarnessVersion}`)
-  console.log(`    Test Harness Dir:       ${config.testHarnessDir}`)
-  console.log(`    Skip Shutdown:          ${config.skipShutdown}`)
-  console.log(`    Quiet:                  ${config.quiet}`)
-  console.log('')
-
-  // Register SIGINT handler for graceful teardown
-  const sigintHandler = async () => {
-    console.log(`\n${colors.yellow}Received SIGINT, tearing down...${colors.reset}`)
-    await shutdownDockerCompose(config).catch(() => {})
-    await cleanup(config).catch(() => {})
-    process.exit(1)
-  }
-  process.on('SIGINT', sigintHandler)
-
-  let exitCode = 1
-  try {
-    await cloneTestHarness(config)
-    await patchDockerCompose(config)
-    await patchWait4Config(config)
-    await copyConfigs(config)
-    await startDockerCompose(config)
-
-    exitCode = await waitForContainer('ttk-func-ttk-fx-tests-1')
-
-    await collectLogs(config)
-
-    if (!config.skipShutdown) {
-      await shutdownDockerCompose(config)
-      await cleanup(config)
-    } else {
-      console.log(`\n${colors.yellow}==>${colors.reset} Skipping shutdown (containers still running)`)
-      console.log(`    You can debug with:`)
-      console.log(`    docker ps --filter "name=ttk-func"`)
-      console.log(`    docker logs ttk-func-ttk-fx-tests-1`)
-    }
-
-    const statusColor = exitCode === 0 ? colors.green : colors.red
-    const statusText = exitCode === 0 ? 'PASS' : 'FAIL'
-    console.log(`\n${colors.cyan}==>${colors.reset} Functional tests: ${statusColor}${statusText}${colors.reset} (exit code: ${exitCode})`)
-    return exitCode
-  } catch (err: any) {
-    console.error(`${colors.red}Error:${colors.reset}`, err.message)
-
-    if (!config.skipShutdown) {
-      await shutdownDockerCompose(config).catch(() => {})
-      await cleanup(config).catch(() => {})
-    }
-    return 1
-  } finally {
-    process.off('SIGINT', sigintHandler)
-  }
 }
