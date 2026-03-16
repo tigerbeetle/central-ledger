@@ -93,6 +93,13 @@ export interface ApplicationConfig {
   INSTRUMENTATION_METRICS_LABELS: InstrumentationMetricsLabels,
   INSTRUMENTATION_METRICS_CONFIG: InstrumentationConfig,
   API_DOC_ENDPOINTS_ENABLED: boolean,
+
+  // TODO: migrated from settlement. Need to type.
+  SETTLEMENT_MODELS: any,
+  WINDOW_AGGREGATION_RETRY_COUNT: number,
+  WINDOW_AGGREGATION_RETRY_INTERVAL: number,
+
+
   PAYEE_PARTICIPANT_CURRENCY_VALIDATION_ENABLED: boolean,
 
   /**

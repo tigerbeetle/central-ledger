@@ -51,6 +51,9 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
   assertNestedFields(rawConfig, 'HANDLERS.TIMEOUT.DIST_LOCK.redisConfigs')
   assertNestedFields(rawConfig, 'INSTRUMENTATION')
   assertNestedFields(rawConfig, 'HUB_PARTICIPANT')
+  assertNestedFields(rawConfig, 'SETTLEMENT_MODELS')
+  assertNestedFields(rawConfig, 'WINDOW_AGGREGATION.RETRY_COUNT')
+  assertNestedFields(rawConfig, 'WINDOW_AGGREGATION.RETRY_INTERVAL')
 
   const unsafeConfig: UnsafeApplicationConfig = {
     PORT: rawConfig.PORT,
@@ -110,6 +113,9 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
     CACHE_CONFIG: rawConfig.CACHE,
     PROXY_CACHE_CONFIG: rawConfig.PROXY_CACHE,
     API_DOC_ENDPOINTS_ENABLED: defaultTo(rawConfig.API_DOC_ENDPOINTS_ENABLED, false),
+    SETTLEMENT_MODELS: rawConfig.SETTLEMENT_MODELS,
+    WINDOW_AGGREGATION_RETRY_COUNT: rawConfig.WINDOW_AGGREGATION.RETRY_COUNT,
+    WINDOW_AGGREGATION_RETRY_INTERVAL: rawConfig.WINDOW_AGGREGATION.RETRY_INTERVAL,
     KAFKA_CONFIG: kafka,
     SERVER_PRINT_ROUTES_ON_STARTUP: defaultTo(rawConfig.SERVER_PRINT_ROUTES_ON_STARTUP, true),
     LEDGER: defaultTo(rawConfig.LEDGER, 'LEGACY'),
@@ -189,7 +195,7 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
 const makeConfig = (): ApplicationConfig => {
   const PATH_TO_CONFIG_FILE = defaultEnvString(
     process.env,
-    'PATH_TO_CONFIG_FILE', 
+    'PATH_TO_CONFIG_FILE',
     path.join(__dirname, '../../..', 'config/default.json')
   )
   logger.warn(`makeConfig() - Loading config from: ${PATH_TO_CONFIG_FILE}`)
