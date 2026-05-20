@@ -26,11 +26,7 @@
  ******/
 
 import assert from 'node:assert'
-<<<<<<< HEAD
 import { ApplicationConfig, DatabaseConfig, DistLockConfig, InstrumentationConfig, InstrumentationMetricsLabels, KafkaConfig, KafkaConsumerConfig, KafkaProducerConfig, RecursivePartial } from './types'
-=======
-import { ApplicationConfig, DatabaseConfig, DistLockConfig, InstrumentationConfig, InstrumentationMetricsLabels, KafkaConfig, KafkaConsumerConfig, KafkaProducerConfig } from './types'
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 import { logger } from '../../shared/logger'
 import { MySqlProxyCacheConfig, RedisClusterProxyCacheConfig, RedisProxyCacheConfig } from '@mojaloop/inter-scheme-proxy-cache-lib'
 
@@ -138,10 +134,6 @@ export function assertProxyCacheConfig(input: unknown): void {
     assertStringIfDefined(unsafeConfigCluster.password)
     assertBooleanIfDefined(unsafeConfigCluster.lazyConnect)
     assertNumberIfDefined(unsafeConfigCluster.db)
-<<<<<<< HEAD
-=======
-
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
     return
   }
   const unsafeEither = input as RedisProxyCacheConfig | MySqlProxyCacheConfig
@@ -225,10 +217,7 @@ export function assertKafkaConfig(input: unknown): void {
   assertNestedFields(unsafeConfig, 'CONSUMER.TRANSFER.POSITION_BATCH')
   assertNestedFields(unsafeConfig, 'CONSUMER.ADMIN.TRANSFER')
   assertNestedFields(unsafeConfig, 'CONSUMER.NOTIFICATION.EVENT')
-<<<<<<< HEAD
   assertNestedFields(unsafeConfig, 'CONSUMER.DEFERREDSETTLEMENT.CLOSE')
-=======
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PREPARE)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PROCESSING)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.FULFIL)
@@ -240,10 +229,7 @@ export function assertKafkaConfig(input: unknown): void {
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.POSITION_BATCH)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.ADMIN.TRANSFER)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.NOTIFICATION.EVENT)
-<<<<<<< HEAD
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.DEFERREDSETTLEMENT.CLOSE)
-=======
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 
   // Check the Producer Configs.
   assert(unsafeConfig.PRODUCER)
@@ -405,19 +391,11 @@ export function defaultEnvString(env: NodeJS.ProcessEnv, name: string, defaultVa
   }
   // Need to protect for cases where the value may intentionally false!
   if (processEnvValue === undefined) {
-<<<<<<< HEAD
     logger.info(`defaultEnvString - ${name} not set - defaulting to: ${defaultValue}`)
     return defaultValue
   }
 
   logger.info(`defaultEnvString - ${name} is  set - resolved   to: ${processEnvValue}`)
-=======
-    logger.warn(`defaultEnvString - ${name} not set - defaulting to: ${defaultValue}`)
-    return defaultValue
-  }
-
-  logger.warn(`defaultEnvString - ${name} is  set - resolved   to: ${processEnvValue}`)
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   return processEnvValue
 }
 
@@ -431,7 +409,6 @@ export function kafkaWithBrokerDefaults(input: KafkaConfig, defaultBroker: strin
   assert(input.CONSUMER)
   assert(input.PRODUCER)
 
-<<<<<<< HEAD
   const applyBrokerDefaults = (
     group: Record<string, Record<string, KafkaConsumerConfig | KafkaProducerConfig>>,
     groupName: string
@@ -441,44 +418,26 @@ export function kafkaWithBrokerDefaults(input: KafkaConfig, defaultBroker: strin
       Object.keys(topic).forEach(topicKey => {
         const leafConfig = topic[topicKey] as KafkaConsumerConfig | KafkaProducerConfig
         const path = `input.${groupName}.${key}.${topicKey}`
-=======
-  Object.keys(input).filter(groupKey => {
-    if (groupKey === 'CONSUMER') {
-      return true
-    }
-    if (groupKey === 'PRODUCER') {
-      return true
-    }
-    return false
-  }).forEach(groupKey => {
-    const group = input[groupKey]
+        Object.keys(group).forEach(key => {
+          const topic = group[key]
+          Object.keys(topic).forEach(topicKey => {
+            const leafConfig = topic[topicKey] as KafkaConsumerConfig | KafkaProducerConfig
+            const path = `input.${groupName}.${key}.${topicKey}`
 
-    Object.keys(group).forEach(key => {
-      const topic = input[groupKey][key]
-      Object.keys(topic).forEach(topicKey => {
-        const leafConfig = topic[topicKey]
-        const path = `input.${groupKey}.${key}.${topicKey}`
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
-        if (leafConfig?.config?.rdkafkaConf
-          && !leafConfig.config.rdkafkaConf['metadata.broker.list']
-        ) {
-          logger.debug(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
-<<<<<<< HEAD
-          leafConfig.config.rdkafkaConf['metadata.broker.list'] = defaultBroker
-        }
+            if (leafConfig?.config?.rdkafkaConf
+              && !leafConfig.config.rdkafkaConf['metadata.broker.list']
+            ) {
+              logger.debug(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
+              leafConfig.config.rdkafkaConf['metadata.broker.list'] = defaultBroker
+            }
+          })
+        })
       })
     })
   }
 
   applyBrokerDefaults(input.CONSUMER as Record<string, Record<string, KafkaConsumerConfig>>, 'CONSUMER')
   applyBrokerDefaults(input.PRODUCER as Record<string, Record<string, KafkaProducerConfig>>, 'PRODUCER')
-=======
-          input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
-        }
-      })
-    })
-  })
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 
   return input
 }
@@ -543,7 +502,6 @@ export function assertNestedFields(rawConfig: any, path: string): void {
     assert(current[part] !== undefined, `expected \`${traversed}\` to be defined`)
     current = current[part]
   }
-<<<<<<< HEAD
 }
 
 /**
@@ -570,6 +528,4 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: Recu
     }
   }
   return target
-=======
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
 }

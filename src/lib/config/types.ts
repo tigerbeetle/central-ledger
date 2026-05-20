@@ -59,7 +59,6 @@ export interface ApplicationConfig {
     includeCauseExtension: boolean,
     truncateExtensions: boolean,
   },
-<<<<<<< HEAD
   HANDLERS: {
     SETTINGS: {
       RULES: {
@@ -70,8 +69,6 @@ export interface ApplicationConfig {
       }
     }
   }
-=======
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   HANDLERS_DISABLED: boolean
   HANDLERS_API_DISABLED: boolean,
   HANDLERS_TIMEOUT: {
@@ -90,11 +87,7 @@ export interface ApplicationConfig {
   },
   PROXY_CACHE_CONFIG: {
     enabled: boolean,
-<<<<<<< HEAD
     type: 'redis' | 'redis-cluster' | 'mysql',
-=======
-    type: string,
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
     proxyConfig: ProxyCacheConfig
   },
   KAFKA_CONFIG: KafkaConfig,
@@ -110,13 +103,8 @@ export interface ApplicationConfig {
   INSTRUMENTATION_METRICS_LABELS: InstrumentationMetricsLabels,
   INSTRUMENTATION_METRICS_CONFIG: InstrumentationConfig,
   API_DOC_ENDPOINTS_ENABLED: boolean,
-<<<<<<< HEAD
   WINDOW_AGGREGATION_RETRY_COUNT: number,
   WINDOW_AGGREGATION_RETRY_INTERVAL: number,
-
-
-=======
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
   PAYEE_PARTICIPANT_CURRENCY_VALIDATION_ENABLED: boolean,
 
   /**
@@ -339,12 +327,9 @@ export interface KafkaConfig {
     },
     NOTIFICATION: {
       EVENT: KafkaConsumerConfig
-<<<<<<< HEAD
     },
     DEFERREDSETTLEMENT: {
       CLOSE: KafkaConsumerConfig
-=======
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
     }
   },
   PRODUCER: {
@@ -376,7 +361,6 @@ export interface InstrumentationConfig {
     serviceName: string
   }
 }
-<<<<<<< HEAD
 
 /**
  * Utility function that lets us recursively mark all values as optional.
@@ -384,5 +368,3 @@ export interface InstrumentationConfig {
 export type RecursivePartial<T> = {
     [P in keyof T]?: RecursivePartial<T[P]>;
 };
-=======
->>>>>>> 0af2f5fd (feat: add strict typing to config values, along with comprehensive validation (#1247))
