@@ -115,11 +115,6 @@ const createServer = (port, modules) => {
       }
     })
 
-    server.method({
-      name: 'enums',
-      method: (id) => SettlementEnums[id]()
-    })
-
     await Plugins.registerPlugins(server)
     await server.register(modules)
     await server.start()

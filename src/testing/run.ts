@@ -220,7 +220,9 @@ async function runUnitTestsTape(): Promise<ResultUnitTest> {
     const testFiles = findFiles(
       path.join(PROJECT_ROOT, 'test/unit'),
       '**/*.test.js'
-    ).map(file => path.join(PROJECT_ROOT, 'test/unit', file))
+    )
+    .map(file => path.join(PROJECT_ROOT, 'test/unit', file))
+  
 
     if (testFiles.length === 0) {
       console.warn(`runUnitTestsTape() - no test files found.`)

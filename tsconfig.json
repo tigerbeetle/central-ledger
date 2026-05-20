@@ -4,13 +4,16 @@
     "rootDir": "./src",
     "esModuleInterop": true,
     "lib": [
-      "es2020", "esnext"
+      "es2020",
+      "esnext",
+    ],
+    "types": [
+      "node"
     ],
     "module": "commonjs",
     "target": "es2020",
     "allowJs": true,
-    "skipLibCheck": true,
-    "baseUrl": "./"
+    "skipLibCheck": true
   },
   "include": [
     "src/**/*.ts",
@@ -27,7 +30,7 @@
     "transpileOnly": true,
     "files": true,
     "ignore": [
-      "(?:^|/)node_modules/", 
+      "(?:^|/)node_modules/",
       // We ignore .d.ts files as ts-node fails if it tries to execute them.
       "\\.d\\.ts$"
     ]

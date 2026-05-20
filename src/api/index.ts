@@ -5,7 +5,6 @@ process.env.UV_THREADPOOL_SIZE = '12'
 const RoutesAdmin = require('./routes')
 const RoutesSettlement = require('../settlement/api/routes')
 import Config from '../lib/config/index'
-const Routes = require('./routes')
 const Setup = require('../shared/setup')
 const MetricsPlugin = require('@mojaloop/central-services-metrics').plugin
 

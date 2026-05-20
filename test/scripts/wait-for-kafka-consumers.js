@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { promisify } from 'node:util'
-import childProcess from 'node:child_process'
+const { promisify } = require('node:util')
+const childProcess = require('node:child_process')
 const exec = promisify(childProcess.exec)
 
 // Consumer groups to check (central-ledger and ml-api-adapter).
@@ -59,7 +59,7 @@ const main = async () => {
   }
 }
 
-function parseConsumerGroupOutput (stdout) {
+function parseConsumerGroupOutput(stdout) {
   const lines = stdout.split('\n')
 
   if (stdout.includes('does not exist')) {

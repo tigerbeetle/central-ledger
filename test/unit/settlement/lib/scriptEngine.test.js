@@ -111,7 +111,7 @@ Test('Script Engine Execute Test', async (scriptEngineTest) => {
 
   await scriptEngineTest.test('should successfully execute', async (test) => {
     const transferId = '07785623-1d17-4231-b7fe-48bacaa05d58'
-    const scriptSource = fs.readFileSync(path.resolve('./test/settlement/unit/data/interchangeCalculationTestScript.js'), 'utf8')
+    const scriptSource = fs.readFileSync(path.resolve('./test/unit/settlement/data/interchangeCalculationTestScript.js'), 'utf8')
     const script = new vm.Script(scriptSource)
     const scriptSpy = sandbox.spy(script, 'runInNewContext')
     const payload = {
