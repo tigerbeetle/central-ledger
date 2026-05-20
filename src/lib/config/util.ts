@@ -408,31 +408,27 @@ export function kafkaWithBrokerDefaults(input: KafkaConfig, defaultBroker: strin
   assert(input.CONSUMER)
   assert(input.PRODUCER)
 
-  Object.keys(input).filter(groupKey => {
-    if (groupKey === 'CONSUMER') {
-      return true
-    }
-    if (groupKey === 'PRODUCER') {
-      return true
-    }
-    return false
-  }).forEach(groupKey => {
-    const group = input[groupKey]
-
+  const applyBrokerDefaults = (
+    group: Record<string, Record<string, KafkaConsumerConfig | KafkaProducerConfig>>,
+    groupName: string
+  ) => {
     Object.keys(group).forEach(key => {
-      const topic = input[groupKey][key]
+      const topic = group[key]
       Object.keys(topic).forEach(topicKey => {
-        const leafConfig = topic[topicKey]
-        const path = `input.${groupKey}.${key}.${topicKey}`
+        const leafConfig = topic[topicKey] as KafkaConsumerConfig | KafkaProducerConfig
+        const path = `input.${groupName}.${key}.${topicKey}`
         if (leafConfig?.config?.rdkafkaConf
           && !leafConfig.config.rdkafkaConf['metadata.broker.list']
         ) {
           logger.debug(`Config kafkaWithBrokerDefaults() defaulting: ${path}.config.rdkafkaConf['metadata.broker.list'] with: ${defaultBroker}`)
-          input[groupKey][key][topicKey]['config']['rdkafkaConf']['metadata.broker.list'] = defaultBroker
+          leafConfig.config.rdkafkaConf['metadata.broker.list'] = defaultBroker
         }
       })
     })
-  })
+  }
+
+  applyBrokerDefaults(input.CONSUMER as Record<string, Record<string, KafkaConsumerConfig>>, 'CONSUMER')
+  applyBrokerDefaults(input.PRODUCER as Record<string, Record<string, KafkaProducerConfig>>, 'PRODUCER')
 
   return input
 }

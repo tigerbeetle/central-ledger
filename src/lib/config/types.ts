@@ -59,6 +59,16 @@ export interface ApplicationConfig {
     includeCauseExtension: boolean,
     truncateExtensions: boolean,
   },
+  HANDLERS: {
+    SETTINGS: {
+      RULES: {
+        SCRIPTS_FOLDER: string,
+        SCRIPT_TIMEOUT: number,
+        CONSUMER_COMMIT: boolean,
+        FROM_SWITCH: boolean,
+      }
+    }
+  }
   HANDLERS_DISABLED: boolean
   HANDLERS_API_DISABLED: boolean,
   HANDLERS_TIMEOUT: {
@@ -93,9 +103,6 @@ export interface ApplicationConfig {
   INSTRUMENTATION_METRICS_LABELS: InstrumentationMetricsLabels,
   INSTRUMENTATION_METRICS_CONFIG: InstrumentationConfig,
   API_DOC_ENDPOINTS_ENABLED: boolean,
-
-  // TODO: migrated from settlement. Need to type.
-  SETTLEMENT_MODELS: any,
   WINDOW_AGGREGATION_RETRY_COUNT: number,
   WINDOW_AGGREGATION_RETRY_INTERVAL: number,
 

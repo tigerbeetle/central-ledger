@@ -49,9 +49,9 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
   assertNestedFields(rawConfig, 'HANDLERS.TIMEOUT')
   assertNestedFields(rawConfig, 'HANDLERS.TIMEOUT.DIST_LOCK')
   assertNestedFields(rawConfig, 'HANDLERS.TIMEOUT.DIST_LOCK.redisConfigs')
+  assertNestedFields(rawConfig, 'HANDLERS.SETTINGS.RULES')
   assertNestedFields(rawConfig, 'INSTRUMENTATION')
   assertNestedFields(rawConfig, 'HUB_PARTICIPANT')
-  assertNestedFields(rawConfig, 'SETTLEMENT_MODELS')
   assertNestedFields(rawConfig, 'WINDOW_AGGREGATION.RETRY_COUNT')
   assertNestedFields(rawConfig, 'WINDOW_AGGREGATION.RETRY_INTERVAL')
 
@@ -94,6 +94,9 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
     MONGODB_DEBUG: rawConfig.MONGODB.DEBUG === true,
     MONGODB_DISABLED: rawConfig.MONGODB.DISABLED === true,
     ERROR_HANDLING: rawConfig.ERROR_HANDLING,
+    HANDLERS: {
+      SETTINGS: rawConfig.HANDLERS.SETTINGS
+    },
     HANDLERS_DISABLED: rawConfig.HANDLERS.DISABLED,
     HANDLERS_API_DISABLED: rawConfig.HANDLERS.API.DISABLED,
     HANDLERS_TIMEOUT: rawConfig.HANDLERS.TIMEOUT,
@@ -113,7 +116,6 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
     CACHE_CONFIG: rawConfig.CACHE,
     PROXY_CACHE_CONFIG: rawConfig.PROXY_CACHE,
     API_DOC_ENDPOINTS_ENABLED: defaultTo(rawConfig.API_DOC_ENDPOINTS_ENABLED, false),
-    SETTLEMENT_MODELS: rawConfig.SETTLEMENT_MODELS,
     WINDOW_AGGREGATION_RETRY_COUNT: rawConfig.WINDOW_AGGREGATION.RETRY_COUNT,
     WINDOW_AGGREGATION_RETRY_INTERVAL: rawConfig.WINDOW_AGGREGATION.RETRY_INTERVAL,
     KAFKA_CONFIG: kafka,
@@ -141,12 +143,15 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
   assertString(unsafeConfig.MONGODB_DATABASE)
   assertBoolean(unsafeConfig.MONGODB_DEBUG)
   assertBoolean(unsafeConfig.MONGODB_DISABLED)
+  assert(unsafeConfig.AMOUNT)
   assertNumber(unsafeConfig.AMOUNT.PRECISION)
   assertNumber(unsafeConfig.AMOUNT.SCALE)
+  assert(unsafeConfig.ERROR_HANDLING)
   assertBoolean(unsafeConfig.ERROR_HANDLING.includeCauseExtension)
   assertBoolean(unsafeConfig.ERROR_HANDLING.truncateExtensions)
   assertBoolean(unsafeConfig.HANDLERS_DISABLED)
   assertBoolean(unsafeConfig.HANDLERS_API_DISABLED)
+  assert(unsafeConfig.HANDLERS_TIMEOUT)
   assertDistLockConfig(unsafeConfig.HANDLERS_TIMEOUT.DIST_LOCK)
   assertBoolean(unsafeConfig.HANDLERS_TIMEOUT.DISABLED)
   assertString(unsafeConfig.HANDLERS_TIMEOUT.TIMEXP)
@@ -154,9 +159,11 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
   assertBoolean(unsafeConfig.HANDLERS_TIMEOUT_DISABLED)
   assertString(unsafeConfig.HANDLERS_TIMEOUT_TIMEXP)
   assertString(unsafeConfig.HANDLERS_TIMEOUT_TIMEZONE)
+  assert(unsafeConfig.CACHE_CONFIG)
   assertBoolean(unsafeConfig.CACHE_CONFIG.CACHE_ENABLED)
   assertNumber(unsafeConfig.CACHE_CONFIG.MAX_BYTE_SIZE)
   assertNumber(unsafeConfig.CACHE_CONFIG.EXPIRES_IN_MS)
+  assert(unsafeConfig.PROXY_CACHE_CONFIG)
   assertBoolean(unsafeConfig.PROXY_CACHE_CONFIG.enabled)
   assertString(unsafeConfig.PROXY_CACHE_CONFIG.type)
   assertProxyCacheConfig(unsafeConfig.PROXY_CACHE_CONFIG.proxyConfig)

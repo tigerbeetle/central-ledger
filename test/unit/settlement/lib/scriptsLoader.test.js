@@ -35,7 +35,7 @@ const path = require('path')
 const ScriptsLoader = require('../../../../src/settlement/lib/scriptsLoader')
 const ScriptEngine = require('../../../../src/settlement/lib/scriptEngine')
 
-const scriptDirectory = '/test/settlement/unit/data'
+const scriptDirectory = '/test/unit/settlement/data'
 const scriptType = 'notification'
 const scriptAction = 'commit'
 const scriptStatus = 'success'
