@@ -37,12 +37,15 @@ export type RunTask = {
   tag: 'TEST_COVERAGE',
   type: 'TAPE' | 'NATIVE' | 'BOTH',
   onlyReport: boolean
+} | {
+  tag: 'TEST_INTEGRATION',
 }
 
 export type RunTaskUnit = Extract<RunTask, { tag: 'TEST_UNIT' }>
 export type RunTaskCoverage = Extract<RunTask, { tag: 'TEST_COVERAGE' }>
+export type RunTaskIntegration = Extract<RunTask, { tag: 'TEST_INTEGRATION' }>
 
-export type ResultUnitTest = {
+export type ResultTest = {
   output: string,
 
   /**
@@ -88,3 +91,5 @@ export interface ParsedTap {
   /** Number of not implemented tests. */
   todo: number
 }
+
+

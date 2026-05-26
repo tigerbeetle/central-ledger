@@ -26,7 +26,7 @@
  ******/
 
 import assert from 'node:assert'
-import { ApplicationConfig, DatabaseConfig, DistLockConfig, InstrumentationConfig, InstrumentationMetricsLabels, KafkaConfig, KafkaConsumerConfig, KafkaProducerConfig } from './types'
+import { ApplicationConfig, DatabaseConfig, DistLockConfig, InstrumentationConfig, InstrumentationMetricsLabels, KafkaConfig, KafkaConsumerConfig, KafkaProducerConfig, RecursivePartial } from './types'
 import { logger } from '../../shared/logger'
 import { MySqlProxyCacheConfig, RedisClusterProxyCacheConfig, RedisProxyCacheConfig } from '@mojaloop/inter-scheme-proxy-cache-lib'
 
@@ -134,7 +134,6 @@ export function assertProxyCacheConfig(input: unknown): void {
     assertStringIfDefined(unsafeConfigCluster.password)
     assertBooleanIfDefined(unsafeConfigCluster.lazyConnect)
     assertNumberIfDefined(unsafeConfigCluster.db)
-
     return
   }
   const unsafeEither = input as RedisProxyCacheConfig | MySqlProxyCacheConfig
@@ -390,11 +389,11 @@ export function defaultEnvString(env: NodeJS.ProcessEnv, name: string, defaultVa
   }
   // Need to protect for cases where the value may intentionally false!
   if (processEnvValue === undefined) {
-    logger.warn(`defaultEnvString - ${name} not set - defaulting to: ${defaultValue}`)
+    logger.info(`defaultEnvString - ${name} not set - defaulting to: ${defaultValue}`)
     return defaultValue
   }
 
-  logger.warn(`defaultEnvString - ${name} is  set - resolved   to: ${processEnvValue}`)
+  logger.info(`defaultEnvString - ${name} is  set - resolved   to: ${processEnvValue}`)
   return processEnvValue
 }
 
@@ -500,7 +499,7 @@ export function assertNestedFields(rawConfig: any, path: string): void {
  * @description Deep merge source into target, mutating target in place.
  *   Arrays are replaced, not merged. Only plain objects are recursively merged.
  */
-export function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+export function deepMerge<T extends Record<string, any>>(target: T, source: RecursivePartial<T>): T {
   for (const key of Object.keys(source) as Array<keyof T>) {
     const valSource = source[key]
     const valTarget = target[key]

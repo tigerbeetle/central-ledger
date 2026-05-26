@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "./src",
     "esModuleInterop": true,
@@ -23,11 +24,14 @@
     "node_modules",
     "src/**/*.int.ts",
     "src/**/*.unit.ts",
-    "src/**/*.d.ts",
-    "src/testing/**"
+    "src/**/*.d.ts"
   ],
   "ts-node": {
+    "compilerOptions": {
+      "sourceMap": true
+    },
     "transpileOnly": true,
+    "experimentalResolver": true,
     "files": true,
     "ignore": [
       "(?:^|/)node_modules/",

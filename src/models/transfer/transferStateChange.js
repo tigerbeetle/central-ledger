@@ -58,6 +58,7 @@ const getByTransferId = async (id) => {
 }
 
 const getByTransferIdList = async (transfersIdList) => {
+  throw new Error('getByTransferIdList() is this used anywhere?')
   try {
     return await Db.from('transferStateChange').query(async (builder) => {
       const result = builder
@@ -83,6 +84,7 @@ const getLatest = async () => {
 }
 
 const truncate = async () => {
+  throw new Error('truncate() is this used anywhere?')
   try {
     return await Db.from('transferStateChange').truncate()
   } catch (err) {

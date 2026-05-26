@@ -339,8 +339,9 @@ const addLimitAndInitialPosition = async (participantName, limitAndInitialPositi
     const existingPosition = await ParticipantPositionModel.getByParticipantCurrencyId(participant.participantCurrencyId)
     const existingSettlementPosition = await ParticipantPositionModel.getByParticipantCurrencyId(settlementAccount.participantCurrencyId)
     if (existingLimit || existingPosition || existingSettlementPosition) {
-      log.warn('participant limit or initial position already set')
-      throw ErrorHandler.Factory.createInternalServerFSPIOPError(ParticipantInitialPositionExistsText)
+      const errorMessage = `Participant Limit or Initial Position already set for participant: ${participantName}.`
+      log.warn(errorMessage)
+      throw ErrorHandler.Factory.createInternalServerFSPIOPError(errorMessage)
     }
     const limitAndInitialPosition = Object.assign({}, limitAndInitialPositionObj, { name: participantName })
     if (!limitAndInitialPosition.initialPosition) {

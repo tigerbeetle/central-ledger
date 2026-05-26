@@ -87,7 +87,7 @@ export interface ApplicationConfig {
   },
   PROXY_CACHE_CONFIG: {
     enabled: boolean,
-    type: string,
+    type: 'redis' | 'redis-cluster' | 'mysql',
     proxyConfig: ProxyCacheConfig
   },
   KAFKA_CONFIG: KafkaConfig,
@@ -329,6 +329,9 @@ export interface KafkaConfig {
     },
     NOTIFICATION: {
       EVENT: KafkaConsumerConfig
+    },
+    DEFERREDSETTLEMENT: {
+      CLOSE: KafkaConsumerConfig
     }
   },
   PRODUCER: {
@@ -360,3 +363,10 @@ export interface InstrumentationConfig {
     serviceName: string
   }
 }
+
+/**
+ * Utility function that lets us recursively mark all values as optional.
+ */
+export type RecursivePartial<T> = {
+    [P in keyof T]?: RecursivePartial<T[P]>;
+};
