@@ -1348,7 +1348,7 @@ Test('Handlers test', async handlersTest => {
     })
 
     // This test is broken, it no separate notification gets produced on Timeout. It simply checks
-    // the _last_ message, which was already produced, it doesn't assert that a new message was 
+    // the _last_ message, which was already produced, it doesn't assert that a new message was
     // produced on timeout.
     await transferFxForwarded.test('should produce a get notification if fx transfer stuck in RESERVED_FORWARDED', async (test) => {
       const td = await prepareTestData(testData)
@@ -1671,8 +1671,8 @@ Test('Handlers test', async handlersTest => {
   await handlersTest.test('transferProxyPrepare should', async transferProxyPrepare => {
     await transferProxyPrepare.test(`
       Scheme A: POST /fxTransfer call I.e. Debtor: Payer DFSP → Creditor: Proxy AR
-      Payer DFSP position account must be updated (reserved)`, 
-      async (test) => {
+      Payer DFSP position account must be updated (reserved)`,
+    async (test) => {
       const creditor = 'regionalSchemeFXP'
 
       const td = await prepareTestData({ ...testData, crossSchemeSetup: true })
@@ -1709,7 +1709,7 @@ Test('Handlers test', async handlersTest => {
     await transferProxyPrepare.test(`
       Scheme A: POST /Transfer call I.e. Debtor: Proxy AR → Creditor: Proxy AR
       Do nothing (produce message with key 0)`,
-      async (test) => {
+    async (test) => {
       // Create dependent fxTransfer
       let creditor = 'regionalSchemeFXP'
 
@@ -1829,7 +1829,7 @@ Test('Handlers test', async handlersTest => {
     await transferProxyPrepare.test(`
       Scheme R: POST /fxTransfer call I.e. Debtor: Proxy AR → Creditor: FXP
       Proxy AR position account in source currency must be updated (reserved)`,
-      async (test) => {
+    async (test) => {
       const debtor = 'jurisdictionalFspPayerFsp'
 
       const td = await prepareTestData({ ...testData, crossSchemeSetup: true })
@@ -1866,7 +1866,7 @@ Test('Handlers test', async handlersTest => {
     await transferProxyPrepare.test(`
       Scheme R: POST /transfer call I.e. Debtor: FXP → Creditor: Proxy RB
       FXP position account in targeted currency must be updated (reserved)`,
-      async (test) => {
+    async (test) => {
       const debtor = 'jurisdictionalFspPayerFsp'
 
       const td = await prepareTestData({ ...testData, crossSchemeSetup: true })
@@ -1954,7 +1954,7 @@ Test('Handlers test', async handlersTest => {
     await transferProxyPrepare.test(`
       Scheme B: POST /transfer call I.e. Debtor: Proxy RB → Creditor: Payee DFSP
       Proxy RB position account must be updated (reserved)`,
-      async (test) => {
+    async (test) => {
       const debtor = 'jurisdictionalFspPayerFsp'
 
       // Proxy RB and Payee are only set up to deal in XXX currency
@@ -2006,7 +2006,7 @@ Test('Handlers test', async handlersTest => {
     await transferProxyPrepare.test(`
       Scheme B: PUT /transfers call I.e. From: Payee DFSP → To: Proxy RB
       Payee DFSP position account must be updated`,
-      async (test) => {
+    async (test) => {
       const transferPrepareFrom = 'schemeAPayerFsp'
 
       // Proxy RB and Payee are only set up to deal in XXX currency
@@ -2081,7 +2081,7 @@ Test('Handlers test', async handlersTest => {
       Scheme R: PUT /transfers call I.e. From: Proxy RB → To: Proxy AR
       If it is a normal transfer without currency conversion
       ProxyRB account must be updated`,
-      async (test) => {
+    async (test) => {
       const transferPrepareFrom = 'schemeAPayerFsp'
       const transferPrepareTo = 'schemeBPayeeFsp'
 
@@ -2163,7 +2163,7 @@ Test('Handlers test', async handlersTest => {
     await transferProxyPrepare.test(`
       Scheme R: PUT /fxTransfer call I.e. From: FXP → To: Proxy AR
       No position changes should happen`,
-      async (test) => {
+    async (test) => {
       const debtor = 'jurisdictionalFspPayerFsp'
 
       const td = await prepareTestData({ ...testData, crossSchemeSetup: true })
@@ -2227,7 +2227,7 @@ Test('Handlers test', async handlersTest => {
     await transferProxyPrepare.test(`
       Scheme R: PUT /fxTransfer call I.e. From: FXP → To: Proxy AR
       with wrong headers - ABORT VALIDATION`,
-      async (test) => {
+    async (test) => {
       const debtor = 'jurisdictionalFspPayerFsp'
 
       const td = await prepareTestData({ ...testData, crossSchemeSetup: true })
@@ -2296,7 +2296,7 @@ Test('Handlers test', async handlersTest => {
       Scheme R: PUT /transfers call I.e. From: Proxy RB → To: Proxy AR
       If it is a FX transfer with currency conversion
       FXP and ProxyRB account must be updated`,
-      async (test) => {
+    async (test) => {
       const transferPrepareFrom = 'schemeAPayerFsp'
       const transferPrepareTo = 'schemeBPayeeFsp'
 
@@ -2421,7 +2421,7 @@ Test('Handlers test', async handlersTest => {
       Scheme A: PUT /transfers call I.e. From: Proxy AR → To: Payer FSP
       If it is a FX transfer with currency conversion
       PayerFSP and ProxyAR account must be updated`,
-      async (test) => {
+    async (test) => {
       const transferPrepareTo = 'schemeBPayeeFsp'
       const fxTransferPrepareTo = 'schemeRFxp'
 

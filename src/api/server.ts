@@ -2,7 +2,6 @@
 
 import Config from '../lib/config/index'
 const RoutesAdmin = require('./routes')
-// Disabling for now, need to figure out how to put swagger.json in dist etc.
 const Setup = require('../shared/setup')
 const MetricsPlugin = require('@mojaloop/central-services-metrics').plugin
 import Migrator from '../lib/migrator'

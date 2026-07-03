@@ -188,7 +188,7 @@ const getByIdLight = async (id) => {
 }
 
 const getAll = async () => {
-  throw new Error('TransferFacade.getAll() has been broken for some time. Are we even using it?')
+  logger.error('TransferFacade.getAll() has been broken for some time. Are we even using it?')
   try {
     return await Db.from('transfer').query(async (builder) => {
       const transferResultList = await builder
