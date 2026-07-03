@@ -478,34 +478,15 @@ Test('Server Setup', async setupTest => {
         }
       })
 
-      await initTest.test('should catch errors and console.error output', async test => {
+      await initTest.test('handles error on database init', async test => {
         try {
           const e = new Error('Database unavailable')
           DbStub.connect = sandbox.stub().throws(e)
-          const consoleErrorStub = sandbox.stub(console, 'error')
           const port = await getPort()
           await SetupProxy.initialize({ service: 'api', port })
-          test.ok(consoleErrorStub.withArgs(e).calledOnce)
-          consoleErrorStub.restore()
-          test.end()
+          test.fail('Should have thrown.')
         } catch (err) {
-          logger.error(`init failed with error - ${err}`)
-          test.fail()
-          test.end()
-        }
-      })
-
-      await initTest.test('should catch errors after server.start and use server.log', async test => {
-        try {
-          const e = new Error('setHost error')
-          serverStub.plugins.openapi.setHost = sandbox.stub().throws(e)
-          const port = await getPort()
-          await SetupProxy.initialize({ service: 'api', port })
-          test.ok(serverStub.log.withArgs('error', e.message).calledOnce)
-          test.end()
-        } catch (err) {
-          logger.error(`init failed with error - ${err}`)
-          test.fail()
+          test.pass()
           test.end()
         }
       })

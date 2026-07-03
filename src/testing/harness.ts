@@ -62,6 +62,7 @@ import PositionBatchHandler from '../handlers/positions/handlerBatch'
 import ParticipantCached from '../models/participant/participantCached'
 import ParticipantCurrencyCached from '../models/participant/participantCurrencyCached'
 import ParticipantLimitCached from '../models/participant/participantLimitCached'
+import ProxyCache from '../lib/proxyCache'
 const BatchPositionModelCached = require('../models/position/batchCached')
 const ExternalParticipantCached = require('../models/participant/externalParticipantCached')
 
@@ -117,7 +118,6 @@ export default class Harness {
   private dependencyMySql: MySql
   private dependencyRedis: Redis
   private applicationConfig: ApplicationConfig | null = null;
-  private kafkaWatchInterval: NodeJS.Timeout | null = null;
   private omniConsumer: Consumer | null = null;
   private messageQueue: Array<MojaloopKafkaMessage> = []
   private positionHandlerType: 'NON_BATCH' | 'BATCH' = 'NON_BATCH'
@@ -131,7 +131,7 @@ export default class Harness {
    * 
    * We keep a reference to #2 here for convenience.
    */
-  private _enums: any | null = null;
+  private _enums: any = null;
 
   private constructor(options: HarnessOptions) {
     this.options = options
@@ -396,7 +396,7 @@ export default class Harness {
     if (this.messageQueue.length === 0) {
       return
     }
-    return this.messageQueue[this.messageQueue.length - 1]
+    return this.messageQueue.at(-1)
   }
 
   /**
@@ -437,12 +437,18 @@ export default class Harness {
   }
 
   public async teardownGlobals(): Promise<void> {
-    logger.info('teardownGlobals()')
-    await Cache.destroyCache()
-    await Db.disconnect()
-    await KafkaProducer.disconnect()
-    await KafkaConsumer.disconnectAll()
-    resetOverride()
+    try {
+      logger.info('teardownGlobals()')
+      await ProxyCache.disconnect()
+      await Cache.destroyCache()
+      await Db.disconnect()
+      await KafkaProducer.disconnect()
+      await KafkaConsumer.disconnectAll()
+      resetOverride()
+    } catch (err: any) {
+      logger.error(`teardownGlobals() failed with error: ${err.message}`)
+      throw err
+    }
   }
 
   private async checkEnvironment() {
@@ -452,7 +458,7 @@ export default class Harness {
     } catch (err: any) {
       logger.error(`command: 'docker --version' failed. Ensure docker is installed in this 
 environment!\n ${err.message}`)
-      throw Error('checkEnvironment() failed.')
+      throw new Error('checkEnvironment() failed.')
     }
 
     try {
@@ -460,7 +466,7 @@ environment!\n ${err.message}`)
       await execAsync(`docker ps`)
     } catch (err: any) {
       logger.error(`command: 'docker ps' failed. Is the docker daemon running?\n ${err.message}`)
-      throw Error('checkEnvironment() failed.')
+      throw new Error('checkEnvironment() failed.')
     }
   }
 
@@ -468,11 +474,6 @@ environment!\n ${err.message}`)
     let forceExit = false
     const start = performance.now()
     logger.warn(`harness.down()`)
-
-    // Stop monitoring docker.
-    if (this.kafkaWatchInterval) {
-      clearInterval(this.kafkaWatchInterval)
-    }
 
     if (this.omniConsumer) {
       try {
@@ -708,9 +709,10 @@ class Redpanda {
 
     const command = `
     docker rm -f ${this.containerName} ${this.containerNameConsole} 2>/dev/null;
+    docker network create harness || echo 'harness exists';
     docker run -d \
       --name ${this.containerName} \
-      --network single_loop \
+      --network harness \
       -p ${portRedpanda}:9092 \
       --health-cmd="rpk cluster info" \
       --health-interval=1s \
@@ -737,7 +739,7 @@ class Redpanda {
       --name ${this.containerNameConsole} \
       --hostname ${this.containerNameConsole} \
       --restart on-failure \
-      --network single_loop \
+      --network harness \
       -p ${portConsole}:8080 \
       -e KAFKA_BROKERS=${this.containerName}:29092 \
       docker.redpanda.com/redpandadata/console:latest
@@ -819,12 +821,10 @@ class Redpanda {
    */
   public async mark(): Promise<number> {
     let watermarkSum = 0
-    for await (const topic of this.topics) {
+    for (const topic of this.topics) {
       const cmd = `docker exec ${this.containerName} rpk topic describe ${topic} --format=json`
-      const { stderr, stdout } = await execAsync(cmd)
-      // console.log(`lagChecker() stdout:\n` + stdout)
-      // console.log(`lagChecker() stderr:\n` + stderr)
-
+      const { stdout } = await execAsync(cmd)
+      
       const describeJson = JSON.parse(stdout)[0].partitions[0]
       watermarkSum += describeJson.high_watermark
     }

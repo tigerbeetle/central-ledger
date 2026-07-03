@@ -31,7 +31,6 @@ import * as ApiHelpers from '../../testing/api-helpers'
 import assert from "node:assert"
 import { assertPositionDiff, sleepSeconds } from "../../testing/util"
 import TimeoutHandler from '../timeouts/handler'
-import Db from '../../lib/db'
 
 const harness = Harness.getInstance()
 let PrepareHandler: any
@@ -466,7 +465,7 @@ describe('handlers/prepare', () => {
       .expiry(120)
       .build()
 
-    const [positionPayerA, positionPayeeA] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b', 'BWP')
+    const [positionPayerA] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b', 'BWP')
     await payment.prepare()
     const forwardedMsg = ApiHelpers.buildMessageForwarded(harness, {
       transferId: transferId,
@@ -1100,7 +1099,7 @@ describe('handlers/prepare', () => {
         .amount('12.05', 'BWP')
         .build()
       await payment.prepare()
-      const [positionProxyAPostPrepare, positionProxyBPostPrepare] = await ApiHelpers.getPositions(
+      const [positionProxyAPostPrepare] = await ApiHelpers.getPositions(
         'dfsp_a_proxy', 'dfsp_b_proxy', 'BWP'
       )
       assertPositionDiff('payer', positionProxyAPre, positionProxyAPostPrepare, {
@@ -1108,7 +1107,7 @@ describe('handlers/prepare', () => {
       })
 
       await payment.fulfil()
-      const [positionProxyAPostFulfil, positionProxyBPostFulfil] = await ApiHelpers.getPositions(
+      const [_, positionProxyBPostFulfil] = await ApiHelpers.getPositions(
         'dfsp_a_proxy', 'dfsp_b_proxy', 'BWP'
       )
       assertPositionDiff('payee', positionProxyBPre, positionProxyBPostFulfil, {

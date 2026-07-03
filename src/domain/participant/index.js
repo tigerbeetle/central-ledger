@@ -62,8 +62,6 @@ const ActionNotSupportedText = 'The action is not supported'
 const ParticipantAccountCurrencyMismatchText = 'The account does not match participant or currency specified'
 const ParticipantAccountMismatchText = 'Participant/account mismatch'
 const ParticipantInactiveText = 'Participant is currently set inactive'
-const ParticipantInitialPositionExistsText = 'Participant Limit or Initial Position already set'
-// const ParticipantNotFoundText = 'Participant does not exist'
 
 const create = async (payload) => {
   const log = logger.child({ payload })

@@ -33,7 +33,6 @@ const Util = require('@mojaloop/central-services-shared').Util
 const rethrow = require('../../shared/rethrow')
 
 exports.saveIlpPacket = async (record) => {
-  throw new Error('Do we use this?')
   try {
     return await Db.from('ilpPacket').insert({
       transferId: record.transferId,
@@ -45,7 +44,6 @@ exports.saveIlpPacket = async (record) => {
 }
 
 exports.getByTransferId = async (transferId) => {
-  throw new Error('Do we use this?')
   try {
     return await Db.from('ilpPacket').findOne({ transferId })
   } catch (err) {
@@ -54,7 +52,6 @@ exports.getByTransferId = async (transferId) => {
 }
 
 exports.update = async (record) => {
-  throw new Error('Do we use this?')
   const fields = {
     transferId: record.transferId,
     value: record.value
@@ -67,7 +64,6 @@ exports.update = async (record) => {
 }
 
 exports.destroyByTransferId = async (record) => {
-  throw new Error('Do we use this?')
   try {
     return await Db.from('ilpPacket').destroy({ transferId: record.transferId })
   } catch (err) {

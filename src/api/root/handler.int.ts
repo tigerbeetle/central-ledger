@@ -43,6 +43,10 @@ describe('api/root/handler', () => {
         {
           "name": "broker",
           "status": "OK"
+        },
+        {
+          "name": "proxyCache",
+          "status": "OK"
         }
       ]
     }`).checkUnwrap(responseBody)

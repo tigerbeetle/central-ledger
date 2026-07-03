@@ -59,7 +59,7 @@ const main = async () => {
   }
 }
 
-function parseConsumerGroupOutput(stdout) {
+function parseConsumerGroupOutput (stdout) {
   const lines = stdout.split('\n')
 
   if (stdout.includes('does not exist')) {

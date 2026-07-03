@@ -80,7 +80,6 @@ const insert = async (transferId, transferStateChangeId, errorCode, errorDescrip
  */
 
 const getByTransferStateChangeId = async (transferStateChangeId) => {
-  throw new Error("Is this used?")
   try {
     return Db.from('transferError').find({ transferStateChangeId })
   } catch (err) {
