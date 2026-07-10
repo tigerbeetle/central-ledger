@@ -214,7 +214,10 @@ const prepareChangeParticipantPositionTransaction = async (transferList) => {
           changedDate: transactionTimestamp
         })
         // TODO this limit needs to be clarified
-        if (processedPositionValue.toNumber() > liquidityCover.multiply(participantLimit.thresholdAlarmPercentage).toNumber()) {
+        // It appears that participantLimit.thresholdAlarmPercentage is always undefined.
+        // @mojaloop/ml-number@11.1.5 broke this line since it throws when an undefined value is
+        // passed in. For now, I'm putting in a placeholder of 1.
+        if (processedPositionValue.toNumber() > liquidityCover.multiply(participantLimit.thresholdAlarmPercentage || 1).toNumber()) {
           limitAlarms.push(participantLimit)
         }
         histTimerUpdateParticipantPositionEnd({ success: true, queryName: 'facade_prepareChangeParticipantPositionTransaction_transaction_UpdateParticipantPosition' })

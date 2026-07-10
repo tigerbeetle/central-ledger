@@ -41,7 +41,7 @@ let TransferFacade: any
 let FxTransferService: any
 let proxyCache: any
 
-describe('handlers/prepare', () => {
+describe('handlers/tx-timeout', () => {
   before(async () => {
     await harness.up('BATCH')
     await harness.setupGlobals()

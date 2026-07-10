@@ -275,6 +275,7 @@ export class Snapshot {
 /**
  * Stringify an object with consistent key ordering for stable comparison.
  */
+// TODO: rewrite me!
 function sortedStringify(obj: any): string {
   return JSON.stringify(obj, (key, value) => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {

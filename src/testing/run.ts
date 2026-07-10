@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
 import test, { run } from "node:test"
-import { tap } from 'node:test/reporters'
+import { tap, spec } from 'node:test/reporters'
 import Harness from './harness'
 import { mergeTapStreams } from './tap-stream'
 import { ResultTest, RunTask, RunTaskCoverage, RunTaskIntegration, RunTaskUnit, TagTask } from './types'
@@ -356,6 +356,7 @@ async function runIntegrationTests(task: RunTaskIntegration): Promise<ResultTest
 
   const testStream = run({
     files,
+    // Run each test file in a separate process.
     isolation: 'process',
     // Tweak this depending on what resources we have.
     concurrency: 2,
@@ -364,9 +365,11 @@ async function runIntegrationTests(task: RunTaskIntegration): Promise<ResultTest
       exitCode = 1
     })
 
-  const tapStream = testStream.compose(tap)
+  const tapStream = testStream.compose(spec)
   tapStream.pipe(process.stdout)
   await finished(testStream)
+
+  // TODO: figure out how to export to xml to be compatible with circleci.
 
   return {
     output: '',

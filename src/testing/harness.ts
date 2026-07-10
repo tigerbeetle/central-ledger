@@ -437,12 +437,17 @@ export default class Harness {
   }
 
   public async teardownGlobals(): Promise<void> {
-    logger.info('teardownGlobals()')
-    await Cache.destroyCache()
-    await Db.disconnect()
-    await KafkaProducer.disconnect()
-    await KafkaConsumer.disconnectAll()
-    resetOverride()
+    try {
+      logger.info('teardownGlobals()')
+      await Cache.destroyCache()
+      await Db.disconnect()
+      await KafkaProducer.disconnect()
+      await KafkaConsumer.disconnectAll()
+      resetOverride()
+    } catch (err: any) {
+      logger.error(`teardownGlobals() failed with error: ${err.message}`)
+      throw err
+    }
   }
 
   private async checkEnvironment() {
