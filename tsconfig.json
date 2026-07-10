@@ -31,7 +31,7 @@
       "sourceMap": true
     },
     "transpileOnly": true,
-    "experimentalResolver": true,
+    "experimentalResolver": false,
     "files": true,
     "ignore": [
       "(?:^|/)node_modules/",
