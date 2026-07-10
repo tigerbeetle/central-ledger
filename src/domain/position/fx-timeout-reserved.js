@@ -40,7 +40,6 @@ const Utility = require('@mojaloop/central-services-shared').Util
 const MLNumber = require('@mojaloop/ml-number')
 const Logger = require('../../shared/logger').logger
 const assert = require('node:assert')
-const TransferFacade = require('#src/models/transfer/facade')
 
 /**
  * @function processPositionFxTimeoutReservedBin
