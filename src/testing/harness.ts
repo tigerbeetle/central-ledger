@@ -62,6 +62,7 @@ import PositionBatchHandler from '../handlers/positions/handlerBatch'
 import ParticipantCached from '../models/participant/participantCached'
 import ParticipantCurrencyCached from '../models/participant/participantCurrencyCached'
 import ParticipantLimitCached from '../models/participant/participantLimitCached'
+import ProxyCache from '../lib/proxyCache'
 const BatchPositionModelCached = require('../models/position/batchCached')
 const ExternalParticipantCached = require('../models/participant/externalParticipantCached')
 
@@ -439,6 +440,7 @@ export default class Harness {
   public async teardownGlobals(): Promise<void> {
     try {
       logger.info('teardownGlobals()')
+      await ProxyCache.disconnect()
       await Cache.destroyCache()
       await Db.disconnect()
       await KafkaProducer.disconnect()
@@ -713,9 +715,10 @@ class Redpanda {
 
     const command = `
     docker rm -f ${this.containerName} ${this.containerNameConsole} 2>/dev/null;
+    docker network create harness || echo 'harness exists';
     docker run -d \
       --name ${this.containerName} \
-      --network single_loop \
+      --network harness \
       -p ${portRedpanda}:9092 \
       --health-cmd="rpk cluster info" \
       --health-interval=1s \
@@ -742,7 +745,7 @@ class Redpanda {
       --name ${this.containerNameConsole} \
       --hostname ${this.containerNameConsole} \
       --restart on-failure \
-      --network single_loop \
+      --network harness \
       -p ${portConsole}:8080 \
       -e KAFKA_BROKERS=${this.containerName}:29092 \
       docker.redpanda.com/redpandadata/console:latest
