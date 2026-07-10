@@ -29,13 +29,10 @@
 'use strict'
 
 // hapi-openapi is very out of date and is archived.
-// We need to polyfill `util` since node 24+ removes isObject.
+// We need to polyfill `util` since node 24+ removes the following methods.
 /* eslint-disable n/no-deprecated-api */
 const util = require('util')
 if (!util.isObject) util.isObject = (arg) => arg !== null && typeof arg === 'object'
-if (!util.isString) util.isString = (arg) => typeof arg === 'string'
-if (!util.isNull) util.isNull = (arg) => arg === null
-if (!util.isNullOrUndefined) util.isNullOrUndefined = (arg) => arg == null
 if (!util.isNumber) util.isNumber = (arg) => typeof arg === 'number'
 if (!util.isUndefined) util.isUndefined = (arg) => arg === undefined
 /* eslint-enable n/no-deprecated-api */

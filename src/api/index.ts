@@ -19,7 +19,12 @@ module.exports = Setup.initialize({
   ].filter(Boolean),
   runMigrations: Config.RUN_MIGRATIONS,
   runHandlers: !Config.HANDLERS_DISABLED
-}).catch((err: any) => {
+}).catch(
+  // Ignore this code path in coverage, since we explicitly don't test it in the runner.
+  /* istanbul ignore next */
+  (err: any) => {
+    /* istanbul ignore next */
   Logger.error(`Setup.initialize() failed with error: ${err.message}.\nCalling process.exit(1)`)
+  /* istanbul ignore next */
   process.exit(1)
 })
