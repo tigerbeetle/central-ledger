@@ -334,7 +334,7 @@ Test('setup', setupTest => {
 
       try {
         await Setup.initialize({ service })
-        test.fail(`Setup.initialize() should have thrown.`)
+        test.fail('Setup.initialize() should have thrown.')
         test.end()
       } catch (err) {
         test.ok(DbStub.connect.calledWith(Config.DATABASE))
@@ -592,7 +592,7 @@ Test('setup', setupTest => {
 
       try {
         await Setup.initialize({ service, runHandlers: true, handlers: modulesList })
-        test.fail(`Setup.initialize() should have thrown.`)
+        test.fail('Setup.initialize() should have thrown.')
         test.end()
       } catch (err) {
         test.ok(RegisterHandlersStub.transfers.registerPrepareHandler.called)
