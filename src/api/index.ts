@@ -5,6 +5,7 @@ process.env.UV_THREADPOOL_SIZE = '12'
 const RoutesAdmin = require('./routes')
 const RoutesSettlement = require('../settlement/api/routes')
 import Config from '../lib/config/index'
+const Logger = require('../shared/logger').logger
 const Setup = require('../shared/setup')
 const MetricsPlugin = require('@mojaloop/central-services-metrics').plugin
 
@@ -18,4 +19,7 @@ module.exports = Setup.initialize({
   ].filter(Boolean),
   runMigrations: Config.RUN_MIGRATIONS,
   runHandlers: !Config.HANDLERS_DISABLED
+}).catch((err: any) => {
+  Logger.error(`Setup.initialize() failed with error: ${err.message}.\nCalling process.exit(1)`)
+  process.exit(1)
 })

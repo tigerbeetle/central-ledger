@@ -104,9 +104,8 @@ async function runUnitTests(task: RunTaskUnit): Promise<ResultTest> {
 /**
  * @function runCoverage
  * @description Run the unit tests while collecting coverage, and produce the coverage report.
- *
- * For BOTH: uses --silent and --no-clean to accumulate coverage, then nyc report.
- * See: https://github.com/istanbuljs/nyc#combining-reports-from-multiple-runs
+ * See: https://github.com/istanbuljs/nyc#combining-reports-from-multiple-runs to understand the
+ * approach here.
  */
 async function runCoverage(task: RunTaskCoverage): Promise<void> {
   switch (task.type) {
@@ -117,7 +116,7 @@ async function runCoverage(task: RunTaskCoverage): Promise<void> {
       runCoverageNative({ silent: false, noClean: false })
       break
     case 'BOTH':
-      // Run both with --silent, second with --no-clean to accumulate.
+      // First run native check, but don't cleanup so we accumulate coverage between runs.
       runCoverageTape({ silent: true, noClean: false })
       runCoverageNative({ silent: true, noClean: true })
       // Generate combined report.
@@ -281,7 +280,7 @@ async function runUnitTestsTape(): Promise<ResultTest> {
 
 /**
  * @function runUnitTestsNative
- * @description Run the unit tests written with the native nodejs test suite.
+ * @description Run the unit tests with the native nodejs test suite.
  */
 async function runUnitTestsNative(): Promise<ResultTest> {
   return new Promise((resolve) => {
