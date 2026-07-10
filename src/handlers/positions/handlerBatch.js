@@ -48,7 +48,7 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const BatchPositionModel = require('../../models/position/batch')
 const decodePayload = require('@mojaloop/central-services-shared').Util.StreamingProtocol.decodePayload
 const { BATCHING } = require('../../shared/constants')
-
+const Logger = require('../../shared/logger').logger
 const consumerCommit = true
 const rethrow = require('../../shared/rethrow')
 
@@ -192,6 +192,7 @@ const positions = batchConfig => async (error, messages) => {
     }
     histTimerEnd({ success: true })
   } catch (err) {
+    Logger.error(`handlerBatch failed with error: ${err.message}`)
     // If Bin Processor returns failure
     // -  Rollback DB transaction
     await trx?.rollback()

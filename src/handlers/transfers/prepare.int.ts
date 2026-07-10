@@ -160,7 +160,7 @@ describe('handlers/prepare', () => {
   /**
    * fxTransfers
    */
-  it.only('Calculates the obligation between initating and counterparty DFSP.', async () => {
+  it('Calculates the obligation between initating and counterparty DFSP.', async () => {
     const payload = {
       commitRequestId: '200001',
       determiningTransferId: '300001',
