@@ -116,8 +116,9 @@ const createServer = async function (port, modules) {
       server.log('error', e.message)
       throw e
     }
-  } catch (e) {
-    console.error(e)
+  } catch (err) {
+    console.error(`setup failed with error: ${err.message}`)
+    throw err
   }
 }
 
