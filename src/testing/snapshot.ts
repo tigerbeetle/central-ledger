@@ -272,22 +272,6 @@ export class Snapshot {
   }
 }
 
-/**
- * Use in JSON.stringify to sort the keys consistently.
- * @example JSON.stringify(thing, replaceSorted)
- */
-export function replaceSorted(_key: string, value: unknown): unknown {
-  if (!value) return value
-  if (typeof value !== 'object') return value
-  if (Array.isArray(value)) return value
-
-  const obj = value as Record<string, unknown>
-  return Object.keys(obj).sort().reduce((sorted: any, key: string) => {
-    sorted[key] = obj[key];
-    return sorted;
-  }, {})
-}
-
 export function unwrapSnapshot<T>(result: SnapshotResult<T>): void {
   if (result.type === SnapshotResultType.MATCH) {
     return
