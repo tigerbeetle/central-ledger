@@ -9,7 +9,6 @@ import assert from "node:assert"
 import Logger from "@mojaloop/central-services-logger"
 import { Snapshot } from './snapshot'
 import { sleepSeconds } from './util'
-import { cursorTo } from 'node:readline'
 
 const { ilpFactory, ILP_VERSIONS } = require('@mojaloop/sdk-standard-components').Ilp
 const ilpService = ilpFactory(ILP_VERSIONS.v1, { secret: 'password', logger: Logger })
@@ -36,7 +35,7 @@ export interface CreateHubPayload {
  */
 export const createHub = async (harness: Harness, payload: CreateHubPayload): Promise<void> => {
   assert.equal(payload.currencies.length, payload.settlementModels.length)
-  for await (const currency of payload.currencies) {
+  for (const currency of payload.currencies) {
     await ParticipantService.createHubAccount(
       harness.config.HUB_ID, currency, Enum.Accounts.LedgerAccountType.HUB_RECONCILIATION
     )
@@ -45,7 +44,7 @@ export const createHub = async (harness: Harness, payload: CreateHubPayload): Pr
     )
   }
 
-  for await (const settlementModel of payload.settlementModels) {
+  for (const settlementModel of payload.settlementModels) {
     await SettlementModelService.createSettlementModel(settlementModel)
   }
 }
@@ -79,8 +78,8 @@ export const createDfsp = async (harness: Harness, payload: CreateDfspPayload): 
   const participantId = await ParticipantService.create({
     name, isProxy,
   })
-  for await (const currency of currencies) {
-    for await (const accountType of accountTypes) {
+  for (const currency of currencies) {
+    for (const accountType of accountTypes) {
       await ParticipantService.createParticipantCurrency(
         participantId,
         currency,
@@ -90,7 +89,7 @@ export const createDfsp = async (harness: Harness, payload: CreateDfspPayload): 
     }
   }
 
-  for await (const [idx, limit] of initialPostionsAndLimits.entries()) {
+  for (const [idx, limit] of initialPostionsAndLimits.entries()) {
     const currency = currencies[idx]
     const payload = {
       currency,
@@ -168,8 +167,7 @@ export const getPositions = async (payer: string, payee: string, currency: strin
  */
 export const getPositionAccount = async (name: string, currency: string) => {
   const account = (await ParticipantService.getAccounts(name, { currency }))
-    .filter(account => account.ledgerAccountType === 'POSITION')
-    .shift()
+    .find(account => account.ledgerAccountType === 'POSITION')
 
   assert(account, `No position account found for name: ${name} + currency: ${currency}.`)
   return account;

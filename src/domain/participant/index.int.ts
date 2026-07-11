@@ -59,7 +59,7 @@ describe('domain/participant/index', () => {
   it('creates the participants', async (test) => {
     assert(dfsps.length === proxyStatus.length)
 
-    for await (const [idx, dfsp] of dfsps.entries()) {
+    for (const [idx, dfsp] of dfsps.entries()) {
       const isProxy = proxyStatus[idx]
       const resultGetByName = await ParticipantService.getByName(dfsp)
       assert.equal(resultGetByName, undefined)
@@ -67,8 +67,8 @@ describe('domain/participant/index', () => {
       const participantId = await ParticipantService.create({
         name: dfsp, isProxy,
       })
-      for await (const currency of currencies) {
-        for await (const accountType of accountTypes) {
+      for (const currency of currencies) {
+        for (const accountType of accountTypes) {
           await ParticipantService.createParticipantCurrency(
             participantId,
             currency,
@@ -405,7 +405,7 @@ describe('domain/participant/index', () => {
   })
 
   it('addEndpoint() and getAllEndpoints()', async () => {
-    for await (const dfsp of dfsps) {
+    for (const dfsp of dfsps) {
       await ParticipantService.addEndpoint(dfsp, {
         type: Enum.EndPoints.FspEndpointTypes.FSPIOP_CALLBACK_URL_TRANSFER_POST,
         value: `http://localhost:1080/transfers`
@@ -519,8 +519,8 @@ describe('domain/participant/index', () => {
   })
 
   it('addLimitAndInitialPosition() for each dfsp', async () => {
-    for await (const dfsp of dfsps) {
-      for await (const currency of currencies) {
+    for (const dfsp of dfsps) {
+      for (const currency of currencies) {
         const payload = {
           currency,
           limit: {

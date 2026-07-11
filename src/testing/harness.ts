@@ -827,12 +827,10 @@ class Redpanda {
    */
   public async mark(): Promise<number> {
     let watermarkSum = 0
-    for await (const topic of this.topics) {
+    for (const topic of this.topics) {
       const cmd = `docker exec ${this.containerName} rpk topic describe ${topic} --format=json`
-      const { stderr, stdout } = await execAsync(cmd)
-      // console.log(`lagChecker() stdout:\n` + stdout)
-      // console.log(`lagChecker() stderr:\n` + stderr)
-
+      const { stdout } = await execAsync(cmd)
+      
       const describeJson = JSON.parse(stdout)[0].partitions[0]
       watermarkSum += describeJson.high_watermark
     }

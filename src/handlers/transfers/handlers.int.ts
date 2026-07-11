@@ -6,7 +6,6 @@ import { Snapshot } from "../../testing/snapshot"
 import * as ApiHelpers from '../../testing/api-helpers'
 
 import TimeoutHandler from '../timeouts/handler'
-import ParticipantService from '../../domain/participant/index'
 import TransferFacade from "../../models/transfer/facade"
 import handlerAll from './handler'
 import handlerPrepare from './prepare'

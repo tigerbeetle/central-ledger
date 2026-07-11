@@ -629,7 +629,7 @@ describe('lib/config/util', () => {
       })
     })
 
-    it('replaces arrays instead of merging them', () => {
+    it('replaces arrays', () => {
       const target = { items: [1, 2, 3], name: 'test' }
       const source = { items: [4, 5] }
       const result = deepMerge(target, source)
@@ -637,7 +637,7 @@ describe('lib/config/util', () => {
       assert.deepStrictEqual(result, { items: [4, 5], name: 'test' })
     })
 
-    it('handles null values in source (replaces target)', () => {
+    it('handles nulls in source', () => {
       const target = { a: { nested: 'value' }, b: 2 }
       const source = { a: null }
       const result = deepMerge(target, source as any)
@@ -645,7 +645,7 @@ describe('lib/config/util', () => {
       assert.deepStrictEqual(result, { a: null, b: 2 })
     })
 
-    it('handles null values in target (replaces with source object)', () => {
+    it('handles nulls in target', () => {
       const target: any = { a: null, b: 2 }
       const source: any = { a: { nested: 'value' } }
       const result = deepMerge(target, source)
