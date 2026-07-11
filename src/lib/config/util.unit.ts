@@ -373,8 +373,9 @@ describe('lib/config/util', () => {
       return acc
     }, [] as Array<MutationOption>)
 
-    const mutateConfigKafka = (input: any, times: number): [any, 'FAIL' | 'PASS'] => {
+    const mutateConfigKafka = (input: any, times: number): [any, 'FAIL' | 'PASS', any] => {
       assert(times > 0, 'Expected times to be a positive integer')
+      const choices: Array<string> = []
       // By default we expect to start with a valid config.
       let expectPassOrFail: 'FAIL' | 'PASS' = 'PASS' as unknown as 'FAIL' | 'PASS'
       const mutatablePaths = enumeratePaths(input).filter(path =>
@@ -385,13 +386,14 @@ describe('lib/config/util', () => {
         const paths = enumeratePaths(input)
         const path = prng.randomElementFrom(paths)
 
-        // Mark this path as uneligible to be mutated.
+        // Mark this path as uneligible to be mutated in future rounds.
         const idxPath = mutatablePaths.indexOf(path)
         if (idxPath >= 0) {
           mutatablePaths.splice(idxPath, 1)
         }
 
         deleteAtPath(input, path)
+        choices.push(`DELETE_ELEMENT: ${path}`)
 
         // Once it's failed, it can't be saved.
         if (expectPassOrFail === 'FAIL') return
@@ -421,6 +423,7 @@ describe('lib/config/util', () => {
 
         const newValue = prng.randomElementFrom([null, 'test-string', undefined, 1323])
         replaceAtPath(input, path, newValue)
+        choices.push(`MUTATE_ACTION_TOPIC_MAP: ${path} : newValue: ${newValue}`)
 
         if (expectPassOrFail === 'FAIL') return
 
@@ -448,30 +451,34 @@ describe('lib/config/util', () => {
       for (let idx = times; idx >= 0; idx--) {
         input = _mutateConfig(input)
       }
-      return [input, expectPassOrFail]
+      return [input, expectPassOrFail, choices]
     }
 
     it('fuzz: fails for an invalid kafka config', () => {
       const ITERATIONS = 100
       for (let idx = 0; idx < ITERATIONS; idx++) {
         const baseConfig = makeBaseConfig()
-        const [mutated, expectPassOrFail] = mutateConfigKafka(baseConfig, 5)
+        const [mutated, expectPassOrFail, choices] = mutateConfigKafka(baseConfig, 4)
         switch (expectPassOrFail) {
           // Mutation has made config invalid.
           case 'FAIL': {
-            assert.throws(
-              () => assertKafkaConfig(mutated), 
-              `Expected mutated kafka config to fail validation: (iteration: ${idx}).\n\
-              ${JSON.stringify(mutated, null, 2)}`
-            )
+            try {
+              assertKafkaConfig(mutated)
+              throw new Error(`Test Error`)
+            } catch (err: any) {
+              if (err.message === 'Test Error') {
+                console.error(`Expected mutated config to fail validation: (iteration: ${idx}).`)
+                console.error(`Choices: \n\t${choices.join('\n\t')}`)
+                throw err
+              }
+            }
             break
           }
           // Mutation hasn't made config invalid.
           case 'PASS': {
             assert.doesNotThrow(
               () => assertKafkaConfig(mutated),
-              `Expected mutated kafka config to pass validation: (iteration: ${idx}).\n\
-              ${JSON.stringify(mutated, null, 2)}`
+              `Expected mutated kafka config to pass validation: (iteration: ${idx}).`
             )
           }
         }

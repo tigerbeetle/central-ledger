@@ -217,6 +217,7 @@ export function assertKafkaConfig(input: unknown): void {
   assertNestedFields(unsafeConfig, 'CONSUMER.TRANSFER.POSITION_BATCH')
   assertNestedFields(unsafeConfig, 'CONSUMER.ADMIN.TRANSFER')
   assertNestedFields(unsafeConfig, 'CONSUMER.NOTIFICATION.EVENT')
+  assertNestedFields(unsafeConfig, 'CONSUMER.DEFERREDSETTLEMENT.CLOSE')
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PREPARE)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.PROCESSING)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.BULK.FULFIL)
@@ -228,6 +229,7 @@ export function assertKafkaConfig(input: unknown): void {
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.TRANSFER.POSITION_BATCH)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.ADMIN.TRANSFER)
   assertKafkaConsumerConfig(unsafeConfig.CONSUMER.NOTIFICATION.EVENT)
+  assertKafkaConsumerConfig(unsafeConfig.CONSUMER.DEFERREDSETTLEMENT.CLOSE)
 
   // Check the Producer Configs.
   assert(unsafeConfig.PRODUCER)
