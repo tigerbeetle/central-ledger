@@ -78,7 +78,7 @@ const logger = Logger.child({ scope: 'harness' })
 export interface HarnessOptions {
   /**
    * A unique id used in naming and logs to disambiguate between multiple harness runs.
-   */ 
+   */
   id: number
 }
 
@@ -569,7 +569,7 @@ environment!\n ${err.message}`)
 Found only ${markNew - markLast} new messages.`
           logger.error(errorMessage)
           this.printLast(markNew - markLast)
-          
+
           throw new Error(errorMessage)
         }
 
@@ -618,8 +618,8 @@ Found only ${markNew - markLast} new messages.`
       ts:   ${msg.timestamp}
       topic: ${msg.topic}
       uriParams: ${msg.valueParsed.content.uriParams ?
-        JSON.stringify(msg.valueParsed.content.uriParams) : ''
-      }
+          JSON.stringify(msg.valueParsed.content.uriParams) : ''
+        }
       valueParsed:
       ${JSON.stringify(msg.valueParsed.content.payload, null, 2)}
       `.replaceAll(/^\s{6}/gm, ''))
@@ -824,7 +824,7 @@ class Redpanda {
     for (const topic of this.topics) {
       const cmd = `docker exec ${this.containerName} rpk topic describe ${topic} --format=json`
       const { stdout } = await execAsync(cmd)
-      
+
       const describeJson = JSON.parse(stdout)[0].partitions[0]
       watermarkSum += describeJson.high_watermark
     }
@@ -949,9 +949,23 @@ class MySql {
   private async migrate(): Promise<void> {
     assert(this._connectionOptions)
 
-    switch (this.options.migration.type) {
-      case "knex": return this.migrateKnex();
-      case "sql": return this.migrateSql();
+    // Sometimes migration fails even if MySQL is ready, so we wrap this in retries.
+    let attemptsMax = 3
+    let delayMs = 1000
+
+    for (let attempt = 1; attempt <= attemptsMax; attempt++) {
+      try {
+        switch (this.options.migration.type) {
+          case "knex": return this.migrateKnex();
+          case "sql": return this.migrateSql();
+        }
+      } catch (err: any) {
+        if (attempt === attemptsMax) {
+          throw new Error(`migrate failed after ${attemptsMax}.\n${err.message}`)
+        }
+        logger.debug(`migrate()          [attempt ${`${attempt}`.padStart(3)}/${attemptsMax}]`)
+        await new Promise(resolve => setTimeout(resolve, delayMs))
+      }
     }
   }
 
