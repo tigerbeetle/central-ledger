@@ -118,7 +118,6 @@ export default class Harness {
   private dependencyMySql: MySql
   private dependencyRedis: Redis
   private applicationConfig: ApplicationConfig | null = null;
-  private kafkaWatchInterval: NodeJS.Timeout | null = null;
   private omniConsumer: Consumer | null = null;
   private messageQueue: Array<MojaloopKafkaMessage> = []
   private positionHandlerType: 'NON_BATCH' | 'BATCH' = 'NON_BATCH'
@@ -132,7 +131,7 @@ export default class Harness {
    * 
    * We keep a reference to #2 here for convenience.
    */
-  private _enums: any | null = null;
+  private _enums: any = null;
 
   private constructor(options: HarnessOptions) {
     this.options = options
@@ -397,7 +396,7 @@ export default class Harness {
     if (this.messageQueue.length === 0) {
       return
     }
-    return this.messageQueue[this.messageQueue.length - 1]
+    return this.messageQueue.at(-1)
   }
 
   /**
@@ -459,7 +458,7 @@ export default class Harness {
     } catch (err: any) {
       logger.error(`command: 'docker --version' failed. Ensure docker is installed in this 
 environment!\n ${err.message}`)
-      throw Error('checkEnvironment() failed.')
+      throw new Error('checkEnvironment() failed.')
     }
 
     try {
@@ -467,7 +466,7 @@ environment!\n ${err.message}`)
       await execAsync(`docker ps`)
     } catch (err: any) {
       logger.error(`command: 'docker ps' failed. Is the docker daemon running?\n ${err.message}`)
-      throw Error('checkEnvironment() failed.')
+      throw new Error('checkEnvironment() failed.')
     }
   }
 
@@ -475,11 +474,6 @@ environment!\n ${err.message}`)
     let forceExit = false
     const start = performance.now()
     logger.warn(`harness.down()`)
-
-    // Stop monitoring docker.
-    if (this.kafkaWatchInterval) {
-      clearInterval(this.kafkaWatchInterval)
-    }
 
     if (this.omniConsumer) {
       try {
