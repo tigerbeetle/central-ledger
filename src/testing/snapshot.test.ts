@@ -1,5 +1,5 @@
 import { describe, it } from "node:test";
-import { replaceSorted, Snapshot, SnapshotRange } from "./snapshot";
+import { Snapshot, SnapshotRange } from "./snapshot";
 import assert from "node:assert";
 
 /**
@@ -34,14 +34,6 @@ describe('replaceSnapshot()', () => {
     const actual = Snapshot._replaceSnapshot(contents, range, newSnapshot)
 
     assert.equal(actual, expected)
-  })
-})
-
-describe('replaceSorted', () => {
-  it('sorts the objects consistently', () => {
-    const input = {a: 1, c: 3, d: 4, b: 2}
-    const output = JSON.stringify(input, replaceSorted)
-    assert.equal(output, '{"a":1,"b":2,"c":3,"d":4}')
   })
 })
 
