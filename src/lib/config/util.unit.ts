@@ -588,7 +588,7 @@ describe('lib/config/util', () => {
   })
 
   describe('deepMerge', () => {
-    it('merges top-level properties', () => {
+    it('merges top-level', () => {
       const target = { a: 1, b: 2 }
       const source = { b: 3, c: 4 }
       const result = deepMerge(target, source)
@@ -598,14 +598,14 @@ describe('lib/config/util', () => {
     })
 
     it('deep merges nested objects', () => {
-      const target = {
+      const target: any = {
         config: {
           host: 'localhost',
           port: 3000,
           options: { timeout: 5000 }
         }
       }
-      const source = {
+      const source: any = {
         config: {
           port: 8080,
           options: { retries: 3 }
@@ -639,9 +639,9 @@ describe('lib/config/util', () => {
     })
 
     it('handles null values in target (replaces with source object)', () => {
-      const target = { a: null, b: 2 }
-      const source = { a: { nested: 'value' } }
-      const result = deepMerge(target as any, source)
+      const target: any = { a: null, b: 2 }
+      const source: any = { a: { nested: 'value' } }
+      const result = deepMerge(target, source)
 
       assert.deepStrictEqual(result, { a: { nested: 'value' }, b: 2 })
     })
@@ -690,7 +690,7 @@ describe('lib/config/util', () => {
 
     it('returns the modified target', () => {
       const target = { a: 1 }
-      const source = { b: 2 }
+      const source: any = { b: 2 }
       const result = deepMerge(target, source)
 
       assert.strictEqual(result, target)
@@ -744,6 +744,9 @@ const makeBaseConfig = (): KafkaConfig => {
       },
       NOTIFICATION: {
         EVENT: generateValidConsumer()
+      },
+      DEFERREDSETTLEMENT: {
+        CLOSE: generateValidConsumer()
       }
     },
     PRODUCER: {
