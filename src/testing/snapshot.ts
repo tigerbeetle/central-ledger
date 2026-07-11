@@ -180,7 +180,7 @@ export class Snapshot {
    */
   public _replaceSnapshot(update: string): string {
     assert(update[0] === '`', 'Replacement should start with a tick.')
-    assert(update[update.length - 1] === '`', 'Replacement should end with a tick.')
+    assert(update.endsWith('`'), 'Replacement should end with a tick.')
     const contents = fs.readFileSync(this.sourceLocation.file).toString('utf-8')
     const range = Snapshot._snapshotRange(contents, this.sourceLocation.line)
     return Snapshot._replaceSnapshot(contents, range, update)
@@ -227,7 +227,7 @@ export class Snapshot {
         start += line.length + 1
       }
       if (idx === lineIdx) {
-        const openingTickIdx = line.indexOf('\`')
+        const openingTickIdx = line.indexOf('`')
         if (openingTickIdx === -1) {
           throw new Error(`Couldn't find opening '\`' in snapshot string.`)
         }
@@ -273,20 +273,19 @@ export class Snapshot {
 }
 
 /**
- * Stringify an object with consistent key ordering for stable comparison.
+ * Use in JSON.stringify to sort the keys consistently.
+ * @example JSON.stringify(thing, replaceSorted)
  */
-// TODO: rewrite me!
-function sortedStringify(obj: any): string {
-  return JSON.stringify(obj, (key, value) => {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      // Sort object keys for consistent ordering.
-      return Object.keys(value).sort().reduce((sorted: any, key: string) => {
-        sorted[key] = value[key];
-        return sorted;
-      }, {});
-    }
-    return value;
-  }, 2);
+export function replaceSorted(_key: string, value: unknown): unknown {
+  if (!value) return value
+  if (typeof value !== 'object') return value
+  if (Array.isArray(value)) return value
+
+  const obj = value as Record<string, unknown>
+  return Object.keys(obj).sort().reduce((sorted: any, key: string) => {
+    sorted[key] = obj[key];
+    return sorted;
+  }, {})
 }
 
 export function unwrapSnapshot<T>(result: SnapshotResult<T>): void {
@@ -301,29 +300,6 @@ export function unwrapSnapshot<T>(result: SnapshotResult<T>): void {
   }
 
   throw new Error(`Snapshot updated.`)
-}
-
-export function checkSnapshotObject(actual: object, snapshot: object): SnapshotResult<object> {
-  const actualString = sortedStringify(actual);
-  const snapshotString = sortedStringify(snapshot);
-
-  const stringResult = checkSnapshotString(actualString, snapshotString);
-
-  if (stringResult.type === SnapshotResultType.MATCH) {
-    return {
-      type: SnapshotResultType.MATCH,
-      actual,
-      snapshot
-    };
-  }
-
-  return {
-    type: SnapshotResultType.MISMATCH,
-    actual,
-    snapshot,
-    diff: stringResult.diff,
-    update: snapshotString,
-  };
 }
 
 enum SpecialToken {
@@ -583,7 +559,7 @@ export function getCallerLocation(depth: number = 1): CallerLocation {
   assert(match!.length === 4)
   return { 
     file: match![1], 
-    line: parseInt(match![2]), 
-    col: parseInt(match![3]) 
+    line: Number.parseInt(match![2]), 
+    col: Number.parseInt(match![3]) 
   }
 }
