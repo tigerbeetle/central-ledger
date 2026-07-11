@@ -38,6 +38,8 @@
 'use strict'
 
 const Path = require('path')
+const assert = require('assert')
+const fs = require('fs')
 const Inert = require('@hapi/inert')
 const Vision = require('@hapi/vision')
 const Blipp = require('blipp')
@@ -46,7 +48,71 @@ const { APIDocumentation, loggingPlugin, HapiEventPlugin } = require('@mojaloop/
 const Config = require('../lib/config')
 const { logger } = require('./logger')
 
+const myDocsPlugin = {
+  name: 'apiDocumentation2',
+  register: (server, options) => {
+    assert(options.pathToSwaggerFile, 'Expected `options.pathToSwaggerFile`.')
+
+    // Check the file exists and parses.
+    try {
+      const file = fs.readFileSync(options.pathToSwaggerFile)
+      JSON.parse(file)
+    } catch (err) {
+      const errorMessage = `documentation - failed to read pathToSwaggerFile with error: ${err.message}`
+      logger.error(errorMessage)
+      throw new Error(errorMessage)
+    }
+
+    const page = `<!DOCTYPE html>
+    <html>
+    <head><title>API Docs</title></head>
+    <body>
+      <script id="api-reference" data-url="/swagger2.json"></script>
+      <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    </body>
+    </html>`
+
+    server.route([
+      {
+        method: 'GET',
+        path: '/swagger2.json',
+        options: {
+          tags: ['api', 'documentation'],
+          handler: (request, h) => {
+            const file = fs.readFileSync(options.pathToSwaggerFile)
+            return h.response(file)
+          },
+          plugins: {
+            apiDocumentation: false
+          }
+        }
+      },
+      {
+        method: 'GET',
+        path: '/documentation2',
+        options: {
+          tags: ['api', 'documentation'],
+          handler: (_request, h) => {
+            return h.response(page)
+              .type('text/html');
+          },
+          plugins: {
+            apiDocumentation: false
+          }
+        }
+      }
+    ])
+  }
+}
+
 const registerPlugins = async (server) => {
+  await server.register({
+    plugin: myDocsPlugin,
+    options: {
+      pathToSwaggerFile: Path.resolve(process.cwd(), 'src/api/interface/swagger.json')
+    }
+  })
+
   if (Config.API_DOC_ENDPOINTS_ENABLED) {
     await server.register({
       plugin: APIDocumentation,
