@@ -36,7 +36,7 @@ const Config = require('../../lib/config')
 const TransferObjectTransform = require('../../domain/transfer/transform')
 const Participant = require('../../domain/participant')
 
-const createRemittanceEntity = require('./createRemittanceEntity')
+const deprecated_createRemittanceEntity = require('./createRemittanceEntity')
 const Validator = require('./validator')
 const dto = require('./dto')
 const TransferService = require('../../domain/transfer/index')
@@ -225,7 +225,7 @@ const checkDuplication = async ({ payload, isFx, ID, location }) => {
       ['success', 'funcName']
   ).startTimer()
 
-  const remittance = createRemittanceEntity(isFx)
+  const remittance = deprecated_createRemittanceEntity(isFx)
   const { hasDuplicateId, hasDuplicateHash } = await Comparators.duplicateCheckComparator(
     ID,
     payload,
@@ -265,7 +265,7 @@ const processDuplication = async ({
   }
   logger.info(Util.breadcrumb(location, 'handleResend'))
 
-  const transfer = await createRemittanceEntity(isFx)
+  const transfer = await deprecated_createRemittanceEntity(isFx)
     .getByIdLight(ID)
 
   const finalizedState = [TransferState.COMMITTED, TransferState.ABORTED, TransferState.RESERVED]
@@ -321,7 +321,7 @@ const savePreparedRequest = async ({
   try {
     logger.info(logMessage, { validationPassed, reasons })
     const reason = validationPassed ? null : reasons.toString()
-    await createRemittanceEntity(isFx)
+    await deprecated_createRemittanceEntity(isFx)
       .savePreparedRequest(
         payload,
         reason,
