@@ -1,5 +1,5 @@
 # Arguments
-ARG NODE_VERSION=22.22.0-alpine3.23
+ARG NODE_VERSION=24.18.0-alpine3.24
 
 # NOTE: Ensure you set NODE_VERSION Build Argument as follows...
 #
@@ -16,13 +16,14 @@ FROM node:${NODE_VERSION} AS builder
 WORKDIR /opt/app
 
 RUN apk --no-cache add git
-RUN apk add --no-cache -t build-dependencies make gcc g++ python3 py3-setuptools libtool openssl-dev autoconf automake bash \
-    && cd $(npm root -g)/npm \
-    && npm install -g node-gyp
+RUN apk add --no-cache --virtual .build-deps autoconf automake bash g++ gcc libtool make openssl-dev py3-setuptools python3
 
 COPY package.json package-lock.json* /opt/app/
 
-RUN npm ci
+# Lifecycle scripts are skipped for supply-chain safety (docker:S6505); node-rdkafka
+# is the only production dependency that needs its native build, so run it explicitly.
+RUN npm ci --ignore-scripts
+RUN npm rebuild node-rdkafka
 RUN npm prune --omit=dev
 
 FROM node:${NODE_VERSION}
