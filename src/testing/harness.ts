@@ -924,7 +924,7 @@ class MySql {
   private async waitForMySqlReady(): Promise<void> {
     assert(this._connectionOptions)
 
-    let attemptsMax = 100
+    let attemptsMax = 150
     let delayMs = 35
 
     for (let attempt = 1; attempt <= attemptsMax; attempt++) {
