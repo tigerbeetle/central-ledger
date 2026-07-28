@@ -50,8 +50,7 @@ bash .circleci/curl-retry-cl-health.sh
 
 ## Wait for Kafka consumer groups to have partition assignments
 echo "Checking Kafka consumer group status..."
-# ./test/scripts/wait-for-kafka-consumers.js
-sleep 100
+./test/scripts/wait-for-kafka-consumers.js
 
 ## Start integration tests
 echo "Running Integration Tests"
@@ -59,8 +58,6 @@ echo "Running Integration Tests"
 LOG_LEVEL=${LOG_LEVEL} npx tape 'test/integration/**/*.test.js'
 INTEGRATION_TEST_EXIT_CODE="$?"
 echo "==> integration tests exited with code: $INTEGRATION_TEST_EXIT_CODE"
-
-exit 0
 
 ## Kill service gracefully, then force if needed
 echo "Stopping Service with Process ID=$PID"

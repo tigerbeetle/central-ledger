@@ -28,7 +28,7 @@ import { after, before, describe, it } from "node:test"
 import Harness from '../../testing/harness'
 import * as ApiHelpers from '../../testing/api-helpers'
 import assert from "node:assert"
-import { assertPositionDiff, sleepSeconds } from "../../testing/util"
+import { assertPositionDiff } from "../../testing/util"
 
 const harness = Harness.getInstance()
 let PrepareHandler: any

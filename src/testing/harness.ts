@@ -164,7 +164,7 @@ export default class Harness {
       let run = Math.floor(Math.random() * (100000 - 10000) + 10000)
       if (process.env.RUN) {
         try {
-          run = parseInt(process.env.RUN)
+          run = Number.parseInt(process.env.RUN)
         } catch (err: any) {
           throw new Error(`Invalid test run id. process.env.RUN should be an integer.`)
         }
@@ -956,8 +956,8 @@ class MySql {
     for (let attempt = 1; attempt <= attemptsMax; attempt++) {
       try {
         switch (this.options.migration.type) {
-          case "knex": return this.migrateKnex();
-          case "sql": return this.migrateSql();
+          case "knex": await this.migrateKnex();
+          case "sql": await this.migrateSql();
         }
       } catch (err: any) {
         if (attempt === attemptsMax) {

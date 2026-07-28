@@ -197,8 +197,9 @@ export class Consumer {
     const timeoutMs = 10000
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        logger.error(`Consumer.disconnect() timed out after: ${timeoutMs} ms`)
-        reject()
+        const error = new Error(`Consumer.disconnect() timed out after: ${timeoutMs} ms`)
+        logger.error(error.message)
+        reject(error)
       }, timeoutMs)
       logger.info('calling _consumer.disconnect()')
       
