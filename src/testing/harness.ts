@@ -955,9 +955,16 @@ class MySql {
 
     for (let attempt = 1; attempt <= attemptsMax; attempt++) {
       try {
-        switch (this.options.migration.type) {
-          case "knex": await this.migrateKnex();
-          case "sql": await this.migrateSql();
+        const type = this.options.migration.type
+        switch (type) {
+          case "knex": 
+            await this.migrateKnex()
+            break;
+          case "sql": 
+            await this.migrateSql()
+            break
+          default: 
+            throw new Error(`Unexpected migration type: ${type}`)
         }
       } catch (err: any) {
         if (attempt === attemptsMax) {
