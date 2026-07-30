@@ -3,8 +3,13 @@ import assert from 'node:assert'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import { PROJECT_ROOT, TAP_XUNIT_BIN } from './run'
+import { createServer } from 'node:net';
+import { Request, ReqRefDefaults } from '@hapi/hapi';
+import { Snapshot } from './snapshot';
 
+export const PROJECT_ROOT = path.resolve(__dirname, '../..')
+
+export const TAP_XUNIT_BIN = path.join(PROJECT_ROOT, 'node_modules/.bin/tap-xunit')
 /**
  * @function enumeratePaths
  * @description Iterate through a nested object and return the paths as a list of `|` delimited path
@@ -174,4 +179,155 @@ export async function convertToXunit(output: string, outputFile: string): Promis
     proc.stdin.write(output)
     proc.stdin.end()
   })
+}
+
+/**
+ * @function randomAvailablePort
+ * @description Finds a randomly available port by quickly running a server and stopping a server
+ *   on port 0.
+ */
+export async function randomAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.listen(0)
+    server.on('listening', () => {
+      try {
+        const address = server.address() as unknown as { port: number }
+        assert.equal(typeof address, 'object')
+        assert(address.port)
+
+        server.close(() => {
+          resolve(address.port);
+        });
+      } catch (err) {
+        reject(err)
+      }
+    })
+
+    server.on('error', (err) => {
+      reject(err)
+    });
+  });
+}
+
+/** 
+ * @description A hacky method to sleep in JS. For testing purposes only.
+ */
+export async function sleepSeconds(seconds: number) {
+  return new Promise(resolve => setTimeout(resolve, seconds * 1000))
+}
+
+/**
+ * @function createRequest
+ *
+ * @description Create a mock hapi request handler
+ */
+export const createRequest = (
+  { payload, params, query }: { payload: any, params: any, query: any }
+): Request<ReqRefDefaults> => {
+  const requestPayload = payload || {}
+  const requestParams = params || {}
+  const requestQuery = query || {}
+
+  const mock = {
+    payload: requestPayload,
+    params: requestParams,
+    query: requestQuery,
+    server: {
+      log: () => { },
+      methods: {}
+    }
+  } as unknown as Request<ReqRefDefaults>
+
+  return mock
+}
+
+
+/**
+ * @function unwrapResponse
+ *
+ * @description Unwrap the innner response body and code from an async Handler.
+ */
+export const unwrapResponse = async (asyncFunction: (reply: any) => any) => {
+  let responseBody: any
+  let responseCode: number = -1
+  const nestedReply = {
+    response: (response: any) => {
+      responseBody = response
+      return {
+        code: (statusCode: number) => {
+          responseCode = statusCode
+        }
+      }
+    }
+  }
+  await asyncFunction(nestedReply)
+
+  return {
+    responseBody,
+    responseCode
+  }
+}
+
+
+// Re-typing this here so we don't need to import from ParticipantService
+type GetAccountsResponseAccount = {
+  id: number,
+  value: string;
+  reservedValue: string;
+}
+
+/**
+ * Assert that the position account for the DFSP changed as expected.
+ */
+export const assertPositionDiff = (
+  role: 'payer' | 'payee',
+  start: GetAccountsResponseAccount,
+  end: GetAccountsResponseAccount,
+  diff: {
+    pending?: number
+    posted?: number,
+  }
+) => {
+  assert(start)
+  assert(start.value)
+  assert(start.reservedValue)
+  assert(end)
+  assert(end.value)
+  assert(end.reservedValue)
+  assert(start.id === end.id, 'Did you get the accounts mixed up?')
+
+  if (!diff.pending) {
+    diff.pending = 0
+  }
+  if (!diff.posted) {
+    diff.posted = 0
+  }
+
+  const valuePostedStart = Number.parseFloat(start.value)
+  const valuePendingStart = Number.parseFloat(start.reservedValue)
+
+  const endExpected: GetAccountsResponseAccount = {
+    id: start.id,
+    reservedValue: (valuePendingStart + diff.pending).toFixed(4),
+    value: (valuePostedStart + diff.posted).toFixed(4)
+  }
+
+  const expectedStr = prettyPrintPosition(role, start, endExpected)
+  const actualStr = prettyPrintPosition(role, start, end)
+
+  Snapshot.from(expectedStr, { stripWhitespace: false, updateable: false })
+    .checkStringUnwrap(actualStr)
+}
+
+export const prettyPrintPosition = (
+  role: 'payer' | 'payee', 
+  start: GetAccountsResponseAccount,
+  end: GetAccountsResponseAccount,
+) => {
+  const lenColumns = 15
+  return `
+  ${role}   | ${'start'.padEnd(lenColumns)}| ${'end'.padEnd(lenColumns)}
+  pending | ${start.reservedValue.padEnd(lenColumns)}| ${end.reservedValue.padEnd(lenColumns)}
+  posted  | ${start.value.padEnd(lenColumns)}| ${end.value.padEnd(lenColumns)}`
 }

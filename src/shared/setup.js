@@ -315,7 +315,7 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
     if (Config.PROXY_CACHE_CONFIG?.enabled) {
       await ProxyCache.disconnect()
     }
-    process.exit(1)
+    throw err
   }
 }
 

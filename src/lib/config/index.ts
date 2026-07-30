@@ -40,7 +40,7 @@ export const overrideForTesting = (override: Partial<ApplicationConfig>) => {
 }
 
 /**
- * Reset config to fresh values (call in afterEach/teardown).
+ * Reset the overriden config.
  */
 export const resetOverride = () => {
   const fresh = makeConfig()

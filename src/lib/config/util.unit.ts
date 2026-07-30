@@ -373,8 +373,9 @@ describe('lib/config/util', () => {
       return acc
     }, [] as Array<MutationOption>)
 
-    const mutateConfigKafka = (input: any, times: number): [any, 'FAIL' | 'PASS'] => {
+    const mutateConfigKafka = (input: any, times: number): [any, 'FAIL' | 'PASS', any] => {
       assert(times > 0, 'Expected times to be a positive integer')
+      const choices: Array<string> = []
       // By default we expect to start with a valid config.
       let expectPassOrFail: 'FAIL' | 'PASS' = 'PASS' as unknown as 'FAIL' | 'PASS'
       const mutatablePaths = enumeratePaths(input).filter(path =>
@@ -385,13 +386,14 @@ describe('lib/config/util', () => {
         const paths = enumeratePaths(input)
         const path = prng.randomElementFrom(paths)
 
-        // Mark this path as uneligible to be mutated.
+        // Mark this path as uneligible to be mutated in future rounds.
         const idxPath = mutatablePaths.indexOf(path)
         if (idxPath >= 0) {
           mutatablePaths.splice(idxPath, 1)
         }
 
         deleteAtPath(input, path)
+        choices.push(`DELETE_ELEMENT: ${path}`)
 
         // Once it's failed, it can't be saved.
         if (expectPassOrFail === 'FAIL') return
@@ -421,6 +423,7 @@ describe('lib/config/util', () => {
 
         const newValue = prng.randomElementFrom([null, 'test-string', undefined, 1323])
         replaceAtPath(input, path, newValue)
+        choices.push(`MUTATE_ACTION_TOPIC_MAP: ${path} : newValue: ${newValue}`)
 
         if (expectPassOrFail === 'FAIL') return
 
@@ -448,30 +451,34 @@ describe('lib/config/util', () => {
       for (let idx = times; idx >= 0; idx--) {
         input = _mutateConfig(input)
       }
-      return [input, expectPassOrFail]
+      return [input, expectPassOrFail, choices]
     }
 
     it('fuzz: fails for an invalid kafka config', () => {
       const ITERATIONS = 100
       for (let idx = 0; idx < ITERATIONS; idx++) {
         const baseConfig = makeBaseConfig()
-        const [mutated, expectPassOrFail] = mutateConfigKafka(baseConfig, 5)
+        const [mutated, expectPassOrFail, choices] = mutateConfigKafka(baseConfig, 4)
         switch (expectPassOrFail) {
           // Mutation has made config invalid.
           case 'FAIL': {
-            assert.throws(
-              () => assertKafkaConfig(mutated), 
-              `Expected mutated kafka config to fail validation: (iteration: ${idx}).\n\
-              ${JSON.stringify(mutated, null, 2)}`
-            )
+            try {
+              assertKafkaConfig(mutated)
+              throw new Error(`Test Error`)
+            } catch (err: any) {
+              if (err.message === 'Test Error') {
+                console.error(`Expected mutated config to fail validation: (iteration: ${idx}).`)
+                console.error(`Choices: \n\t${choices.join('\n\t')}`)
+                throw err
+              }
+            }
             break
           }
           // Mutation hasn't made config invalid.
           case 'PASS': {
             assert.doesNotThrow(
               () => assertKafkaConfig(mutated),
-              `Expected mutated kafka config to pass validation: (iteration: ${idx}).\n\
-              ${JSON.stringify(mutated, null, 2)}`
+              `Expected mutated kafka config to pass validation: (iteration: ${idx}).`
             )
           }
         }
@@ -588,7 +595,7 @@ describe('lib/config/util', () => {
   })
 
   describe('deepMerge', () => {
-    it('merges top-level properties', () => {
+    it('merges top-level', () => {
       const target = { a: 1, b: 2 }
       const source = { b: 3, c: 4 }
       const result = deepMerge(target, source)
@@ -598,14 +605,14 @@ describe('lib/config/util', () => {
     })
 
     it('deep merges nested objects', () => {
-      const target = {
+      const target: any = {
         config: {
           host: 'localhost',
           port: 3000,
           options: { timeout: 5000 }
         }
       }
-      const source = {
+      const source: any = {
         config: {
           port: 8080,
           options: { retries: 3 }
@@ -622,7 +629,7 @@ describe('lib/config/util', () => {
       })
     })
 
-    it('replaces arrays instead of merging them', () => {
+    it('replaces arrays', () => {
       const target = { items: [1, 2, 3], name: 'test' }
       const source = { items: [4, 5] }
       const result = deepMerge(target, source)
@@ -630,7 +637,7 @@ describe('lib/config/util', () => {
       assert.deepStrictEqual(result, { items: [4, 5], name: 'test' })
     })
 
-    it('handles null values in source (replaces target)', () => {
+    it('handles nulls in source', () => {
       const target = { a: { nested: 'value' }, b: 2 }
       const source = { a: null }
       const result = deepMerge(target, source as any)
@@ -638,10 +645,10 @@ describe('lib/config/util', () => {
       assert.deepStrictEqual(result, { a: null, b: 2 })
     })
 
-    it('handles null values in target (replaces with source object)', () => {
-      const target = { a: null, b: 2 }
-      const source = { a: { nested: 'value' } }
-      const result = deepMerge(target as any, source)
+    it('handles nulls in target', () => {
+      const target: any = { a: null, b: 2 }
+      const source: any = { a: { nested: 'value' } }
+      const result = deepMerge(target, source)
 
       assert.deepStrictEqual(result, { a: { nested: 'value' }, b: 2 })
     })
@@ -690,7 +697,7 @@ describe('lib/config/util', () => {
 
     it('returns the modified target', () => {
       const target = { a: 1 }
-      const source = { b: 2 }
+      const source: any = { b: 2 }
       const result = deepMerge(target, source)
 
       assert.strictEqual(result, target)
@@ -744,6 +751,9 @@ const makeBaseConfig = (): KafkaConfig => {
       },
       NOTIFICATION: {
         EVENT: generateValidConsumer()
+      },
+      DEFERREDSETTLEMENT: {
+        CLOSE: generateValidConsumer()
       }
     },
     PRODUCER: {

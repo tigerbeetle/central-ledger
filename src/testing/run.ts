@@ -1,9 +1,14 @@
 import assert from 'node:assert'
-import path from 'node:path'
-import { convertToXunit, findFiles } from './util'
 import { spawn, spawnSync } from 'node:child_process'
-import { ResultUnitTest, RunTask, RunTaskCoverage, RunTaskUnit, TagTask } from './types'
+import path from 'node:path'
+import process from 'node:process'
+import test, { run } from "node:test"
+import { tap, spec } from 'node:test/reporters'
+import Harness from './harness'
 import { mergeTapStreams } from './tap-stream'
+import { ResultTest, RunTask, RunTaskCoverage, RunTaskIntegration, RunTaskUnit, TagTask } from './types'
+import { convertToXunit, findFiles } from './util'
+import { finished, pipeline } from 'node:stream/promises'
 
 /**
  * @file run.ts
@@ -25,11 +30,17 @@ async function main() {
         const result = await runUnitTests(task)
         process.exit(result.exitCode)
       }
-      case 'TEST_COVERAGE':
+      case 'TEST_COVERAGE': {
         await runCoverage(task)
         if (task.onlyReport) {
           process.exit(0)
         }
+        return
+      }
+      case 'TEST_INTEGRATION': {
+        const result = await runIntegrationTests(task)
+        process.exit(result.exitCode)
+      }
     }
   } catch (err: any) {
     console.log('Error:', err.message)
@@ -41,8 +52,8 @@ async function main() {
  * @function runUnitTests
  * @description Run the unit tests based on the RunTaskUnit settings.
  */
-async function runUnitTests(task: RunTaskUnit): Promise<ResultUnitTest> {
-  let results: ResultUnitTest
+async function runUnitTests(task: RunTaskUnit): Promise<ResultTest> {
+  let results: ResultTest
   switch (task.type) {
     case 'TAPE':
       console.log('==== Running Legacy (Tape) unit tests ====')
@@ -93,9 +104,8 @@ async function runUnitTests(task: RunTaskUnit): Promise<ResultUnitTest> {
 /**
  * @function runCoverage
  * @description Run the unit tests while collecting coverage, and produce the coverage report.
- *
- * For BOTH: uses --silent and --no-clean to accumulate coverage, then nyc report.
- * See: https://github.com/istanbuljs/nyc#combining-reports-from-multiple-runs
+ * See: https://github.com/istanbuljs/nyc#combining-reports-from-multiple-runs to understand the
+ * approach here.
  */
 async function runCoverage(task: RunTaskCoverage): Promise<void> {
   switch (task.type) {
@@ -106,7 +116,7 @@ async function runCoverage(task: RunTaskCoverage): Promise<void> {
       runCoverageNative({ silent: false, noClean: false })
       break
     case 'BOTH':
-      // Run both with --silent, second with --no-clean to accumulate.
+      // First run native check, but don't cleanup so we accumulate coverage between runs.
       runCoverageTape({ silent: true, noClean: false })
       runCoverageNative({ silent: true, noClean: true })
       // Generate combined report.
@@ -215,14 +225,14 @@ function runCoverageNative(opts: NycOptions): void {
  * @function runUnitTestsTape
  * @description Run the legacy unit tests written with tape.
  */
-async function runUnitTestsTape(): Promise<ResultUnitTest> {
+async function runUnitTestsTape(): Promise<ResultTest> {
   return new Promise((resolve) => {
     const testFiles = findFiles(
       path.join(PROJECT_ROOT, 'test/unit'),
       '**/*.test.js'
     )
-    .map(file => path.join(PROJECT_ROOT, 'test/unit', file))
-  
+      .map(file => path.join(PROJECT_ROOT, 'test/unit', file))
+
 
     if (testFiles.length === 0) {
       console.warn(`runUnitTestsTape() - no test files found.`)
@@ -270,9 +280,9 @@ async function runUnitTestsTape(): Promise<ResultUnitTest> {
 
 /**
  * @function runUnitTestsNative
- * @description Run the unit tests written with the native nodejs test suite.
+ * @description Run the unit tests with the native nodejs test suite.
  */
-async function runUnitTestsNative(): Promise<ResultUnitTest> {
+async function runUnitTestsNative(): Promise<ResultTest> {
   return new Promise((resolve) => {
     const testFiles = findFiles(
       path.join(PROJECT_ROOT, 'src'),
@@ -315,6 +325,55 @@ async function runUnitTestsNative(): Promise<ResultUnitTest> {
       resolve({ output: '', exitCode: 1 })
     })
   })
+}
+
+/**
+ * @function runIntegrationTests
+ * @description Runs the integration tests with the native nodejs test suite.
+ */
+async function runIntegrationTests(task: RunTaskIntegration): Promise<ResultTest> {
+  const files = findFiles(
+    path.join(PROJECT_ROOT, 'src'),
+    '**/*.int.ts'
+  ).map(f => path.join(PROJECT_ROOT, 'src', f))
+
+  if (files.length === 0) {
+    return { output: '', exitCode: 0 }
+  }
+
+  let exitCode = 0
+
+  process.once('uncaughtException', async (err) => {
+    console.error(`Uncaught exception:`, err)
+    process.exit(1)
+  })
+
+  process.once('unhandledRejection', async (err) => {
+    console.error(`Unhandled rejection:`, err)
+    process.exit(1)
+  })
+
+  const testStream = run({
+    files,
+    // Run each test file in a separate process.
+    isolation: 'process',
+    // Tweak this depending on what resources we have.
+    concurrency: 2,
+  })
+    .on('test:fail', () => {
+      exitCode = 1
+    })
+
+  const tapStream = testStream.compose(spec)
+  tapStream.pipe(process.stdout)
+  await finished(testStream)
+
+  // TODO: figure out how to export to xml to be compatible with circleci.
+
+  return {
+    output: '',
+    exitCode
+  }
 }
 
 const parseUnitTestOptions = (args: Array<string>): Omit<RunTaskUnit, 'tag'> => {
@@ -397,6 +456,12 @@ const parseCoverageOptions = (args: Array<string>): Omit<RunTaskCoverage, 'tag'>
   }
 }
 
+const parseIntegrationOptions = (args: Array<string>): Omit<RunTaskIntegration, 'tag'> => {
+  return {
+
+  }
+}
+
 function parseOptions(args: Array<string>, _env: NodeJS.ProcessEnv): RunTask {
   assert(args.length > 0, 'expected at least one arg.')
   const taskCommand = args.shift()
@@ -422,7 +487,13 @@ function parseOptions(args: Array<string>, _env: NodeJS.ProcessEnv): RunTask {
       }
     }
     case 'integration': {
-      throw new Error(`'${taskCommand}' not implemented.`)
+      tag = 'TEST_INTEGRATION'
+      const options = parseIntegrationOptions(args)
+
+      return {
+        tag,
+        ...options
+      }
     }
     case 'functional': {
       throw new Error(`'${taskCommand}' not implemented.`)
@@ -439,7 +510,7 @@ Usage:
 ./testing/run.ts [unit | coverage | integration | functional]\n\n\
   'unit'          : Run the unit tests.
   'coverage'      : Run the unit tests then check coverage.
-  'integration'   : *Preview - not yet implemented* Run the integration tests.
+  'integration'   : Run the integration tests.
   'functional'    : *Preview - not yet implemented* Run the functional tests.
 
 
@@ -459,6 +530,9 @@ Usage:
 
   # Run coverage report only (don't check thresholds)
   ./testing/run.ts coverage --only-report
+
+  # Run all of the integration tests.
+  ./testing/run.ts integration
 
 `
 
