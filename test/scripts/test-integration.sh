@@ -54,7 +54,8 @@ echo "Checking Kafka consumer group status..."
 
 ## Start integration tests
 echo "Running Integration Tests"
-LOG_LEVEL=${LOG_LEVEL} npm run test:xint
+# LOG_LEVEL=${LOG_LEVEL} npm run test:xint
+LOG_LEVEL=${LOG_LEVEL} npx tape 'test/integration/**/*.test.js'
 INTEGRATION_TEST_EXIT_CODE="$?"
 echo "==> integration tests exited with code: $INTEGRATION_TEST_EXIT_CODE"
 

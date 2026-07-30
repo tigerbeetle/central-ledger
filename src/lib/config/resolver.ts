@@ -29,7 +29,22 @@ import path from 'node:path'
 import parseStringsInObject from 'parse-strings-in-object'
 import RC from 'rc'
 import { ApplicationConfig } from './types'
-import { assertBoolean, assertDatabaseConfig, assertDistLockConfig, assertInstrumentationConfig, assertInstrumentationMetricsLabels, assertKafkaConfig, assertNestedFields, assertNumber, assertProvisioning, assertProxyCacheConfig, assertString, defaultEnvString, defaultTo, kafkaWithBrokerDefaults } from './util'
+import {
+  assertBoolean,
+  assertDatabaseConfig,
+  assertDistLockConfig,
+  assertInstrumentationConfig,
+  assertInstrumentationMetricsLabels,
+  assertKafkaConfig,
+  assertNestedFields,
+  assertNumber,
+  assertProvisioning,
+  assertProxyCacheConfig,
+  assertString,
+  defaultEnvString,
+  defaultTo,
+  kafkaWithBrokerDefaults
+} from './util'
 import assert from 'node:assert'
 import { logger } from '../../shared/logger'
 
@@ -205,7 +220,7 @@ const makeConfig = (): ApplicationConfig => {
     'PATH_TO_CONFIG_FILE',
     path.join(__dirname, '../../..', 'config/default.json')
   )
-  logger.warn(`makeConfig() - Loading config from: ${PATH_TO_CONFIG_FILE}`)
+  logger.info(`makeConfig() - Loading config from: ${PATH_TO_CONFIG_FILE}`)
   const raw = parseStringsInObject(RC('CLEDG', require(PATH_TO_CONFIG_FILE)))
   const resolved = resolveConfig(raw)
   const validated = parseAndValidateConfig(resolved)
