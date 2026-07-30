@@ -294,13 +294,21 @@ Test('timeout reserved domain', positionIndexTest => {
             'd6a036a5-65a3-48af-a0c7-ee089c412ada': {
               51: {
                 value: 10,
+<<<<<<< HEAD
                 change: 10
+=======
+                change: 0
+>>>>>>> b846f82f (test: rewrite integration tests in Typescript, using new test harness (#1287))
               }
             },
             '7e3fa3f7-9a1b-4a81-83c9-5b41112dd7f5': {
               51: {
                 value: 5,
+<<<<<<< HEAD
                 change: 5
+=======
+                change: 0
+>>>>>>> b846f82f (test: rewrite integration tests in Typescript, using new test harness (#1287))
               }
             }
           },

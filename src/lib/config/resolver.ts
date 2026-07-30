@@ -112,9 +112,6 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
     HANDLERS: {
       SETTINGS: rawConfig.HANDLERS.SETTINGS
     },
-    HANDLERS: {
-      SETTINGS: rawConfig.HANDLERS.SETTINGS
-    },
     HANDLERS_DISABLED: rawConfig.HANDLERS.DISABLED,
     HANDLERS_API_DISABLED: rawConfig.HANDLERS.API.DISABLED,
     HANDLERS_TIMEOUT: rawConfig.HANDLERS.TIMEOUT,
