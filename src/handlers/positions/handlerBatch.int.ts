@@ -29,7 +29,6 @@
 import { after, before, describe, it } from "node:test"
 import assert from "node:assert"
 
-import Harness, { MojaloopKafkaMessage } from '../../testing/harness'
 import * as ApiHelpers from '../../testing/api-helpers'
 import { assertPositionDiff } from "../../testing/util"
 import { overrideForTesting } from '../../lib/config'
@@ -38,6 +37,7 @@ import TransferFacade from "../../models/transfer/facade"
 import handlerAll from '../transfers/handler'
 import handlerPrepare from '../transfers/prepare'
 import PositionBatchHandler from './handlerBatch'
+import Harness, { MojaloopKafkaMessage } from "../../testing/harness/harness"
 
 const harness = Harness.getInstance()
 
@@ -114,7 +114,7 @@ const errorCodesOf = (payloads: Array<any>) => payloads
 
 describe('handlers/positions/handlerBatch', () => {
   before(async () => {
-    await harness.up('BATCH')
+    await harness.up()
     await harness.setupGlobals()
 
     // The prepare handler commits its kafka offsets, so its consumer must be connected.

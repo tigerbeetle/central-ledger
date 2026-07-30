@@ -43,7 +43,6 @@ const { logger } = require('../../shared/logger')
 const { TABLE_NAMES } = require('../../shared/constants')
 const Db = require('../../lib/db')
 const participant = require('../participant/facade')
-const ParticipantCachedModel = require('../participant/participantCached')
 const TransferExtensionModel = require('./fxTransferExtension')
 const rethrow = require('../../shared/rethrow')
 
@@ -170,6 +169,41 @@ const getAllDetailsByCommitRequestId = async (commitRequestId) => {
 
 // For proxied fxTransfers and transfers in a regional and jurisdictional scenario, proxy participants
 // are not expected to have a target currency account, so we need a slightly altered version of the above function.
+/**
+ *
+ * @param {*} commitRequestId
+ * @returns {Promise<{
+ *  commitRequestId: string,
+ *  completedTimestamp: Date,
+ *  determiningTransferId: string,
+ *  sourceAmount: string,
+ *  targetAmount:  string,
+ *  sourceCurrency:  string,
+ *  targetCurrency:  string,
+ *  ilpCondition: string
+ *  expirationDate: Date,
+ *  createdDate: string,
+ *  initiatingFspParticipantId: number,
+ *  initiatingFspName: string,
+ *  initiatingFspIsProxy: number,
+ *  counterPartyFspSourceParticipantCurrencyId: number,
+ *  counterPartyFspParticipantId: number,
+ *  counterPartyFspName: string
+ *  counterPartyFspIsProxy: number
+ *  fxTransferStateChangeId: number
+ *  transferState: string
+ *  reason: string | null
+ *  completedTimestamp: string
+ *  transferStateEnumeration: string
+ *  transferStateDescription: string,
+ *  fulfilment: string | null
+ *  externalInitiatingFspName: string | null
+ *  externalCounterPartyFspName: string | null
+ *  extensionList: Array<any>,
+ *  isTransferReadModel: boolean,
+ * }>}
+ *
+ */
 const getAllDetailsByCommitRequestIdForProxiedFxTransfer = async (commitRequestId) => {
   try {
     /** @namespace Db.fxTransfer **/
@@ -281,7 +315,7 @@ const savePreparedRequest = async (
   // so we skip adding records of the target currency for the creditor.
   try {
     const [initiatingParticipant, counterParticipant1, counterParticipant2] = await Promise.all([
-      ParticipantCachedModel.getByName(initiatingFsp),
+      getParticipant(initiatingFsp, payload.sourceAmount.currency),
       getParticipant(counterPartyFsp, payload.sourceAmount.currency),
       !proxyObligation.isCounterPartyFspProxy ? getParticipant(counterPartyFsp, payload.targetAmount.currency) : null
     ])
@@ -307,7 +341,7 @@ const savePreparedRequest = async (
     const initiatingParticipantRecord = {
       commitRequestId: payload.commitRequestId,
       participantId: initiatingParticipant.participantId,
-      participantCurrencyId: null,
+      participantCurrencyId: initiatingParticipant.participantCurrencyId,
       amount: payload.sourceAmount.amount,
       transferParticipantRoleTypeId: Enum.Accounts.TransferParticipantRoleType.INITIATING_FSP,
       ledgerEntryTypeId: Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE

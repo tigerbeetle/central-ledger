@@ -51,7 +51,15 @@ const Enums = require('../../lib/enumCached')
 const fspiopErrorFactory = require('../../shared/fspiopErrorFactory')
 const { destroyParticipantEndpointByParticipantId } = require('../../models/participant/participant')
 
-const logger = require('../../shared/logger').logger.child({ component: 'domain::participant' })
+const loggerImport = require('../../shared/logger').logger
+const logger = loggerImport.child({ component: 'domain::participant' })
+
+const Comparators = require('@mojaloop/central-services-shared').Util.Comparators
+const TransferService = require('../../domain/transfer')
+const Db = require('../../lib/db')
+const assert = require('node:assert')
+const rethrow = require('../../shared/rethrow')
+const { randomBytes } = require('node:crypto')
 
 // Alphabetically ordered list of error texts used below
 const AccountInactiveErrorText = 'Account is currently set inactive'
@@ -64,7 +72,7 @@ const ParticipantAccountMismatchText = 'Participant/account mismatch'
 const ParticipantInactiveText = 'Participant is currently set inactive'
 
 const create = async (payload) => {
-  const log = logger.child({ payload })
+  const log = logger.child()
   try {
     log.info('creating participant with payload')
     return ParticipantModel.create({ name: payload.name, isProxy: !!payload.isProxy })
@@ -92,7 +100,18 @@ const getById = async (id) => {
   logger.debug('getting participant by id', { id })
   const participant = await ParticipantModel.getById(id)
   if (participant) {
-    participant.currencyList = await ParticipantCurrencyModel.getByParticipantId(participant.participantId)
+    const currencyList = await ParticipantCurrencyModel.getByParticipantId(participant.participantId)
+    if (currencyList) {
+      currencyList.sort((a, b) => {
+        if (a.currencyId === b.currencyId) {
+          return a.ledgerAccountTypeId - b.ledgerAccountTypeId
+        }
+        return a.currencyId.localeCompare(b.currencyId)
+      })
+      participant.currencyList = currencyList
+    } else {
+      participant.currencyList = []
+    }
   }
   return participant
 }
@@ -107,7 +126,7 @@ const getByName = async (name) => {
 }
 
 const participantExists = (participant, checkIsActive = false) => {
-  const log = logger.child({ participant, checkIsActive })
+  const log = logger.child()
   log.debug('checking if participant exists')
   if (participant) {
     if (!checkIsActive || participant.isActive) {
@@ -121,7 +140,7 @@ const participantExists = (participant, checkIsActive = false) => {
 }
 
 const update = async (name, payload) => {
-  const log = logger.child({ name, payload })
+  const log = logger.child()
   try {
     log.info('updating participant')
     const participant = await ParticipantModel.getByName(name)
@@ -136,23 +155,32 @@ const update = async (name, payload) => {
   }
 }
 
-const createParticipantCurrency = async (participantId, currencyId, ledgerAccountTypeId, isActive = true) => {
-  const log = logger.child({ participantId, currencyId, ledgerAccountTypeId, isActive })
+const createParticipantCurrency = async (participantId, currencyId, ledgerAccountTypeId, isActive = true, id) => {
+  const log = logger.child()
   try {
     log.info('creating participant currency')
-    const participantCurrency = await ParticipantCurrencyModel.create(participantId, currencyId, ledgerAccountTypeId, isActive)
-    return participantCurrency
+
+    // Default id to a random int. If you want a deterministic id, then pass one in!
+    if (!id) {
+      id = Number(randomBytes(8).readBigInt64BE() & 0x1FFFFFFFFFFFFFn)
+    }
+    await ParticipantCurrencyModel.create(id, participantId, currencyId, ledgerAccountTypeId, isActive)
+    return id
   } catch (err) {
     log.error('error creating participant currency', err)
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }
 }
 
-const createHubAccount = async (participantId, currencyId, ledgerAccountTypeId) => {
-  const log = logger.child({ participantId, currencyId, ledgerAccountTypeId })
+const createHubAccount = async (participantId, currencyId, ledgerAccountTypeId, id) => {
+  const log = logger.child()
   try {
     log.info('creating hub account')
-    const participantCurrency = await ParticipantFacade.addHubAccountAndInitPosition(participantId, currencyId, ledgerAccountTypeId)
+    // Default id to a random int. If you want a deterministic id, then pass one in!
+    if (!id) {
+      id = Number(randomBytes(8).readBigInt64BE() & 0x1FFFFFFFFFFFFFn)
+    }
+    const participantCurrency = await ParticipantFacade.addHubAccountAndInitPosition(id, participantId, currencyId, ledgerAccountTypeId)
     return participantCurrency
   } catch (err) {
     log.error('error creating hub account', err)
@@ -161,7 +189,7 @@ const createHubAccount = async (participantId, currencyId, ledgerAccountTypeId) 
 }
 
 const getParticipantCurrencyById = async (participantCurrencyId) => {
-  const log = logger.child({ participantCurrencyId })
+  const log = logger.child()
   try {
     log.debug('getting participant currency by id')
     return await ParticipantCurrencyModel.getById(participantCurrencyId)
@@ -172,7 +200,7 @@ const getParticipantCurrencyById = async (participantCurrencyId) => {
 }
 
 const destroyByName = async (name) => {
-  const log = logger.child({ name })
+  const log = logger.child()
   try {
     log.debug('destroying participant by name')
     const participant = await ParticipantModel.getByName(name)
@@ -206,7 +234,7 @@ const destroyByName = async (name) => {
  */
 
 const addEndpoint = async (name, payload) => {
-  const log = logger.child({ name, payload })
+  const log = logger.child()
   try {
     log.verbose('getting participant by name...')
     const participant = await ParticipantModel.getByName(name)
@@ -235,7 +263,7 @@ const addEndpoint = async (name, payload) => {
  */
 
 const getEndpoint = async (name, type) => {
-  const log = logger.child({ name, type })
+  const log = logger.child()
   try {
     log.debug('getting participant by name...')
     const participant = await ParticipantModel.getByName(name)
@@ -263,7 +291,7 @@ const getEndpoint = async (name, type) => {
  */
 
 const getAllEndpoints = async (name) => {
-  const log = logger.child({ name })
+  const log = logger.child()
   try {
     log.debug('getting all endpoints for participant name')
     const participant = await ParticipantModel.getByName(name)
@@ -289,7 +317,7 @@ const getAllEndpoints = async (name) => {
  */
 
 const destroyParticipantEndpointByName = async (name) => {
-  const log = logger.child({ name })
+  const log = logger.child()
   try {
     log.debug('destroying participant endpoint by name')
     const participant = await ParticipantModel.getByName(name)
@@ -326,8 +354,11 @@ const destroyParticipantEndpointByName = async (name) => {
  */
 
 const addLimitAndInitialPosition = async (participantName, limitAndInitialPositionObj) => {
-  const log = logger.child({ participantName, limitAndInitialPositionObj })
+  const log = logger.child()
   try {
+    if (limitAndInitialPositionObj.limit.alarmPercentage === undefined) {
+      throw new Error('limit.alarmPercentage is required.')
+    }
     log.debug('adding limit and initial position', { participantName, limitAndInitialPositionObj })
     const participant = await ParticipantFacade.getByNameAndCurrency(participantName, limitAndInitialPositionObj.currency, Enum.Accounts.LedgerAccountType.POSITION)
     participantExists(participant)
@@ -367,7 +398,7 @@ const addLimitAndInitialPosition = async (participantName, limitAndInitialPositi
  */
 
 const getPositionByParticipantCurrencyId = async (participantCurrencyId) => {
-  const log = logger.child({ participantCurrencyId })
+  const log = logger.child()
   try {
     log.debug('getting position by participant currency id')
     return ParticipantPositionModel.getByParticipantCurrencyId(participantCurrencyId)
@@ -390,7 +421,7 @@ const getPositionByParticipantCurrencyId = async (participantCurrencyId) => {
  */
 
 const getPositionChangeByParticipantPositionId = async (participantPositionId) => {
-  const log = logger.child({ participantPositionId })
+  const log = logger.child()
   try {
     log.debug('getting position change by participant position id')
     return ParticipantPositionChangeModel.getByParticipantPositionId(participantPositionId)
@@ -413,7 +444,7 @@ const getPositionChangeByParticipantPositionId = async (participantPositionId) =
  */
 
 const destroyParticipantPositionByNameAndCurrency = async (name, currencyId) => {
-  const log = logger.child({ name, currencyId })
+  const log = logger.child()
   try {
     log.debug('destroying participant position by participant name and currency')
     const participant = await ParticipantFacade.getByNameAndCurrency(name, currencyId, Enum.Accounts.LedgerAccountType.POSITION)
@@ -440,7 +471,7 @@ const destroyParticipantPositionByNameAndCurrency = async (name, currencyId) => 
  */
 
 const destroyParticipantLimitByNameAndCurrency = async (name, currencyId) => {
-  const log = logger.child({ name, currencyId })
+  const log = logger.child()
   try {
     log.debug('destroying participant limit by participant name and currency')
     const participant = await ParticipantFacade.getByNameAndCurrency(name, currencyId, Enum.Accounts.LedgerAccountType.POSITION)
@@ -471,7 +502,7 @@ const destroyParticipantLimitByNameAndCurrency = async (name, currencyId) => {
  */
 
 const getLimits = async (name, { currency = null, type = null }) => {
-  const log = logger.child({ name, currency, type })
+  const log = logger.child()
   try {
     let participant
     if (currency != null) {
@@ -508,7 +539,7 @@ const getLimits = async (name, { currency = null, type = null }) => {
  */
 
 const getLimitsForAllParticipants = async ({ currency = null, type = null }) => {
-  const log = logger.child({ currency, type })
+  const log = logger.child()
   try {
     log.debug('getting limits for all participants', { currency, type })
     return ParticipantFacade.getLimitsForAllParticipants(currency, type, Enum.Accounts.LedgerAccountType.POSITION)
@@ -542,7 +573,7 @@ const getLimitsForAllParticipants = async ({ currency = null, type = null }) => 
  */
 
 const adjustLimits = async (name, payload) => {
-  const log = logger.child({ name, payload })
+  const log = logger.child()
   try {
     log.debug('adjusting limits')
     const { limit, currency } = payload
@@ -555,6 +586,29 @@ const adjustLimits = async (name, payload) => {
     return result
   } catch (err) {
     log.error('error adjusting limits', err)
+    throw ErrorHandler.Factory.reformatFSPIOPError(err)
+  }
+}
+
+/**
+ * @function adjustLimitsV2
+ * @description This adds/updates limits for a participant, creating the limit if it doesn't exist.
+ *   This updated version doesn't produce any kafka messages.
+ */
+const adjustLimitsV2 = async (name, payload) => {
+  try {
+    const { limit, currency } = payload
+    const participant = await ParticipantFacade.getByNameAndCurrency(
+      name, currency, Enum.Accounts.LedgerAccountType.POSITION
+    )
+    participantExists(participant)
+    const result = await ParticipantFacade.adjustLimitsV2(
+      participant.participantCurrencyId, limit
+    )
+    payload.name = name
+
+    return result
+  } catch (err) {
     throw ErrorHandler.Factory.reformatFSPIOPError(err)
   }
 }
@@ -627,7 +681,7 @@ const createLimitAdjustmentMessageProtocol = (payload, action = Enum.Transfers.A
  */
 
 const getPositions = async (name, query) => {
-  const log = logger.child({ name, query })
+  const log = logger.child()
   try {
     log.debug('getting positions')
     if (query.currency) {
@@ -670,13 +724,13 @@ const getPositions = async (name, query) => {
 }
 
 const getAccounts = async (name, query) => {
-  const log = logger.child({ name, query })
+  const log = logger.child()
   try {
     log.debug('getting accounts')
     const participant = await ParticipantModel.getByName(name)
     log.debug('getting accounts for participant', { participant })
     participantExists(participant)
-    const result = await PositionFacade.getAllByNameAndCurrency(name, query.currency)
+    const result = await PositionFacade.getAllByNameAndCurrencyV2(name, query.currency)
     const positions = []
     if (Array.isArray(result) && result.length > 0) {
       result.forEach(item => {
@@ -685,9 +739,10 @@ const getAccounts = async (name, query) => {
           ledgerAccountType: item.ledgerAccountType,
           currency: item.currencyId,
           isActive: item.isActive,
+          changedDate: item.changedDate,
+          createdDate: item.createdDate,
           value: item.value,
-          reservedValue: item.reservedValue,
-          changedDate: item.changedDate
+          reservedValue: item.reservedValue
         })
       })
     }
@@ -700,7 +755,7 @@ const getAccounts = async (name, query) => {
 }
 
 const updateAccount = async (payload, params, enums) => {
-  const log = logger.child({ payload, params, enums })
+  const log = logger.child()
   try {
     log.debug('updating account')
     const { name, id } = params
@@ -724,7 +779,7 @@ const updateAccount = async (payload, params, enums) => {
 }
 
 const getLedgerAccountTypeName = async (name) => {
-  const log = logger.child({ name })
+  const log = logger.child()
   try {
     log.debug('getting ledger account type by name')
     return await LedgerAccountTypeModel.getLedgerAccountByName(name)
@@ -735,7 +790,7 @@ const getLedgerAccountTypeName = async (name) => {
 }
 
 const getParticipantAccount = async (accountParams) => {
-  const log = logger.child({ accountParams })
+  const log = logger.child()
   try {
     log.debug('getting participant account by params')
     return await ParticipantCurrencyModel.findOneByParams(accountParams)
@@ -794,7 +849,7 @@ const setPayerPayeeFundsInOut = (fspName, payload, enums) => {
 }
 
 const recordFundsInOut = async (payload, params, enums) => {
-  const log = logger.child({ payload, params, enums })
+  const log = logger.child()
   try {
     log.debug('recording funds in/out')
     const { name, id, transferId } = params
@@ -826,6 +881,152 @@ const recordFundsInOut = async (payload, params, enums) => {
   }
 }
 
+/**
+ * @function recordFundsInOutV2
+ * @description Updates settlement account for funds in/out, processing the changes synchronously.
+ *   This updated version doesn't produce any kafka messages.
+ */
+const recordFundsInOutV2 = async (payload, params, enums) => {
+  const log = logger.child()
+  try {
+    log.debug('recording funds in/out')
+    const { name, id } = params
+    let transferId
+    let mode
+    switch (payload.action) {
+      case 'recordFundsIn':
+      case 'recordFundsOutPrepareReserve': {
+        transferId = payload.transferId
+        mode = 'CREATE'
+        break
+      }
+      case 'recordFundsOutCommit':
+      case 'recordFundsOutAbort': {
+        transferId = params.transferId
+        mode = 'UPDATE'
+        break
+      }
+      default: {
+        throw new Error(`recordFundsInOutV2 unknown payload.action: ${payload.action}`)
+      }
+    }
+    if (!transferId) {
+      throw new Error(`recordFundsInOutV2 could not find transferId for action: ${payload.action}`)
+    }
+    const participant = await ParticipantModel.getByName(name)
+    const currency = (payload.amount && payload.amount.currency) || null
+    const isAccountActive = null
+    const checkIsActive = true
+    participantExists(participant, checkIsActive)
+    const accounts = await ParticipantFacade.getAllAccountsByNameAndCurrency(name, currency, isAccountActive)
+    const accountMatched = accounts[accounts.map(account => account.participantCurrencyId).findIndex(i => i === id)]
+    log.debug('recording funds in/out for participant account', { participant, accountMatched })
+    if (!accountMatched) {
+      throw ErrorHandler.Factory.createInternalServerFSPIOPError(ParticipantAccountCurrencyMismatchText)
+    } else if (!accountMatched.accountIsActive) {
+      throw ErrorHandler.Factory.createInternalServerFSPIOPError(AccountInactiveErrorText)
+    } else if (accountMatched.ledgerAccountTypeId !== enums.ledgerAccountType.SETTLEMENT) {
+      throw ErrorHandler.Factory.createInternalServerFSPIOPError(AccountNotSettlementTypeErrorText)
+    }
+
+    if (mode === 'UPDATE') {
+      return changeStatusOfRecordFundsOut(payload, transferId, new Date(), enums)
+    }
+
+    assert.equal(mode, 'CREATE')
+    const { hasDuplicateId, hasDuplicateHash } = await Comparators.duplicateCheckComparator(
+      transferId,
+      payload,
+      TransferService.getTransferDuplicateCheck,
+      TransferService.saveTransferDuplicateCheck
+    )
+    if (hasDuplicateId) {
+      if (hasDuplicateHash) {
+        throw new Error('recordFundsInOut transfer already created.')
+      } else {
+        throw new Error('recordFundsInOut transfer modified created.')
+      }
+    }
+    // Attach the participantCurrencyId to the payload, for backwards compatibility.
+    const fundsInOutPayload = {
+      ...payload,
+      participantCurrencyId: id
+    }
+    return createRecordFundsInOut(fundsInOutPayload, new Date(), enums)
+  } catch (err) {
+    log.error('error recording funds in/out', err)
+    throw ErrorHandler.Factory.reformatFSPIOPError(err)
+  }
+}
+
+/**
+ * Copied from src/handlers/admin/handler.js
+ * @returns {
+ *   abortedDueToInsufficientFunds: boolean
+ * }
+ */
+const createRecordFundsInOut = async (payload, transactionTimestamp, enums) => {
+  const knex = Db.getKnex()
+  logger.info(`AdminTransferHandler::${payload.action}::validationPassed::newEntry`)
+  // Save the valid transfer into the database
+  if (payload.action === Enum.Events.Event.Action.RECORD_FUNDS_IN) {
+    logger.info(`AdminTransferHandler::${payload.action}::validationPassed::newEntry::RECORD_FUNDS_IN`)
+    return await TransferService.recordFundsIn(payload, transactionTimestamp, enums)
+  } else {
+    logger.info(`AdminTransferHandler::${payload.action}::validationPassed::newEntry::RECORD_FUNDS_OUT_PREPARE_RESERVE`)
+    return knex.transaction(async trx => {
+      try {
+        await TransferService.reconciliationTransferPrepare(payload, transactionTimestamp, enums, trx)
+        return await TransferService.reconciliationTransferReserve(payload, transactionTimestamp, enums, trx)
+      } catch (err) {
+        rethrow.rethrowAndCountFspiopError(err, { operation: 'adminCreateRecordFundsInOut' })
+      }
+    })
+  }
+}
+
+/**
+ * Copied from src/handlers/admin/handler.js
+ */
+const changeStatusOfRecordFundsOut = async (payload, transferId, transactionTimestamp, enums) => {
+  const existingTransfer = await TransferService.getTransferById(transferId)
+  const transferState = await TransferService.getTransferState(transferId)
+  if (!existingTransfer) {
+    logger.info(`AdminTransferHandler::${payload.action}::validationFailed::notFound`)
+  } else if (transferState.transferStateId !== Enum.Transfers.TransferState.RESERVED) {
+    logger.info(`AdminTransferHandler::${payload.action}::validationFailed::nonReservedState`)
+  } else {
+    logger.info(`AdminTransferHandler::${payload.action}::validationPassed`)
+    if (payload.action === Enum.Events.Event.Action.RECORD_FUNDS_OUT_COMMIT) {
+      // Ensure account is open.
+
+      // Only validate the expiry on commit.
+      if (new Date(existingTransfer.expirationDate) <= new Date()) {
+        logger.info(`AdminTransferHandler::${payload.action}::validationFailed::transferExpired`)
+      }
+
+      logger.info(`AdminTransferHandler::${payload.action}::validationPassed::RECORD_FUNDS_OUT_COMMIT`)
+      const payloadCommit = {
+        ...payload,
+        transferId
+      }
+      await TransferService.reconciliationTransferCommit(payloadCommit, transactionTimestamp, enums)
+    } else if (payload.action === Enum.Events.Event.Action.RECORD_FUNDS_OUT_ABORT) {
+      logger.info(`AdminTransferHandler::${payload.action}::validationPassed::RECORD_FUNDS_OUT_ABORT`)
+      const payloadCommit = {
+        ...payload,
+        transferId,
+        amount: {
+          amount: existingTransfer.amount,
+          currency: existingTransfer.currencyId
+        }
+      }
+      await TransferService.reconciliationTransferAbort(payloadCommit, transactionTimestamp, enums)
+    }
+  }
+  return true
+}
+
 const validateHubAccounts = async (currency) => {
   const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
   const hubReconciliationAccountExists = await ParticipantCurrencyModel.hubAccountExists(currency, ledgerAccountTypes.HUB_RECONCILIATION)
@@ -842,7 +1043,7 @@ const validateHubAccounts = async (currency) => {
 }
 
 const createAssociatedParticipantAccounts = async (currency, ledgerAccountTypeId, trx) => {
-  const log = logger.child({ currency, ledgerAccountTypeId })
+  const log = logger.child()
   try {
     log.info('creating associated participant accounts')
     const nonHubParticipantWithCurrencies = await ParticipantFacade.getAllNonHubParticipantsWithCurrencies(trx)
@@ -899,14 +1100,19 @@ module.exports = {
   destroyParticipantLimitByNameAndCurrency,
   getLimits,
   adjustLimits,
+  adjustLimitsV2,
   getPositions,
   getAccounts,
   updateAccount,
   getParticipantAccount,
   recordFundsInOut,
+  recordFundsInOutV2,
   getAccountByNameAndCurrency: ParticipantFacade.getByNameAndCurrency,
   hubAccountExists: ParticipantCurrencyModel.hubAccountExists,
   getLimitsForAllParticipants,
   validateHubAccounts,
-  createAssociatedParticipantAccounts
+  createAssociatedParticipantAccounts,
+  createRecordFundsInOut,
+  changeStatusOfRecordFundsOut
+
 }

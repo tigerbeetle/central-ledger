@@ -352,6 +352,7 @@ const getByNameAndCurrency = async (name, ledgerAccountTypeId, currencyId = null
             return q.where('pc.currencyId', currencyId)
           }
         })
+        .orderBy('pc.currencyId')
         .select('participantPosition.*',
           'pc.currencyId')
     })
@@ -377,7 +378,41 @@ const getAllByNameAndCurrency = async (name, currencyId = null) => {
         .select('participantPosition.*',
           'lap.name AS ledgerAccountType',
           'pc.currencyId',
-          'pc.isActive'
+          'pc.isActive',
+          'pc.createdDate'
+        )
+    })
+  } catch (err) {
+    rethrow.rethrowDatabaseError(err)
+  }
+}
+
+/**
+ * Instead of ignoring participantCurrencies when the position isn't registered, return default
+ * values. This makes it easier to match the implementation with LedgerTigerBeetle.
+ */
+const getAllByNameAndCurrencyV2 = async (name, currencyId = null) => {
+  try {
+    return Db.from('participantCurrency').query(builder => {
+      return builder
+        .innerJoin('participant AS p', 'participantCurrency.participantId', 'p.participantId')
+        .innerJoin('ledgerAccountType AS lap', 'lap.ledgerAccountTypeId', 'participantCurrency.ledgerAccountTypeId')
+        .leftJoin('participantPosition AS pp', 'participantCurrency.participantCurrencyId', 'pp.participantCurrencyId')
+        .where({ 'p.name': name })
+        .where(q => {
+          if (currencyId !== null) {
+            return q.where('participantCurrency.currencyId', currencyId)
+          }
+        })
+        .select(
+          'participantCurrency.participantCurrencyId',
+          'participantCurrency.currencyId',
+          'participantCurrency.isActive',
+          'participantCurrency.createdDate',
+          'lap.name AS ledgerAccountType',
+          Db.getKnex().raw('COALESCE(pp.value, 0) AS value'),
+          Db.getKnex().raw('COALESCE(pp.reservedValue, 0) AS reservedValue'),
+          Db.getKnex().raw('COALESCE(pp.changedDate, participantCurrency.createdDate) AS changedDate')
         )
     })
   } catch (err) {
@@ -389,5 +424,6 @@ module.exports = {
   changeParticipantPositionTransaction,
   prepareChangeParticipantPositionTransaction,
   getByNameAndCurrency,
-  getAllByNameAndCurrency
+  getAllByNameAndCurrency,
+  getAllByNameAndCurrencyV2
 }

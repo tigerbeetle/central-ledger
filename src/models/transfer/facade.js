@@ -49,6 +49,7 @@ const ParticipantFacade = require('../participant/facade')
 const ParticipantCachedModel = require('../participant/participantCached')
 const TransferExtensionModel = require('./transferExtension')
 const rethrow = require('../../shared/rethrow')
+const assert = require('node:assert')
 
 const TransferEventAction = Enum.Events.Event.Action
 const TransferInternalState = Enum.Transfers.TransferInternalState
@@ -448,12 +449,12 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
       if (participant) {
         participants[name].id = participant.participantId
       }
-      // If determiningTransferCheckResult.participantCurrencyValidationList contains the participant name, then get the participantCurrencyId
-      const participantCurrency = determiningTransferCheckResult && determiningTransferCheckResult.participantCurrencyValidationList.find(participantCurrencyItem => participantCurrencyItem.participantName === name)
-      if (participantCurrency) {
-        const participantCurrencyRecord = await ParticipantFacade.getByNameAndCurrency(participantCurrency.participantName, participantCurrency.currencyId, Enum.Accounts.LedgerAccountType.POSITION)
-        participants[name].participantCurrencyId = participantCurrencyRecord?.participantCurrencyId
-      }
+      // Always try to look up the participantCurrencyId for each participant.
+      // If hasPassedValidation, it might not exist.
+      const participantCurrencyRecord = await ParticipantFacade.getByNameAndCurrency(
+        name, payload.amount.currency, Enum.Accounts.LedgerAccountType.POSITION
+      )
+      participants[name].participantCurrencyId = participantCurrencyRecord?.participantCurrencyId ?? null
     }
 
     if (proxyObligation?.isInitiatingFspProxy) {
@@ -474,6 +475,10 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
       const proxyParticipant = await ParticipantCachedModel.getByName(proxyId)
       participants[proxyId] = {}
       participants[proxyId].id = proxyParticipant.participantId
+      const participantCurrencyRecord = await ParticipantFacade.getByNameAndCurrency(
+        proxyId, payload.amount.currency, Enum.Accounts.LedgerAccountType.POSITION
+      )
+      participants[proxyId].participantCurrencyId = participantCurrencyRecord?.participantCurrencyId
     }
 
     const transferRecord = {
@@ -481,7 +486,9 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
       amount: payload.amount.amount,
       currencyId: payload.amount.currency,
       ilpCondition: payload.condition,
-      expirationDate: Time.getUTCString(new Date(payload.expiration))
+      // TODO: LD if we use an invalid date, this breaks. 
+      expirationDate: Time.getUTCString(new Date(payload.expiration)),
+      createdDate: new Date()
     }
 
     const ilpPacketRecord = {
@@ -499,20 +506,30 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
     let payerTransferParticipantRecord
     if (proxyObligation?.isInitiatingFspProxy) {
       const externalParticipantId = await ParticipantFacade.getExternalParticipantIdByNameOrCreate(proxyObligation.initiatingFspProxyOrParticipantId)
+      const participant = participants[proxyObligation.initiatingFspProxyOrParticipantId.proxyId]
+      assert(participant, `Expected participant ${proxyObligation.initiatingFspProxyOrParticipantId.proxyId} in participants map`)
+      assert(participant.id, 'participant.id not defined.')
+
       payerTransferParticipantRecord = {
         transferId: payload.transferId,
-        participantId: participants[proxyObligation.initiatingFspProxyOrParticipantId.proxyId].id,
-        participantCurrencyId: participants[proxyObligation.initiatingFspProxyOrParticipantId.proxyId].participantCurrencyId,
+        participantId: participant.id,
+        participantCurrencyId: participant.participantCurrencyId,
         transferParticipantRoleTypeId: Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
         ledgerEntryTypeId: Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE,
         amount: payload.amount.amount,
         externalParticipantId
       }
     } else {
+      const participant = participants[payload.payerFsp]
+      if (hasPassedValidation) {
+        assert(participant, `Expected participant ${payload.payerFsp} in participants map`)
+        assert(participant.id, 'participant.id not defined.')
+      }
+
       payerTransferParticipantRecord = {
         transferId: payload.transferId,
-        participantId: participants[payload.payerFsp].id,
-        participantCurrencyId: participants[payload.payerFsp].participantCurrencyId,
+        participantId: participant?.id ?? null,
+        participantCurrencyId: participant?.participantCurrencyId ?? null,
         transferParticipantRoleTypeId: Enum.Accounts.TransferParticipantRoleType.PAYER_DFSP,
         ledgerEntryTypeId: Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE,
         amount: payload.amount.amount
@@ -523,10 +540,11 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
     let payeeTransferParticipantRecord
     if (proxyObligation?.isCounterPartyFspProxy) {
       const externalParticipantId = await ParticipantFacade.getExternalParticipantIdByNameOrCreate(proxyObligation.counterPartyFspProxyOrParticipantId)
+      const participant = participants[proxyObligation.counterPartyFspProxyOrParticipantId.proxyId]
       payeeTransferParticipantRecord = {
         transferId: payload.transferId,
-        participantId: participants[proxyObligation.counterPartyFspProxyOrParticipantId.proxyId].id,
-        participantCurrencyId: null,
+        participantId: participant?.id ?? null,
+        participantCurrencyId: participant?.participantCurrencyId ?? null,
         transferParticipantRoleTypeId: Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
         ledgerEntryTypeId: Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE,
         amount: -payload.amount.amount,
@@ -535,8 +553,8 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
     } else {
       payeeTransferParticipantRecord = {
         transferId: payload.transferId,
-        participantId: participants[payload.payeeFsp].id,
-        participantCurrencyId: participants[payload.payeeFsp].participantCurrencyId,
+        participantId: participants[payload.payeeFsp]?.id ?? null,
+        participantCurrencyId: participants[payload.payeeFsp]?.participantCurrencyId ?? null,
         transferParticipantRoleTypeId: Enum.Accounts.TransferParticipantRoleType.PAYEE_DFSP,
         ledgerEntryTypeId: Enum.Accounts.LedgerEntryType.PRINCIPLE_VALUE,
         amount: -payload.amount.amount
@@ -553,7 +571,9 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
       const result = await knex.transaction(async (trx) => {
         try {
           await knex('transfer').transacting(trx).insert(transferRecord)
+          assert(payerTransferParticipantRecord.participantCurrencyId)
           await knex('transferParticipant').transacting(trx).insert(payerTransferParticipantRecord)
+          assert(payeeTransferParticipantRecord.participantCurrencyId)
           await knex('transferParticipant').transacting(trx).insert(payeeTransferParticipantRecord)
           payerTransferParticipantRecord.name = payload.payerFsp
           payeeTransferParticipantRecord.name = payload.payeeFsp
@@ -588,12 +608,14 @@ const saveTransferPrepared = async (payload, stateReason = null, hasPassedValida
       ).startTimer()
       await knex('transfer').insert(transferRecord)
       try {
+        assert(payerTransferParticipantRecord.participantCurrencyId)
         await knex('transferParticipant').insert(payerTransferParticipantRecord)
       } catch (err) {
         logger.warn('Payer transferParticipant insert error', err)
         histTimerSaveTransferNoValidationEnd({ success: false, queryName: 'facade_saveTransferPrepared_no_validation' })
       }
       try {
+        assert(payeeTransferParticipantRecord.participantCurrencyId)
         await knex('transferParticipant').insert(payeeTransferParticipantRecord)
       } catch (err) {
         logger.warn('Payee transferParticipant insert error:', err)
@@ -984,9 +1006,10 @@ const _getFxTransferList = async (knex, tableName = 'fxTransferTimeout', transac
  *    fxTransferTimeoutList: Array<TimedOutFxTransfer>
  * }>}
  */
-const timeoutExpireReserved = async (segmentId, intervalMin, intervalMax, fxSegmentId, fxIntervalMin, fxIntervalMax) => {
+const timeoutExpireReserved = async (segmentId, intervalMin, intervalMax, fxSegmentId, fxIntervalMin, fxIntervalMax, now) => {
+  assert(now)
   try {
-    const transactionTimestamp = Time.getUTCString(new Date())
+    const transactionTimestamp = Time.getUTCString(now)
     const knex = Db.getKnex()
     await knex.transaction(async (trx) => {
       try {
@@ -1005,7 +1028,10 @@ const timeoutExpireReserved = async (segmentId, intervalMin, intervalMax, fxSegm
               .innerJoin('transferStateChange AS tsc', 'tsc.transferStateChangeId', 'ts.maxTransferStateChangeId')
               .leftJoin('transferTimeout AS tt', 'tt.transferId', 't.transferId')
               .whereNull('tt.transferId')
-              .whereIn('tsc.transferStateId', [`${Enum.Transfers.TransferInternalState.RECEIVED_PREPARE}`, `${Enum.Transfers.TransferState.RESERVED}`])
+              .whereIn('tsc.transferStateId', [
+                `${Enum.Transfers.TransferInternalState.RECEIVED_PREPARE}`, 
+                `${Enum.Transfers.TransferState.RESERVED}`,
+              ])
               .select('t.transferId', 't.expirationDate')
           })
 
@@ -1053,8 +1079,8 @@ const timeoutExpireReserved = async (segmentId, intervalMin, intervalMax, fxSegm
                   .innerJoin('transferStateChange AS tsc', 'tsc.transferStateChangeId', 'ts.maxTransferStateChangeId')
                   .where('tt.expirationDate', '<', transactionTimestamp)
                   .whereIn('tsc.transferStateId', [
-                  `${Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT}`,
-                  `${Enum.Transfers.TransferInternalState.EXPIRED_PREPARED}`
+                    `${Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT}`,
+                    `${Enum.Transfers.TransferInternalState.EXPIRED_PREPARED}`
                   ])
                   .as('tt1'),
                 'ft.determiningTransferId', 'tt1.transferId'
@@ -1085,8 +1111,8 @@ const timeoutExpireReserved = async (segmentId, intervalMin, intervalMax, fxSegm
                   .innerJoin('fxTransferStateChange AS ftsc', 'ftsc.fxTransferStateChangeId', 'fts.maxFxTransferStateChangeId')
                   .where('ftt.expirationDate', '<', transactionTimestamp)
                   .whereIn('ftsc.transferStateId', [
-                  `${Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT}`,
-                  `${Enum.Transfers.TransferInternalState.EXPIRED_PREPARED}`
+                    `${Enum.Transfers.TransferInternalState.RESERVED_TIMEOUT}`,
+                    `${Enum.Transfers.TransferInternalState.EXPIRED_PREPARED}`
                   ])
                   .as('ftt1'),
                 'ft.commitRequestId', 'ftt1.commitRequestId'
@@ -1104,8 +1130,8 @@ const timeoutExpireReserved = async (segmentId, intervalMin, intervalMax, fxSegm
                   )
                   .whereRaw('tsc.transferStateChangeId = ts.maxTransferStateChangeId')
                   .whereIn('tsc.transferStateId', [
-                  `${Enum.Transfers.TransferInternalState.RECEIVED_PREPARE}`,
-                  `${Enum.Transfers.TransferState.RESERVED}`
+                    `${Enum.Transfers.TransferInternalState.RECEIVED_PREPARE}`,
+                    `${Enum.Transfers.TransferState.RESERVED}`
                   ])
                   .as('tt1'),
                 'ft.determiningTransferId', 'tt1.transferId'
@@ -1167,13 +1193,14 @@ const timeoutExpireReserved = async (segmentId, intervalMin, intervalMax, fxSegm
  *  Returns the list of transfers/fxTransfers that are in RESERVED_FORWARDED state
  *
  * @returns {Promise<{
- *    transferTimeoutList: TimedOutTransfer,
- *    fxTransferTimeoutList: TimedOutFxTransfer
+ *    transferForwardedList: Array<ForwardedTransfer>,
+ *    fxTransferForwardedList: Array<ForwardedFxTransfer>
  * }>}
  */
-const reservedForwardedTransfers = async (intervalMin, intervalMax, fxIntervalMin, fxIntervalMax, maxAttemptCount) => {
+const reservedForwardedTransfers = async (intervalMin, intervalMax, fxIntervalMin, fxIntervalMax, maxAttemptCount, now) => {
+  assert(now)
   try {
-    const transactionTimestamp = Time.getUTCString(new Date())
+    const transactionTimestamp = Time.getUTCString(now)
     const knex = Db.getKnex()
     await knex.transaction(async (trx) => {
       try {
@@ -1301,7 +1328,7 @@ const transferStateAndPositionUpdate = async function (param1, enums, trx = null
         .transacting(trx)
 
       if (param1.transferStateId === enums.transferState.COMMITTED ||
-          param1.transferStateId === TransferInternalState.RESERVED_FORWARDED
+        param1.transferStateId === TransferInternalState.RESERVED_FORWARDED
       ) {
         await knex('transferStateChange')
           .insert({
@@ -1432,13 +1459,21 @@ const reconciliationTransferPrepare = async function (payload, transactionTimest
         })
         .transacting(trx)
 
-      // Retrieve hub reconciliation account for the specified currency
-      const { reconciliationAccountId } = await knex('participantCurrency')
+      // Retrieve hub reconciliation account for the specified currency.
+      const reconciliationAccountIdResult = await knex('participantCurrency')
         .select('participantCurrencyId AS reconciliationAccountId')
         .where('participantId', Config.HUB_ID)
         .andWhere('currencyId', payload.amount.currency)
         .first()
         .transacting(trx)
+
+      if (!reconciliationAccountIdResult) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          `Hub reconciliation account not found for currency: ${payload.amount.currency}`
+        )
+      }
+      const { reconciliationAccountId } = reconciliationAccountIdResult
 
       // Get participantId based on participantCurrencyId
       const { participantId } = await knex('participantCurrency')
@@ -1530,6 +1565,7 @@ const reconciliationTransferPrepare = async function (payload, transactionTimest
 const reconciliationTransferReserve = async function (payload, transactionTimestamp, enums, trx = null) {
   try {
     const knex = Db.getKnex()
+    let abortedDueToInsufficientFunds = false
 
     const trxFunction = async (trx) => {
       const param1 = {
@@ -1544,9 +1580,13 @@ const reconciliationTransferReserve = async function (payload, transactionTimest
 
       if (payload.action === Enum.Transfers.AdminTransferAction.RECORD_FUNDS_OUT_PREPARE_RESERVE &&
         positionResult.drPositionValue > 0) {
-        payload.reason = 'Aborted due to insufficient funds'
-        payload.action = Enum.Transfers.AdminTransferAction.RECORD_FUNDS_OUT_ABORT
-        await TransferFacade.reconciliationTransferAbort(payload, transactionTimestamp, enums, trx)
+        const abortPayload = {
+          ...payload,
+          reason: 'Aborted due to insufficient funds',
+          action: Enum.Transfers.AdminTransferAction.RECORD_FUNDS_OUT_ABORT
+        }
+        await TransferFacade.reconciliationTransferAbort(abortPayload, transactionTimestamp, enums, trx)
+        abortedDueToInsufficientFunds = true
       }
     }
 
@@ -1555,7 +1595,9 @@ const reconciliationTransferReserve = async function (payload, transactionTimest
     } else {
       await knex.transaction(trxFunction)
     }
-    return 0
+    return {
+      abortedDueToInsufficientFunds
+    }
   } catch (err) {
     rethrow.rethrowDatabaseError(err)
   }
@@ -1696,6 +1738,19 @@ const recordFundsIn = async (payload, transactionTimestamp, enums) => {
   })
 }
 
+/**
+ * @param {Object} payload
+ * @param {Date} transactionDate
+ * @param {Object} enums
+ * @returns {Promise<void>}
+ */
+const recordFundsInV2 = async (payload, transactionDate, enums) => {
+  // TODO: I think `Time.getUTCString()` is wrong! I'm noticing that the changedDate of the settlement account
+  // is 1 hour behind the current date.
+  const transactionTimestamp = Time.getUTCString(transactionDate)
+  return recordFundsIn(payload, transactionTimestamp, enums)
+}
+
 const TransferFacade = {
   getById,
   getByIdLight,
@@ -1715,6 +1770,7 @@ const TransferFacade = {
   reconciliationTransferAbort,
   getTransferParticipant,
   recordFundsIn,
+  recordFundsInV2,
   updatePrepareReservedForwarded
 }
 

@@ -28,7 +28,6 @@ import { after, before, describe, it } from "node:test"
 import assert from "node:assert"
 import { Enum } from '@mojaloop/central-services-shared'
 
-import Harness from '../../testing/harness'
 import * as ApiHelpers from '../../testing/api-helpers'
 import PRNG from '../../testing/prng'
 import { assertPositionDiff } from "../../testing/util"
@@ -37,6 +36,7 @@ import ParticipantService from '../../domain/participant'
 import TransferService from '../../domain/transfer'
 import TransferHandler from '../transfers/handler'
 import TimeoutHandler from '../timeouts/handler'
+import Harness from "../../testing/harness/harness"
 
 // Note: we _must_ use `require()` here, otherwise the global Producer and Consumers are imported
 // as empty objects.

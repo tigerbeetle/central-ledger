@@ -1,0 +1,1514 @@
+import { describe, it } from "node:test"
+import fs from "node:fs"
+import path from 'path'
+import LoggerMock from "../../testing/logger-mock"
+import { logger as loggerGlobal } from "../../shared/logger"
+// @ts-ignore  Override the globally exported logger. Note that we MUST do this before
+// we import Harness, which imports the globals.
+loggerGlobal = new LoggerMock()
+import Harness from "../../testing/harness/harness"
+import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
+import { envOrDefaultNumber, sanitizeTestName } from "../../testing/util"
+import * as ApiHelpers from '../../testing/api-helpers'
+import Trace from "../../testing/fuzz/trace"
+import assert from "node:assert"
+import PRNG from "../../testing/prng"
+import { ApplicationConfig } from "../../lib/config"
+import {
+  CreateDfspCommand,
+  CreateHubAccountCommand,
+  DepositCommand,
+  DisableDfspAccountCommand,
+  EnableDfspAccountCommand,
+  GetAllDfspAccountsQuery,
+  GetDfspAccountsQuery,
+  GetNetDebitCapQuery,
+  GetNetDebitCapsQuery,
+  GetSettlementQuery,
+  GetSettlementsQuery,
+  GetSettlementWindowQuery,
+  GetSettlementWindowsQuery,
+  Ledger,
+  LookupTransferQuery,
+  PrepareResultType,
+  SetNetDebitCapCommand,
+  Settlement,
+  SettlementAbortCommand,
+  SettlementCloseWindowCommand,
+  SettlementPrepareCommand,
+  SettlementUpdateCommand,
+  WithdrawAbortCommand,
+  WithdrawCommitCommand,
+  WithdrawPrepareCommand
+} from "../ledger/shared/types"
+import { PaymentPrepareResultTag, PrepareHandlerInput } from "../../handlers/payment-prepare"
+import { FulfilHandlerInput, PaymentFulfilResultTag, PaymentFulfilResultType } from "../../handlers/payment-fulfil"
+import { Reporter } from "./shared/reporter"
+
+const logger = loggerFactory()
+
+// We need to patch the date globally before starting the harness.
+// This is quite annoying since it means we can't change easily change the seed in between runs.
+const seed = envOrDefaultNumber('SEED', Math.floor(Math.random() * 1e8))
+const prng = new PRNG(seed)
+Harness.injectPrngAndPatchDateGlobal(prng)
+const harness = Harness.getInstance()
+
+const filename = path.basename(__filename)
+assert(filename)
+
+describe('Ledger Fuzz', () => {
+  it('runs the fuzzer for LedgerSQL', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 5000)
+    const trace = await run(stepsMax, { LEDGER: 'SQL' }, 'LEGACY')
+
+    const dirTrace = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
+    const pathTrace = `${dirTrace}/trace.txt`
+    fs.mkdirSync(dirTrace, { recursive: true });
+    fs.writeFileSync(pathTrace, trace.toString())
+    console.log(`Fuzz trace written to ${pathTrace}.`)
+  })
+
+  it.only('runs the fuzzer for LedgerTigerBeetle', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 1000)
+    const trace = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'DETAILED')
+
+    const dirTrace = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
+    const pathTrace = `${dirTrace}/trace.txt`
+    fs.mkdirSync(dirTrace, { recursive: true });
+    fs.writeFileSync(pathTrace, trace.toString())
+    console.log(`Fuzz trace written to ${pathTrace}.`)
+  })
+
+  it('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 250)
+    const traceA = await run(stepsMax, { LEDGER: 'SQL' }, 'LEGACY')
+    const traceB = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'LEGACY')
+
+    const pathBase = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
+    fs.mkdirSync(pathBase, { recursive: true });
+    const pathA = `${pathBase}/traceA.txt`
+    const pathB = `${pathBase}/traceB.txt`
+
+    fs.writeFileSync(pathA, traceA.toString())
+    fs.writeFileSync(pathB, traceB.toString())
+
+    console.log(`Fuzz trace written to ${pathBase}.`)
+    console.log(`Compare the two files with:\n\tgit diff --no-index ${pathA} ${pathB}`)
+
+    traceA.compare(traceB, { nameLeft: 'LEDGER=SQL', nameRight: 'LEDGER=TIGERBEETLE', seed })
+  })
+
+  it('Searches for failing seeds', async (context) => {
+    const searches = envOrDefaultNumber('SEARCHES', 15)
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 750)
+
+    const failing: Array<number> = []
+
+    for (let idxSearch = 0; idxSearch < searches; idxSearch++) {
+      const seed = Math.floor(Math.random() * 1e8)
+      const prng = new PRNG(seed)
+      console.log(`idxSearch: ${idxSearch}, SEED=${seed}`)
+      Harness.injectPrngAndPatchDateGlobal(prng)
+
+      const traceA = await run(stepsMax, { LEDGER: 'SQL' }, 'LEGACY')
+      const traceB = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'LEGACY')
+      try {
+        traceA.compare(traceB, { nameLeft: 'LEDGER=SQL', nameRight: 'LEDGER=TIGERBEETLE', seed })
+      } catch (err) {
+        console.error(err)
+        failing.push(seed)
+      }
+    }
+
+    console.log(`Searched ${searches} times, found the following failing seeds: [${failing.join(',')}]`)
+  })
+
+  it('is fully deterministic', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 2000)
+    const traceA = await run(stepsMax, {}, 'LEGACY')
+    const traceB = await run(stepsMax, {}, 'LEGACY')
+
+    const filename = path.basename(__filename)
+    assert(filename)
+    const pathBase = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
+    fs.mkdirSync(pathBase, { recursive: true });
+    const pathA = `${pathBase}/traceA.txt`
+    const pathB = `${pathBase}/traceB.txt`
+
+    fs.writeFileSync(pathA, traceA.toString())
+    fs.writeFileSync(pathB, traceB.toString())
+
+    console.log(`Fuzz trace written to ${pathBase}.`)
+    console.log(`Compare the two files with:\n\tgit diff --no-index ${pathA} ${pathB}`)
+
+    traceA.compare(traceB, { nameLeft: 'traceA', nameRight: 'traceB', seed })
+  })
+})
+
+type BalanceTraceMode = 'NONE' | 'LEGACY' | 'DETAILED'
+
+const run = async (stepsMax: number, config: Partial<ApplicationConfig>, balanceTraceMode: BalanceTraceMode): Promise<Trace> => {
+  const start = performance.now()
+  harness.clock.reset()
+  harness.prng.reset()
+
+  try {
+    const options: FuzzOptions = { stepsMax, balanceTraceMode }
+    await harness.up()
+    harness.configOverride(config)
+    await harness.setupGlobals()
+
+    const fuzzer = new LedgerFuzzer(options, harness)
+    await fuzzer.run()
+
+    logger.warn(`run() took ${(performance.now() - start).toFixed()}ms.`)
+    return fuzzer.trace
+  } catch (err: any) {
+    logger.error(err.message)
+    logger.error(err.stack)
+    throw err
+  } finally {
+    await harness.teardownGlobals()
+    await harness.down()
+  }
+}
+
+type ActionName =
+  // Lifecycle Methods.
+  | 'createHubAccount'
+  | 'createDfsp'
+  | 'disableDfsp'
+  | 'enableDfsp'
+  | 'enableDfspAccount'
+  | 'disableDfspAccount'
+  | 'deposit'
+  | 'withdrawPrepare'
+  | 'withdrawCommit'
+  | 'withdrawAbort'
+  | 'setNetDebitCap'
+  | 'getHubAccounts'
+  | 'getDfsp'
+  | 'getAllDfsps'
+  | 'getDfspAccounts'
+  | 'getAllDfspAccounts'
+  | 'getNetDebitCap'
+  | 'getNetDebitCaps'
+
+  // Clearing Methods.
+  | 'prepare'
+  | 'fulfil'
+  | 'sweepTimedOut'
+  | 'lookupTransfer'
+
+  // Settlement Methods.
+  | 'closeSettlementWindow'
+  | 'settlementPrepare'
+  | 'settlementAbort'
+  | 'settlementUpdate'
+  | 'getSettlementWindows'
+  | 'getSettlementWindow'
+  | 'getSettlement'
+  | 'getSettlements'
+
+interface FuzzOptions {
+  /**
+   * How many steps the fuzzer should take.
+   */
+  stepsMax: number,
+
+  /**
+   * Should we check the balances between each step and emit them to the trace file?
+   */
+  balanceTraceMode: BalanceTraceMode
+}
+
+class LedgerFuzzer {
+  private step = 1
+  private readonly stepsMax: number
+  private _trace = new Trace()
+
+  // Keep track of these fields for less randomness.
+  private registeredCurrencies: Array<string> = []
+  private registeredDfspIds: Record<string, true> = {}
+  private registeredDfsps: Array<string> = []
+  private dfspAccountIds: Record<number, string> = {}
+  private dfspsByCurrency: Record<string, Array<string>> = {}
+  private withdrawIds: Record<string, true> = {}
+  private withdraws: Array<any> = []
+  private transferIds: Record<string, true> = {}
+  private pendingPrepareIds: Set<string> = new Set()
+  private prepareIdsSuccess: Record<string, true> = {}
+  private fulfilIdsSuccess: Record<string, true> = {}
+  private countPrepareAttempt: number = 0
+  private countFulfilAttempt: number = 0
+  private disabledDfsps: Set<string> = new Set()
+  private disabledAccountIds: Set<number> = new Set()
+  private disabledDfspCurrencies: Record<string, {dfsp: string, currency: string }> = {}
+
+  private abortedIds: Record<string, true> = {}
+  private payments: Array<ApiHelpers.Payment> = []
+  private settlementIds: Record<number, true> = {}
+  private settlements: Array<Settlement> = []
+
+  private readonly allCurrencies = ['USD', 'AUD', 'EUR', 'GBP']
+
+  private ledger: Ledger
+  private prng: PRNG
+  private reporter: Reporter
+
+  private weights: Record<string, number> = {}
+
+  constructor(
+    private options: FuzzOptions,
+    private harness: Harness,
+  ) {
+    assert(options.stepsMax)
+    this.stepsMax = options.stepsMax
+    this.ledger = harness.ledger
+    this.prng = harness.prng
+
+    // Initial weights.
+    this.applyWeightsPhaseBootstrap()
+
+    this.reporter = new Reporter({
+      ledger: this.ledger,
+      config: this.harness.config
+    })
+  }
+
+  public async run() {
+    logger.warn(`LedgerFuzzer.run() running:`)
+    logger.warn(`\tSEED      = ${this.harness.seed}`)
+    logger.warn(`\tSTEPS_MAX = ${this.stepsMax} `)
+
+    try {
+      while (this.step <= this.stepsMax) {
+        await this.doStep()
+        this.harness.clock.tick()
+
+        this.step += 1
+      }
+    } catch (err: any) {
+      logger.error(`LedgerFuzzer.run() died on step: ${this.step}.`)
+      logger.error(`Error: ${err.message}\nStack: ${err.stack}`)
+      logger.error(`LedgerFuzzer.run() rerun with SEED=${this.harness.seed}`)
+      throw err
+    }
+
+    logger.warn(`Summary:`)
+    logger.warn(`\tDFSPS Created:     ${Object.keys(this.registeredDfsps).length}`)
+    const statPrepares = `${Object.keys(this.prepareIdsSuccess).length}/${this.countPrepareAttempt}`
+    const statFulfils = `${Object.keys(this.fulfilIdsSuccess).length}/${this.countFulfilAttempt}`
+    logger.warn(`\tPrepares: ${statPrepares.padStart(12)}`)
+    logger.warn(`\tFulfils:  ${statFulfils.padStart(12)}`)
+  }
+
+  get trace() {
+    return this._trace
+  }
+
+  private async doStep() {
+    await this.randomAction()()
+
+    if (this.options.balanceTraceMode === 'NONE') {
+      return
+    }
+
+    // Log the balance after each step.
+    const balanceSheetPost = await this.reporter.balanceSheet(new Date())
+    const statePost = this.options.balanceTraceMode === 'LEGACY' ? balanceSheetPost.toStringAll()
+      : balanceSheetPost.toTAccounts(this.registeredDfsps, ['USD'])
+
+    this.trace.push({
+      step: this.step,
+      action: 'balance',
+      path: '',
+      payload: '',
+      code: 0,
+      body: '',
+      prngCalls: this.harness.prng.callCount,
+      statePost: statePost
+    })
+  }
+
+  private actions: Record<ActionName, () => Promise<void>> = {
+    createHubAccount: () => this.createHubAccount(),
+    createDfsp: () => this.createDfsp(),
+    disableDfsp: () => this.disableDfsp(),
+    enableDfsp: () => this.enableDfsp(),
+    enableDfspAccount: () => this.enableDfspAccount(),
+    disableDfspAccount: () => this.disableDfspAccount(),
+    deposit: () => this.deposit(),
+    withdrawPrepare: () => this.withdrawPrepare(),
+    withdrawCommit: () => this.withdrawCommit(),
+    withdrawAbort: () => this.withdrawAbort(),
+    setNetDebitCap: () => this.setNetDebitCap(),
+    getHubAccounts: () => this.getHubAccounts(),
+    getDfsp: () => this.getDfsp(),
+    getAllDfsps: () => this.getAllDfsps(),
+    getDfspAccounts: () => this.getDfspAccounts(),
+    getAllDfspAccounts: () => this.getAllDfspAccounts(),
+    getNetDebitCap: () => this.getNetDebitCap(),
+    getNetDebitCaps: () => this.getNetDebitCaps(),
+    prepare: () => this.prepare(),
+    fulfil: () => this.fulfil(),
+    sweepTimedOut: () => this.sweepTimedOut(),
+    lookupTransfer: () => this.lookupTransfer(),
+    closeSettlementWindow: () => this.closeSettlementWindow(),
+    settlementPrepare: () => this.settlementPrepare(),
+    settlementAbort: () => this.settlementAbort(),
+    settlementUpdate: () => this.settlementUpdate(),
+    getSettlementWindows: () => this.getSettlementWindows(),
+    getSettlementWindow: () => this.getSettlementWindow(),
+    getSettlement: () => this.getSettlement(),
+    getSettlements: () => this.getSettlements(),
+  }
+
+  private randomAction(): () => Promise<void> {
+    const table = PRNG.generateWeightedChoiceTable<ActionName>(this.weights)
+    const action = this.harness.prng.randomElementFrom(table)
+    return this.actions[action]
+  }
+
+  private traceResult(action: ActionName, input: any, output: any, statePost?: string, statePre?: string) {
+
+    // For now, we don't care about the internals of the error if there is one in output.
+    // Really its up to the outer layers to convert the response to something the API/messaging
+    // layer can understand.
+    const outputClone = structuredClone(output)
+    if (outputClone.error) {
+      // outputClone.error = {}
+    }
+
+    this.trace.push({
+      step: this.step,
+      action,
+      path: '',
+      payload: input,
+      code: 0,
+      body: outputClone,
+      prngCalls: this.harness.prng.callCount,
+      statePost,
+      statePre,
+    })
+  }
+
+  private async createHubAccount(): Promise<void> {
+    const accountType = this.prng.coin() ? this.randomAccountType() : undefined
+    const currency = this.randomCurrencyNew()
+
+    const cmd: CreateHubAccountCommand = {
+      currency,
+      settlementModel: this.defaultSettlementModel(currency),
+      ids: [this.prng.idSmall(), this.prng.idSmall()]
+    }
+    if (accountType) {
+      cmd.accountType = accountType
+    }
+    const result = await this.ledger.createHubAccount(cmd)
+    this.traceResult('createHubAccount', cmd, result)
+
+    // console.log(`createHubAccount currency=${currency}, result: ${result.type}`)
+    // if (result.type === 'FAILURE') {
+    //   console.log(`\t ${result.error}`)
+    // }
+
+    if (result.type === 'SUCCESS') {
+      this.registeredCurrencies.push(currency)
+      if (this.registeredCurrencies.length >= 2) {
+        this.applyWeightsPhaseOne()
+      }
+    }
+  }
+
+  private async createDfsp(): Promise<void> {
+    const name = this.prng.randomElementFrom([
+      'dfsp_a',
+      'dfsp_b',
+      'dfsp_c',
+      'dfsp_d',
+      'dfsp_e',
+      'dfsp_f',
+      'dfsp_g',
+      'dfsp_h',
+      'dfsp_i',
+      'dfsp_j',
+      'dfsp_k',
+      'dfsp_l',
+    ])
+    // const currency = this.randomCurrency()
+    const currency = this.randomCurrencyOld()
+
+    const cmd: CreateDfspCommand = {
+      dfspId: name,
+      // We previously set this to random true/false, but it caused silent errors in ledger-sql where
+      // we had Transfers saved to the database with payerIsProxy=1 and payeeIsProxy=1, but the
+      // 'externalParticipants' weren't resolving correctly, and failing on fulfil().
+      // So for now, we're making all of the DFSPs local to the switch, and can return to fuzz
+      // testing with proxies later on.
+      isProxy: false,
+      currencies: [
+        currency
+      ],
+      ids: Array.from({ length: 25 }, (_) => this.prng.idSmall())
+    }
+
+    const result = await this.ledger.createDfsp(cmd)
+    this.traceResult('createDfsp', cmd, result)
+
+    // console.log(`createDfsp ${cmd.dfspId} result: ${result.type}`)
+    // if (result.type === 'FAILURE') {
+    //   console.log(`\t${result.error}`)
+    // }
+
+    if (result.type === 'SUCCESS' && !this.registeredDfspIds[name]) {
+      // Track which DFSPs exist.
+      this.registeredDfspIds[name] = true
+      this.registeredDfsps.push(name)
+
+      // Track which DFSPs have which currencies.
+      if (!this.dfspsByCurrency[currency]) {
+        this.dfspsByCurrency[currency] = []
+      }
+      this.dfspsByCurrency[currency].push(name)
+
+      // Probably also set up the net debit cap.
+      if (this.prng.intExclusive(100) > 0) {
+        await this.ledger.setNetDebitCap({
+          dfspId: name,
+          currency: currency,
+          amount: 100000,
+          netDebitCapType: 'LIMITED',
+          alarmPercentage: this.prng.intExclusive(100),
+        })
+      }
+
+      // Probably also deposit.
+      if (this.prng.intExclusive(100) > 0) {
+        await this.ledger.deposit({
+          dfspId: name,
+          currency: currency,
+          amount: 100000,
+          transferId: this.prng.uuidv4(),
+          reason: this.prng.randomString()
+        })
+      }
+    }
+
+
+    // TODO: also need to check for net debit caps etc.
+    if (this.registeredDfsps.length >= 8) {
+      this.applyWeightsPhaseTwo()
+    }
+  }
+
+  private applyWeightsPhaseBootstrap() {
+    this.weights = {
+      ...this.weights,
+      createHubAccount: 10,
+      createDfsp: 3,
+      disableDfsp: 0,
+      enableDfsp: 0,
+      enableDfspAccount: 1,
+      disableDfspAccount: 1,
+      deposit: 1,
+      withdrawPrepare: 2,
+      withdrawCommit: 2,
+      withdrawAbort: 2,
+      getHubAccounts: 1,
+      getDfsp: 1,
+      getAllDfsps: 1,
+      getDfspAccounts: 1,
+      getAllDfspAccounts: 1,
+      setNetDebitCap: 2,
+      getNetDebitCap: 1,
+      getNetDebitCaps: 1,
+    }
+  }
+
+  private applyWeightsPhaseOne() {
+    this.weights = {
+      ...this.weights,
+      createHubAccount: 1,
+      createDfsp: 10,
+      disableDfsp: 1,
+      enableDfsp: 1,
+      enableDfspAccount: 1,
+      disableDfspAccount: 1,
+      deposit: 10,
+      withdrawPrepare: 2,
+      withdrawCommit: 2,
+      withdrawAbort: 2,
+      getHubAccounts: 1,
+      getDfsp: 1,
+      getAllDfsps: 1,
+      getDfspAccounts: 1,
+      getAllDfspAccounts: 1,
+      setNetDebitCap: 2,
+      getNetDebitCap: 1,
+      getNetDebitCaps: 1,
+    }
+  }
+
+  private applyWeightsPhaseTwo() {
+    this.weights = {
+      ...this.weights,
+      createHubAccount: 0,
+      createDfsp: 1,
+      disableDfsp: 1,
+      enableDfsp: 5,
+      enableDfspAccount: 5,
+      disableDfspAccount: 1,
+      deposit: 6,
+      withdrawPrepare: 2,
+      withdrawCommit: 2,
+      withdrawAbort: 2,
+      getHubAccounts: 0,
+      getDfsp: 0,
+      getAllDfsps: 0,
+      getDfspAccounts: 0,
+      getAllDfspAccounts: 0,
+      setNetDebitCap: 0,
+      getNetDebitCap: 0,
+      getNetDebitCaps: 0,
+      prepare: 100,
+      fulfil: 75,
+      sweepTimedOut: 25,
+      lookupTransfer: 0,
+      closeSettlementWindow: 3,
+      settlementPrepare: 0,
+      settlementAbort: 0,
+      settlementUpdate: 0,
+      getSettlementWindows: 0,
+      getSettlementWindow: 0,
+      getSettlement: 0,
+      getSettlements: 0,
+    }
+  }
+
+  private async disableDfsp(): Promise<void> {
+    const name = this.randomDfspName()
+
+    const cmd = { dfspId: name }
+    const result = await this.ledger.disableDfsp(cmd)
+    this.traceResult('disableDfsp', cmd, result)
+
+    // console.log(`disableDfsp() name=${name} result: ${result.type}`)
+
+    if (result.type === 'SUCCESS') {
+      this.disabledDfsps.add(name)
+    }
+  }
+
+  private async enableDfsp(): Promise<void> {
+    let name = this.randomDfspName()
+
+    // Most likely to pick a disabled dfsp.
+    if (this.disabledDfsps.size > 0 && this.prng.intExclusive(100) > 0) {
+      name = this.prng.randomElementFrom([...this.disabledDfsps])
+    }
+
+    const cmd = {
+      dfspId: name
+    }
+    const result = await this.ledger.enableDfsp(cmd)
+    this.traceResult('enableDfsp', cmd, result)
+
+    // console.log(`enableDfsp() name=${name} result: ${result.type}`)
+
+    if (result.type === 'SUCCESS') {
+      this.disabledDfsps.delete(name)
+    }
+  }
+
+  private async enableDfspAccount(): Promise<void> {
+    const name = this.randomDfspName()
+
+    // Most likely to pick an existing account to enable.
+    let accountId = this.randomDfspAccount().id
+    if (this.disabledAccountIds.size > 0 && this.prng.intExclusive(100) > 0) {
+      accountId = this.prng.randomElementFrom([...this.disabledAccountIds])
+    }
+
+    const cmd: EnableDfspAccountCommand = {
+      dfspId: name,
+      accountId,
+    }
+    const result = await this.ledger.enableDfspAccount(cmd)
+    this.traceResult('enableDfspAccount', cmd, result)
+
+    if (result.type === 'SUCCESS') {
+      this.disabledAccountIds.delete(accountId)
+      const currency = this.dfspAccountIds[accountId]
+      assert(currency)
+      delete this.disabledDfspCurrencies[`${name}:${currency}`]
+    }
+  }
+
+  private async disableDfspAccount(): Promise<void> {
+    const name = this.randomDfspName()
+    const account = this.randomDfspAccount()
+
+    const cmd: DisableDfspAccountCommand = {
+      dfspId: name,
+      accountId: account.id,
+    }
+    const result = await this.ledger.disableDfspAccount(cmd)
+    this.traceResult('disableDfspAccount', cmd, result)
+
+    if (result.type === 'SUCCESS') {
+      this.disabledAccountIds.add(account.id)
+      this.disabledDfspCurrencies[`${name}:${account.currency}`] = {dfsp: name, currency: account.currency}
+    }
+  }
+
+  private async deposit(): Promise<void> {
+    const name = this.randomDfspName()
+    const cmd: DepositCommand = {
+      dfspId: name,
+      transferId: this.prng.uuidv4(),
+      currency: this.randomCurrencyOld(),
+      amount: this.prng.intExclusive(100000) + 1,
+      reason: this.prng.randomString()
+    }
+    const result = await this.ledger.deposit(cmd)
+    this.traceResult('deposit', cmd, result)
+
+    // if (result.type !== 'SUCCESS') {
+    //   console.log(`deposit ${cmd.dfspId} ${cmd.currency} ${cmd.amount} result: ${result.type}`)
+    // }
+  }
+
+  private async withdrawPrepare(): Promise<void> {
+
+    const name = this.randomDfspName()
+    let cmd: WithdrawPrepareCommand = {
+      dfspId: name,
+      transferId: this.prng.uuidv4(),
+      currency: this.randomCurrency(),
+      amount: this.prng.intExclusive(100000) + 1,
+      reason: this.prng.randomString()
+    }
+
+    if (this.withdraws.length > 0 && this.prng.coin()) {
+      // Reuse an existing one (clone to avoid mutating the original).
+      cmd = structuredClone(this.prng.randomElementFrom(this.withdraws))
+
+      // Maybe mutate.
+      if (this.prng.coin()) {
+        cmd.reason = this.prng.randomString()
+      }
+    }
+
+    const result = await this.ledger.withdrawPrepare(cmd)
+    this.traceResult('withdrawPrepare', cmd, result)
+
+    if (!this.withdrawIds[cmd.transferId]) {
+      this.withdrawIds[cmd.transferId] = true
+      this.withdraws.push(cmd)
+    }
+  }
+
+  private async withdrawCommit(): Promise<void> {
+    const cmd: WithdrawCommitCommand = {
+      transferId: this.randomWithdawId()
+    }
+    const result = await this.ledger.withdrawCommit(cmd)
+    this.traceResult('withdrawCommit', cmd, result)
+  }
+
+  private async withdrawAbort(): Promise<void> {
+    const cmd: WithdrawAbortCommand = {
+      transferId: this.randomWithdawId()
+    }
+    const result = await this.ledger.withdrawAbort(cmd)
+
+    this.traceResult('withdrawAbort', cmd, result)
+  }
+
+  private async setNetDebitCap(): Promise<void> {
+    let cmd: SetNetDebitCapCommand = {
+      netDebitCapType: 'LIMITED',
+      dfspId: this.randomDfspName(),
+      currency: this.randomCurrency(),
+      amount: this.prng.intExclusive(100_000),
+      alarmPercentage: this.prng.intExclusive(100),
+    }
+
+    const result = await this.ledger.setNetDebitCap(cmd)
+    this.traceResult('setNetDebitCap', cmd, result)
+  }
+
+  private async getHubAccounts(): Promise<void> {
+    const result = await this.ledger.getHubAccounts({})
+
+    // Strip the createdDate, since we don't have such a concept in TigerBeetle.
+    const cloned = structuredClone(result)
+    if (cloned.type === 'SUCCESS') {
+      cloned.createdDate = new Date(0)
+    }
+    this.traceResult('getHubAccounts', {}, cloned)
+  }
+
+  private async getDfsp(): Promise<void> {
+    const query = {
+      dfspId: this.randomDfspName()
+    }
+    const result = await this.ledger.getDfsp(query)
+
+    if (result.type !== 'SUCCESS') {
+      this.traceResult('getDfsp', {}, result)
+      return
+    }
+
+    result.result.accounts.forEach(account => {
+      this.dfspAccountIds[Number(account.id)] = account.currency
+    })
+
+
+    this.traceResult('getDfsp', {}, result)
+  }
+
+  private async getAllDfsps(): Promise<void> {
+    const result = await this.ledger.getAllDfsps({})
+    this.traceResult('getAllDfsps', {}, result)
+  }
+
+  private async getDfspAccounts(): Promise<void> {
+    const query: GetDfspAccountsQuery = {
+      dfspId: this.randomDfspName(),
+      currency: this.randomCurrency()
+    }
+    const result = await this.ledger.getDfspAccounts(query)
+    const clone = structuredClone(result)
+    if (clone.type === 'SUCCESS') {
+      // It's very hard to match implementations for changedDate. I still don't really understand
+      // what LedgerSQL is doing.
+      clone.accounts.forEach(account => {
+        account.changedDate = new Date(0)
+      })
+    }
+    this.traceResult('getDfspAccounts', query, clone)
+  }
+
+  private async getAllDfspAccounts(): Promise<void> {
+    const query: GetAllDfspAccountsQuery = {
+      dfspId: this.randomDfspName(),
+    }
+    const result = await this.ledger.getAllDfspAccounts(query)
+
+    const clone = structuredClone(result)
+    if (clone.type === 'SUCCESS') {
+      // It's very hard to match implementations for changedDate. I still don't really understand
+      // what LedgerSQL is doing.
+      clone.accounts.forEach(account => {
+        account.changedDate = new Date(0)
+      })
+    }
+    this.traceResult('getAllDfspAccounts', query, clone)
+  }
+
+  private async getNetDebitCap(): Promise<void> {
+    const query: GetNetDebitCapQuery = {
+      dfspId: this.randomDfspName(),
+      currency: this.randomCurrency()
+    }
+    const result = await this.ledger.getNetDebitCap(query)
+    this.traceResult('getNetDebitCap', query, result)
+  }
+
+  private async getNetDebitCaps(): Promise<void> {
+    const query: GetNetDebitCapsQuery = {
+      dfspId: this.randomDfspName(),
+    }
+    const result = await this.ledger.getNetDebitCaps(query)
+    this.traceResult('getNetDebitCaps', query, result)
+  }
+
+  private async prepare(): Promise<void> {
+    const prepares: Array<PrepareHandlerInput> = [this.makePrepare()]
+    this.countPrepareAttempt += prepares.length
+
+    const result = await this.ledger.prepare(prepares)
+    const resultNormalized = result.map(prepareResult => {
+      const clone = structuredClone(prepareResult) as any
+      delete clone['input']
+      if (clone.failureReasons && Array.isArray(clone.failureReasons)) {
+        clone.failureReasons = `:ignore ${clone.failureReasons.join(',')}`
+      }
+      if (clone.effects) {
+        clone.effects.forEach((effect: any) => {
+          // We don't emit this in LedgerTigerBeetle.
+          if (effect.message.content.context) {
+            delete effect.message.content.context
+          }
+          if (effect.fspiopError?.errorInformation?.errorDescription) {
+            // Match just the type of error, it's going to be almost impossible to match all errors
+            // across LedgerSQL and LedgerTigerBeetle because of the internal changes to how 
+            // prepares are validated.
+            effect.fspiopError.errorInformation.errorDescription =
+              effect.fspiopError.errorInformation.errorDescription.split('-')[0]
+          }
+
+          // Not currently supported by LedgerTigerBeetle.
+          if (effect.message.content.payload.extensionList) {
+            delete effect.message.content.payload.extensionList
+          }
+        })
+      }
+
+      return clone
+    })
+
+    this.traceResult('prepare', prepares, resultNormalized)
+    result.forEach((prepareResult, idx) => {
+      const prepare = prepares[idx]
+      if (prepareResult.tag === 'OK') {
+        this.prepareIdsSuccess[prepare.transferId] = true
+        this.pendingPrepareIds.add(prepare.transferId)
+      }
+      // if (prepareResult.tag === PaymentPrepareResultTag.FAIL_VALIDATION) {
+      //   console.log(`prepare failed with tag: ${prepareResult.tag}, \n\treasons: [${prepareResult.failureReasons.join(',')}]`)
+      // } else if (prepareResult.tag !== PaymentPrepareResultTag.OK) {
+      //   console.log(`prepare failed with tag: ${prepareResult.tag}`)
+      // }
+    })
+  }
+
+  private async fulfil(): Promise<void> {
+    const fulfills: Array<FulfilHandlerInput> = [this.makeFulfilOrAbort()]
+    const results = await this.ledger.fulfil(fulfills)
+    this.countFulfilAttempt += fulfills.length
+
+    const resultNormalized = results.map(result => {
+      const clone = structuredClone(result) as any
+      delete clone['input']
+      if (clone.failureReasons && Array.isArray(clone.failureReasons)) {
+        clone.failureReasons = `:ignore ${clone.failureReasons.join(',')}`
+      }
+      if (clone.error) {
+        clone.error = ''
+      }
+      // Bug in ledger-sql which makes the completedTimestamp change on a DUPLICATE_FINAL.
+      if (clone.tag === 'DUPLICATE_FINAL' && clone.context.fulfiledAt) {
+        clone.context.fulfiledAt = new Date(0)
+      }
+
+      return clone
+    })
+    this.traceResult('fulfil', fulfills, resultNormalized)
+
+    results.forEach((fulfilResult, idx) => {
+      const fulfil = fulfills[idx]
+      if (fulfilResult.tag === 'OK' || fulfilResult.tag === 'ABORT_OK') {
+        this.fulfilIdsSuccess[fulfil.transferId] = true
+        this.pendingPrepareIds.delete(fulfil.transferId)
+      }
+
+      // if (fulfilResult.tag === PaymentFulfilResultTag.FAIL_VALIDATION) {
+      //   console.log(`fulfil failed with tag: ${fulfilResult.tag}, \n\treasons: [${fulfilResult.failureReasons.join(',')}]`)
+      // } else if (fulfilResult.tag !== PaymentFulfilResultTag.OK) {
+      //   console.log(`fulfil failed with tag: ${fulfilResult.tag}`)
+      // }
+    })
+  }
+
+  private makePrepare(): PrepareHandlerInput {
+    // Maybe grab an existing payment.
+    if (this.payments.length > 0 && this.prng.intExclusive(100) > 96) {
+      return this.prng.randomElementFrom(this.payments).toPrepare()
+    }
+
+    // Maybe mutate a payment.
+    if (this.payments.length > 0 && this.prng.intExclusive(100) > 96) {
+      return this.mutatePrepare(this.prng.randomElementFrom(this.payments))
+    }
+
+    // Find currencies with at least 2 DFSPs with active accounts.
+    const eligibleCurrencies = Object.entries(this.dfspsByCurrency)
+      .filter(([currency, dfsps]) => {
+        return this.activeDfspsForCurrency(currency, dfsps).length >= 2
+      })
+      .map(([currency]) => currency)
+
+    let currency = this.randomCurrencyOld()
+    let payer = this.randomDfspName()
+    let payee = this.randomDfspName()
+
+    // High likelihood of picking Currency + DFSPs based on what is already registered.
+    if (eligibleCurrencies.length > 0 && this.prng.intExclusive(100) > 5) {
+      currency = this.prng.randomElementFrom(eligibleCurrencies)
+      const activeDfsps = this.activeDfspsForCurrency(currency, this.dfspsByCurrency[currency])
+
+      if (activeDfsps.length >= 2) {
+        const parties = this.prng.randomSampleFrom(activeDfsps, 2)
+        payer = parties[0]
+        payee = parties[1]
+      }
+    }
+
+    const payment = ApiHelpers.buildPayment()
+      .deps(this.harness)
+      .transferId(this.prng.uuidv4())
+      .parties(payer, payee)
+      .amount(this.randomAmount(), currency)
+      .expiry(this.prng.intExclusive(500))
+      .build()
+
+    if (!this.transferIds[payment.getOptions().transferId]) {
+      this.transferIds[payment.getOptions().transferId] = true
+      this.payments.push(payment)
+    }
+
+    return payment.toPrepare()
+  }
+
+  private mutatePrepare(payment: ApiHelpers.Payment): PrepareHandlerInput {
+    const mutation = this.prng.randomElementWeighted([
+      'invalidIlpPacket', 'swapSrcDest', 'changeCurrency', 'changeAmount'
+    ], [2, 2, 2, 2])
+    const prepare = payment.toPrepare()
+    switch (mutation) {
+      case 'invalidIlpPacket': {
+        prepare.payload.ilpPacket = this.prng.randomString()
+        return prepare
+      }
+      case 'swapSrcDest': {
+        const cloned = structuredClone(prepare.headers)
+        prepare.headers['fspiop-source'] = cloned['fspiop-destination']
+        prepare.headers['fspiop-destination'] = cloned['fspiop-source']
+        return prepare
+      }
+      case 'changeCurrency':
+        prepare.payload.amount.currency = this.randomCurrency()
+        return prepare
+      case 'changeAmount':
+        prepare.payload.amount.amount = this.randomAmount()
+        return prepare
+      // TODO(LD): Not sure if we should reenable, or rely on the ml-api-adapter to catch this.
+      // Invalid dates break the prepare() handling in ledger-sql.
+      // case 'invalidExpiration':
+      //   prepare.payload.expiration = "invalid date"
+      //   return prepare
+    }
+
+    throw new Error(`mutatePrepare() - unsupported mutation: ${mutation}`)
+  }
+
+  private makeFulfilOrAbort() {
+    return (this.prng.intExclusive(100) > 10) ? this.makeFulfil() : this.makeAbort()
+  }
+
+  private makeFulfil(): FulfilHandlerInput {
+    let payment: ApiHelpers.Payment
+
+    // Low chance of fulfilling an aborted payment.
+    if (Object.keys(this.abortedIds).length > 0 && this.prng.intExclusive(100) > 95) {
+      const abortedId = this.prng.randomElementFrom(Object.keys(this.abortedIds))
+      const paymentAborted = this.payments
+        .find(payment => payment.getOptions().transferId === abortedId)
+      assert(paymentAborted, `No aborted payment found for id: ${abortedId}.`)
+
+      return paymentAborted.toFulfil(this.prng.randomElementFrom(['COMMITTED', 'RESERVED']))
+    }
+
+    if (this.pendingPrepareIds.size > 0 && this.prng.intExclusive(100) > 0) {
+      const id = this.prng.randomElementFrom([...this.pendingPrepareIds])
+      const payment = this.payments.find(p => p.getOptions().transferId === id)
+      assert(payment)
+      return payment.toFulfil(this.prng.randomElementFrom(['COMMITTED', 'RESERVED']))
+    }
+
+    // High chance of getting an existing payment.
+    if (this.payments.length > 0 && this.prng.intExclusive(100) > 5) {
+      payment = this.prng.randomElementFrom(this.payments)
+    } else {
+      // Make up a new payment.
+      payment = ApiHelpers.buildPayment()
+        .deps(this.harness)
+        .transferId(this.prng.uuidv4())
+        .parties(this.randomDfspName(), this.randomDfspName())
+        .amount(this.randomAmount())
+        .expiry(this.prng.intExclusive(500))
+        .build()
+    }
+
+    if (this.prng.intExclusive(100) > 99) {
+      return this.mutateFulfil(payment)
+    }
+
+    return payment.toFulfil(this.prng.randomElementFrom(['COMMITTED', 'RESERVED']))
+  }
+
+  private makeAbort() {
+    let payment: ApiHelpers.Payment
+
+    if (this.pendingPrepareIds.size > 0 && this.prng.intExclusive(100) > 0) {
+      const id = this.prng.randomElementFrom([...this.pendingPrepareIds])
+      payment = this.payments.find(p => p.getOptions().transferId === id)!
+      assert(payment)
+    } else if (this.payments.length > 0 && this.prng.intExclusive(100) > 5) {
+      payment = this.prng.randomElementFrom(this.payments)
+    } else {
+      payment = ApiHelpers.buildPayment()
+        .deps(this.harness)
+        .transferId(this.prng.uuidv4())
+        .parties(this.randomDfspName(), this.randomDfspName())
+        .amount(this.randomAmount())
+        .expiry(this.prng.intExclusive(500))
+        .build()
+    }
+
+    const id = payment.getOptions().transferId
+    if (!this.transferIds[id]) {
+      this.abortedIds[id] = true
+      this.payments.push(payment)
+      this.transferIds[id] = true
+    }
+
+    if (this.prng.intExclusive(100) > 75) {
+      return this.mutateAbort(payment)
+    }
+
+    return payment.toAbort()
+  }
+
+  private mutateFulfil(payment: ApiHelpers.Payment): FulfilHandlerInput {
+    const mutation = this.prng.randomElementWeighted([
+      'invalidFulfilment', 'swapSrcDest', 'changeId', 'changeDate', 'wrongCaller', 'wrongDestination'
+    ], [1, 1, 1, 1, 1, 1])
+    const fulfil = payment.toFulfil(this.prng.randomElementFrom(['COMMITTED', 'RESERVED']))
+    assert(fulfil.payload.transferState !== 'ABORTED')
+    switch (mutation) {
+      case 'invalidFulfilment': {
+        fulfil.payload.fulfilment = this.prng.randomString()
+        return fulfil
+      }
+      case 'swapSrcDest': {
+        const cloned = structuredClone(fulfil)
+        fulfil.callerDfspId = cloned.destinationDfspId
+        fulfil.destinationDfspId = cloned.callerDfspId
+        return fulfil
+      }
+      case 'changeId':
+        fulfil.transferId = this.randomTransferId()
+        return fulfil
+      case 'changeDate':
+        fulfil.payload.completedTimestamp = (new Date()).toISOString()
+        return fulfil
+      case 'wrongCaller': {
+        const dfsp = this.randomDfspName()
+        fulfil.callerDfspId = dfsp
+        fulfil.headers['fspiop-source'] = dfsp
+        return fulfil
+      }
+      case 'wrongDestination': {
+        const dfsp = this.randomDfspName()
+        fulfil.destinationDfspId = dfsp
+        fulfil.headers['fspiop-destination'] = dfsp
+        return fulfil
+      }
+    }
+
+    throw new Error(`mutateFulfil() - unsupported mutation: ${mutation}`)
+  }
+
+  private mutateAbort(payment: ApiHelpers.Payment): FulfilHandlerInput {
+    const abort = payment.toAbort()
+    assert(abort.payload.transferState === 'ABORTED')
+    abort.payload.errorInformation = this.prng.mutateObject(abort.payload.errorInformation)
+    return abort
+  }
+
+  private async sweepTimedOut(): Promise<void> {
+    const now = this.harness.clock.now
+    const result = await this.ledger.sweepTimedOut(now)
+    const cloned = structuredClone(result)
+
+    if (result.type === 'SUCCESS') {
+      const idsSwept = result.result.payments.map(payment => payment.id)
+      idsSwept.forEach(id => this.pendingPrepareIds.delete(id))
+    }
+
+    if (cloned.type === 'SUCCESS') {
+      // Intervals are implemented differently between LedgerSql and LedgerTigerBeetle.
+      cloned.result.interval = [0, 0]
+    }
+
+    this.traceResult('sweepTimedOut', now, cloned)
+  }
+
+  private async closeSettlementWindow(): Promise<void> {
+    let windowId
+    try {
+      const windows = await ApiHelpers.getOpenSettlementWindows(harness)
+      windowId = this.harness.prng.randomElementWeighted([
+        this.harness.prng.randomElementFrom(windows.map(window => window.settlementWindowId)),
+        this.harness.prng.intExclusive(100)
+      ], [4, 1])
+    } catch (err: any) {
+      logger.warn('failed to get open settlement window', err.message)
+      // Ignoring error, just get a random id.
+      windowId = this.harness.prng.intExclusive(100)
+    }
+    const cmd: SettlementCloseWindowCommand = {
+      id: windowId,
+      now: this.harness.clock.now,
+      reason: this.harness.prng.randomString()
+    }
+
+    const result = await this.ledger.closeSettlementWindow(cmd)
+    this.traceResult('closeSettlementWindow', cmd, result)
+  }
+
+  private async settlementPrepare(): Promise<void> {
+    const windows = (await ApiHelpers.getSettlementWindows(harness))
+      .filter(window => window.state === 'CLOSED')
+
+
+    if (windows.length === 0 && this.harness.prng.coin()) {
+      // Don't bother trying if we don't have a closed window, so just close a window.
+      await this.closeSettlementWindow()
+      return
+    }
+
+    let windowIds: Array<number> = []
+    if (windows.length > 0) {
+      windowIds = this.harness.prng.randomSampleFrom(
+        windows.map(window => window.settlementWindowId),
+        this.harness.prng.intExclusive(windows.length + 1)
+      )
+    }
+
+    const cmd: SettlementPrepareCommand = {
+      model: `DEFERRED_MULTILATERAL_NET_${this.randomCurrency()}`,
+      reason: this.harness.prng.randomString(),
+      windowIds,
+      now: this.harness.clock.now,
+    }
+
+    const result = await this.ledger.settlementPrepare(cmd)
+    this.traceResult('settlementPrepare', cmd, result)
+
+    if (result.type === 'SUCCESS') {
+      this.settlementIds[result.result.id] = true
+      const settlement = await ApiHelpers.getSettlement(this.harness, result.result.id)
+      this.settlements.push(settlement as unknown as Settlement)
+    }
+  }
+
+  private async settlementAbort(): Promise<void> {
+    const settlementIds = Object.keys(this.settlementIds)
+
+    if (settlementIds.length === 0 && this.prng.intExclusive(101) > 99) {
+      return
+    }
+
+    let settlementId = this.harness.prng.intExclusive(1000)
+    if (settlementIds.length > 0) {
+      settlementId = Number.parseInt(this.harness.prng.randomElementFrom(settlementIds))
+    }
+    const cmd: SettlementAbortCommand = {
+      id: settlementId,
+      reason: this.harness.prng.randomString(),
+    }
+
+    const result = await this.ledger.settlementAbort(cmd)
+    this.traceResult('settlementAbort', cmd, result)
+  }
+
+  private async settlementUpdate(): Promise<void> {
+    const settlementIds = Object.keys(this.settlementIds)
+
+    if (settlementIds.length === 0 && this.prng.intExclusive(101) > 99) {
+      return
+    }
+
+    let settlementId = this.harness.prng.intExclusive(1000)
+    let participantId = this.harness.prng.intExclusive(1000)
+    let accountId = this.harness.prng.intExclusive(1000)
+    if (this.settlements.length > 0 && this.harness.prng.intExclusive(100) < 98) {
+      const settlement = this.harness.prng.randomElementFrom(this.settlements)
+      settlementId = settlement.id
+
+      const participant = this.harness.prng.randomElementFrom(settlement.participants)
+      participantId = participant.id
+      assert(participant.accounts.length > 0, 'Expected participant to have at least one account.')
+      accountId = this.harness.prng.randomElementFrom(participant.accounts).id
+    }
+
+    if (settlementIds.length > 0) {
+      settlementId = Number.parseInt(this.harness.prng.randomElementFrom(settlementIds))
+    }
+    const cmd = {
+      id: settlementId,
+      updates: [{
+        participantId,
+        accountId,
+        participantState: this.randomSettlementTransferState(),
+        reason: this.prng.randomString(),
+        externalReference: this.prng.randomString(),
+      }]
+    } as SettlementUpdateCommand
+
+    const result = await this.ledger.settlementUpdate(cmd)
+    this.traceResult('settlementUpdate', cmd, result)
+  }
+
+  private async getSettlementWindows(): Promise<void> {
+    const generators: Record<string, () => string> = {
+      participantId: () => this.harness.prng.intExclusive(100).toString(),
+      state: () => this.randomSettlementWindowState(),
+      fromDateTime: () => this.randomDateTime(),
+      toDateTime: () => this.randomDateTime(),
+      currency: () => this.randomCurrency(),
+    }
+
+    const keys = Object.keys(generators)
+    const paramsCount = this.harness.prng.randomElementWeighted([0, 1, 2, 3, 4], [5, 15, 3, 2, 1])
+    const keysSelected = this.harness.prng.randomSampleFrom(keys, paramsCount)
+    const query: Record<string, any> = {}
+    keysSelected.forEach(key => query[key] = generators[key]())
+
+    const result = await this.ledger.getSettlementWindows(query as GetSettlementWindowsQuery)
+    this.traceResult('getSettlementWindows', query, result)
+  }
+
+  private async getSettlementWindow(): Promise<void> {
+    const id = this.harness.prng.intExclusive(100)
+    const query: GetSettlementWindowQuery = { id }
+    const result = await this.ledger.getSettlementWindow(query)
+    this.traceResult('getSettlementWindow', query, result)
+  }
+
+  private async getSettlement(): Promise<void> {
+    let id = this.harness.prng.intExclusive(100)
+    if (Object.keys(this.settlementIds).length > 0 && this.harness.prng.coin()) {
+      id = Number.parseInt(this.harness.prng.randomElementFrom(Object.keys(this.settlementIds)))
+    }
+
+    const query: GetSettlementQuery = { id }
+    const result = await this.ledger.getSettlement(query)
+    this.traceResult('getSettlement', query, result)
+
+    if (result.type === 'SUCCESS') {
+      if (!this.settlementIds[id]) {
+        this.settlementIds[id] = true
+        this.settlements.push(result.result)
+      }
+    }
+  }
+
+  private async getSettlements(): Promise<void> {
+    const generators: Record<string, () => string> = {
+      currency: () => this.randomCurrency(),
+      state: () => this.randomSettlementState(),
+      participantId: () => this.harness.prng.intExclusive(100).toString(),
+      accountId: () => this.harness.prng.intExclusive(100).toString(),
+      settlementWindowId: () => this.harness.prng.intExclusive(100).toString(),
+      fromDateTime: () => this.randomDateTime(),
+      toDateTime: () => this.randomDateTime(),
+      fromSettlementWindowDateTime: () => this.randomDateTime(),
+      toSettlementWindowDateTime: () => this.randomDateTime(),
+    }
+
+    const keys = Object.keys(generators)
+    const paramsCount = this.harness.prng.randomElementWeighted([0, 1, 2, 3, 4], [5, 15, 3, 2, 1])
+    const keysSelected = this.harness.prng.randomSampleFrom(keys, paramsCount)
+    const query: Record<string, any> = {}
+    keysSelected.forEach(key => query[key] = generators[key]())
+
+    const result = await this.ledger.getSettlements(query as GetSettlementsQuery)
+    this.traceResult('getSettlements', query, result)
+
+    if (result.type === 'SUCCESS') {
+      for (const settlement of result.result) {
+        if (!this.settlementIds[settlement.id]) {
+          this.settlementIds[settlement.id] = true
+          this.settlements.push(settlement)
+        }
+      }
+    }
+  }
+
+  // Helpers.
+
+  private async lookupTransfer(): Promise<void> {
+    const query: LookupTransferQuery = {
+      transferId: this.randomTransferId()
+    }
+    const result = await this.ledger.lookupTransfer(query)
+    this.traceResult('lookupTransfer', query, result)
+  }
+
+  private randomDfspName(): string {
+    if (this.registeredDfsps.length > 0 && this.harness.prng.intExclusive(100) > 0) {
+      // Reuse.
+      return this.harness.prng.randomElementFrom(this.registeredDfsps)
+    }
+
+    const name = `dfsp_${this.harness.prng.randomString(this.harness.prng.intInRange(1, 5))}`
+    return name
+  }
+
+  private randomWithdawId(): string {
+    if (Object.keys(this.withdrawIds).length > 0 && this.harness.prng.intExclusive(100) > 20) {
+      // Reuse.
+      return this.harness.prng.randomElementFrom(Object.keys(this.withdrawIds))
+    }
+
+    return this.prng.uuidv4()
+  }
+
+  private randomTransferId(): string {
+    if (this.payments.length > 0 && this.harness.prng.intExclusive(100) > 20) {
+      // Reuse.
+      const payment = this.harness.prng.randomElementFrom(this.payments)
+      return payment.getOptions().transferId
+    }
+
+    return this.prng.uuidv4()
+  }
+
+  private randomDfspAccount(): {id: number, currency: string} {
+    if (Object.keys(this.dfspAccountIds).length > 0 && this.harness.prng.intExclusive(100) > 20) {
+      // Reuse.
+      return this.harness.prng.randomElementFrom(
+        Object.entries(this.dfspAccountIds).map(([key, value]) => ({id: Number.parseInt(key), currency: value}))
+      )
+    }
+
+    return {
+      id: this.prng.intExclusive(1000),
+      currency: this.randomCurrency(),
+    }
+  }
+
+  private randomCurrency(): string {
+    if (this.registeredCurrencies.length > 0 && this.harness.prng.coin()) {
+      return this.harness.prng.randomElementFrom(this.registeredCurrencies)
+    }
+
+    return this.harness.prng.randomElementWeighted(
+      ['USD', 'AUD', 'EUR', 'GBP', this.prng.randomString(3)],
+      [10, 10, 5, 5, 1]
+    )
+  }
+
+  // Filter out DFSPs that are disabled or have a disabled account for the given currency.
+  private activeDfspsForCurrency(currency: string, dfsps: Array<string>): Array<string> {
+    return dfsps
+      .filter(dfsp => !this.disabledDfsps.has(dfsp))
+      .filter(dfsp => !this.disabledDfspCurrencies[`${dfsp}:${currency}`])
+  }
+
+  // Bias towards a unique currency that hasn't been registered yet.
+  private randomCurrencyNew(): string {
+    const unregistered = this.allCurrencies.filter(
+      currency => !this.registeredCurrencies.includes(currency)
+    )
+
+    if (this.registeredCurrencies.length > 0 && this.prng.intExclusive(100) === 0) {
+      return this.prng.randomElementFrom(this.registeredCurrencies)
+    }
+
+    if (unregistered.length > 0) {
+      return this.prng.randomElementFrom(unregistered)
+    }
+
+    return this.prng.randomElementFrom(this.allCurrencies)
+  }
+
+  // Bias towards a unique currency that _has_ been registered.
+  private randomCurrencyOld(): string {
+    const unregistered = this.allCurrencies.filter(
+      currency => !this.registeredCurrencies.includes(currency)
+    )
+
+    // 99% chance: pick registered (if any exist)
+    if (this.registeredCurrencies.length > 0 && this.prng.intExclusive(100) > 0) {
+      return this.prng.randomElementFrom(this.registeredCurrencies)
+    }
+
+    // 1% chance (or none registered): pick unregistered
+    if (unregistered.length > 0) {
+      return this.prng.randomElementFrom(unregistered)
+    }
+
+    return this.prng.randomElementFrom(this.allCurrencies)
+  }
+
+  private randomAmount(): string {
+    let left = String(this.harness.prng.intInRange(0, 9999)).padStart(2, '0')
+    let right = String(this.harness.prng.intInRange(0, 99)).padStart(2, '0')
+
+    return `${left}.${right}`
+  }
+
+  private randomAccountType(): string {
+    return this.prng.randomElementWeighted([
+      `HUB_MULTILATERAL_SETTLEMENT`,
+      `HUB_RECONCILIATION`,
+      `HUB_FEE`,
+      `POSITION`,
+      `SETTLEMENT`,
+    ], [3, 3, 3, 1, 1])
+  }
+
+  private defaultSettlementModel(currency: string) {
+    return {
+      name: `DEFERRED_MULTILATERAL_NET_${currency}`,
+      settlementGranularity: "NET",
+      settlementInterchange: "MULTILATERAL",
+      settlementDelay: "DEFERRED",
+      currency,
+      requireLiquidityCheck: true,
+      ledgerAccountType: "POSITION",
+      settlementAccountType: "SETTLEMENT",
+      autoPositionReset: true
+    }
+  }
+
+  private randomSettlementState(): string {
+    return this.harness.prng.randomElementFrom([
+      'PENDING_SETTLEMENT',
+      'PS_TRANSFERS_RECORDED',
+      'PS_TRANSFERS_RESERVED',
+      'PS_TRANSFERS_COMMITTED',
+      'SETTLING',
+      'SETTLED',
+      'ABORTED',
+    ])
+  }
+
+  private randomSettlementWindowState(): string {
+    return this.harness.prng.randomElementFrom([
+      "OPEN",
+      "CLOSED",
+      "PENDING_SETTLEMENT",
+      "SETTLED",
+      "ABORTED",
+    ])
+  }
+
+  private randomSettlementTransferState() {
+    return this.harness.prng.randomElementFrom([
+      'PS_TRANSFERS_RECORDED',
+      'PS_TRANSFERS_RESERVED',
+      'PS_TRANSFERS_COMMITTED',
+      'SETTLED'
+    ])
+  }
+
+  private randomDateTime(): string {
+    const year = this.harness.prng.intInRange(2020, 2027)
+    const month = String(this.harness.prng.intInRange(1, 12)).padStart(2, '0')
+    const day = String(this.harness.prng.intInRange(1, 28)).padStart(2, '0')
+    const hour = String(this.harness.prng.intInRange(0, 59)).padStart(2, '0')
+    const min = String(this.harness.prng.intInRange(0, 59)).padStart(2, '0')
+    const sec = String(this.harness.prng.intInRange(0, 59)).padStart(2, '0')
+
+    return `${year}-${month}-${day}T${hour}:${min}:${sec}Z`
+  }
+}

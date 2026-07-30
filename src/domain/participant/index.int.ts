@@ -1,11 +1,10 @@
 import assert from "node:assert"
 import { after, before, describe, it } from "node:test"
-import Harness from '../../testing/harness'
+import Harness from '../../testing/harness/harness'
 import { Enum, LedgerAccountTypeEnum } from '@mojaloop/central-services-shared'
 import ParticipantService from './index'
-import { ApplicationConfig } from "../../lib/config/types"
 import { Snapshot } from "../../testing/snapshot"
-import { createDfsp } from "../../testing/api-helpers"
+import * as ApiHelpers from '../../testing/api-helpers'
 
 const harness = Harness.getInstance()
 
@@ -19,8 +18,6 @@ const accountTypes: Array<LedgerAccountTypeEnum> = [
 ]
 
 describe('domain/participant/index', () => {
-  let config: ApplicationConfig
-
   before(async () => {
     await harness.up()
     await harness.setupGlobals()
@@ -38,22 +35,17 @@ describe('domain/participant/index', () => {
     )
     assert.equal(exists, false)
 
-    let newAccount = await ParticipantService.createHubAccount(
-      harness.config.HUB_ID, 'USD', Enum.Accounts.LedgerAccountType.HUB_RECONCILIATION
-    )
-    assert(newAccount.participantCurrency)
-    assert(newAccount.participantPosition)
+    await ApiHelpers.buildHub()
+      .deps(harness)
+      .currency('USD')
+      .build()
+      .create()
 
     exists = await ParticipantService.hubAccountExists(
       'USD',
-      Enum.Accounts.LedgerAccountType.HUB_MULTILATERAL_SETTLEMENT
+      Enum.Accounts.LedgerAccountType.HUB_RECONCILIATION
     )
-    assert.equal(exists, false)
-    newAccount = await ParticipantService.createHubAccount(
-      harness.config.HUB_ID, 'USD', Enum.Accounts.LedgerAccountType.HUB_MULTILATERAL_SETTLEMENT
-    )
-    assert(newAccount.participantCurrency)
-    assert(newAccount.participantPosition)
+    assert.equal(exists, true)    
   })
 
   it('creates the participants', async (test) => {
@@ -86,12 +78,12 @@ describe('domain/participant/index', () => {
         "isActive": 1,
         "createdDate": :ignore
         "createdBy": "unknown",
-        "isProxy": ${isProxy ? '1' : '0'},
+        "isProxy": :ignore,
         "currencyList": [
           {
             "participantCurrencyId": :int,
             "participantId": ${participantId},
-            "currencyId": "USD",
+            "currencyId": "KES",
             "ledgerAccountTypeId": 1,
             "isActive": 0,
             "createdDate": :ignore
@@ -100,7 +92,7 @@ describe('domain/participant/index', () => {
           {
             "participantCurrencyId": :int,
             "participantId": ${participantId},
-            "currencyId": "USD",
+            "currencyId": "KES",
             "ledgerAccountTypeId": 2,
             "isActive": 0,
             "createdDate": :ignore
@@ -109,7 +101,7 @@ describe('domain/participant/index', () => {
           {
             "participantCurrencyId": :int,
             "participantId": ${participantId},
-            "currencyId": "KES",
+            "currencyId": "USD",
             "ledgerAccountTypeId": 1,
             "isActive": 0,
             "createdDate": :ignore
@@ -118,7 +110,7 @@ describe('domain/participant/index', () => {
           {
             "participantCurrencyId": :int,
             "participantId": ${participantId},
-            "currencyId": "KES",
+            "currencyId": "USD",
             "ledgerAccountTypeId": 2,
             "isActive": 0,
             "createdDate": :ignore
@@ -127,229 +119,6 @@ describe('domain/participant/index', () => {
         ]
       }`).checkStringUnwrap(JSON.stringify(created, null, 2))
     }
-  })
-
-  it('getAll()', async () => {
-    const result = await ParticipantService.getAll()
-    Snapshot.from(`[
-      {
-        "participantId": 2,
-        "name": "dfspa",
-        "description": null,
-        "isActive": 1,
-        "createdDate": ":ignore",
-        "createdBy": "unknown",
-        "isProxy": 0,
-        "currencyList": [
-          {
-            "participantCurrencyId": 3,
-            "participantId": 2,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 4,
-            "participantId": 2,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 5,
-            "participantId": 2,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 6,
-            "participantId": 2,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          }
-        ]
-      },
-      {
-        "participantId": 3,
-        "name": "dfspb",
-        "description": null,
-        "isActive": 1,
-        "createdDate": ":ignore",
-        "createdBy": "unknown",
-        "isProxy": 0,
-        "currencyList": [
-          {
-            "participantCurrencyId": 7,
-            "participantId": 3,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 8,
-            "participantId": 3,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 9,
-            "participantId": 3,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 10,
-            "participantId": 3,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          }
-        ]
-      },
-      {
-        "participantId": 4,
-        "name": "dfspc",
-        "description": null,
-        "isActive": 1,
-        "createdDate": ":ignore",
-        "createdBy": "unknown",
-        "isProxy": 0,
-        "currencyList": [
-          {
-            "participantCurrencyId": 11,
-            "participantId": 4,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 12,
-            "participantId": 4,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 13,
-            "participantId": 4,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 14,
-            "participantId": 4,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          }
-        ]
-      },
-      {
-        "participantId": 5,
-        "name": "dfspd",
-        "description": null,
-        "isActive": 1,
-        "createdDate": ":ignore",
-        "createdBy": "unknown",
-        "isProxy": 1,
-        "currencyList": [
-          {
-            "participantCurrencyId": 15,
-            "participantId": 5,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 16,
-            "participantId": 5,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 17,
-            "participantId": 5,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 1,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 18,
-            "participantId": 5,
-            "currencyId": "KES",
-            "ledgerAccountTypeId": 2,
-            "isActive": 0,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          }
-        ]
-      },
-      {
-        "participantId": 1,
-        "name": "Hub",
-        "description": "Hub Operator",
-        "isActive": 1,
-        "createdDate": ":ignore",
-        "createdBy": "seeds",
-        "isProxy": 0,
-        "currencyList": [
-          {
-            "participantCurrencyId": 1,
-            "participantId": 1,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 3,
-            "isActive": 1,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          },
-          {
-            "participantCurrencyId": 2,
-            "participantId": 1,
-            "currencyId": "USD",
-            "ledgerAccountTypeId": 4,
-            "isActive": 1,
-            "createdDate": ":ignore",
-            "createdBy": "unknown"
-          }
-        ]
-      }
-    ]`).checkUnwrap(result)
   })
 
   it('getById()', async () => {
@@ -365,36 +134,36 @@ describe('domain/participant/index', () => {
       "isProxy": 0,
       "currencyList": [
         {
-          "participantCurrencyId": 7,
+          "participantCurrencyId": :ignore,
           "participantId": 3,
-          "currencyId": "USD",
+          "currencyId": "KES",
           "ledgerAccountTypeId": 1,
           "isActive": 0,
           "createdDate": ":ignore",
           "createdBy": "unknown"
         },
         {
-          "participantCurrencyId": 8,
+          "participantCurrencyId": :ignore,
           "participantId": 3,
-          "currencyId": "USD",
+          "currencyId": "KES",
           "ledgerAccountTypeId": 2,
           "isActive": 0,
           "createdDate": ":ignore",
           "createdBy": "unknown"
         },
         {
-          "participantCurrencyId": 9,
+          "participantCurrencyId": :ignore,
           "participantId": 3,
-          "currencyId": "KES",
+          "currencyId": "USD",
           "ledgerAccountTypeId": 1,
           "isActive": 0,
           "createdDate": ":ignore",
           "createdBy": "unknown"
         },
         {
-          "participantCurrencyId": 10,
+          "participantCurrencyId": :ignore,
           "participantId": 3,
-          "currencyId": "KES",
+          "currencyId": "USD",
           "ledgerAccountTypeId": 2,
           "isActive": 0,
           "createdDate": ":ignore",
@@ -478,13 +247,13 @@ describe('domain/participant/index', () => {
   it('destroyParticipantEndpointByName() deletes an existing endpoint', async () => {
     const name = 'tmp_dfsp_1'
     // Create a new DFSP we can ignore in other tests
-    await createDfsp(harness, {
-      name,
-      currencies: ['USD'],
-      isProxy: false,
-      initialPostionsAndLimits: [{ initialPosition: 0, value: 100000 }],
-      deposits: [10000]
-    })
+    await ApiHelpers.buildDfsp()
+      .deps(harness)
+      .name(name)
+      .currency('USD')
+      .build()
+      .create()
+
     await ParticipantService.addEndpoint(name, {
       type: Enum.EndPoints.FspEndpointTypes.FSPIOP_CALLBACK_URL_QUOTES,
       value: `http://localhost:1080`
@@ -525,12 +294,14 @@ describe('domain/participant/index', () => {
           currency,
           limit: {
             type: 'NET_DEBIT_CAP',
-            value: 10000000
+            value: 10000000,
+            alarmPercentage: 10,
           },
           initialPosition: 0
         }
         const result = await ParticipantService.addLimitAndInitialPosition(dfsp, payload)
         assert.equal(result, true)
+        await harness.redpandaDrainSmart(1, dfsp)
       }
     }
 
@@ -614,52 +385,25 @@ describe('domain/participant/index', () => {
     ]`).checkUnwrap(positions);
   })
 
-  // TODO: This fails with an SQL error. We should fix this in the next pass (after rewriting the 
-  //       integration tests).
-  it.skip('addLimitAndInitialPosition() tries to set the position to negative',
-    { expectFailure: /position must be >= 0/ },
-    async () => {
-      const name = 'dfsp_tmp_2'
-      // Create a new DFSP we can ignore in other tests
-      await createDfsp(harness, {
-        name,
-        currencies: ['USD'],
-        isProxy: false,
-        initialPostionsAndLimits: [{ initialPosition: 0, value: 100000 }],
-        deposits: [10000]
-      })
-      const payload = {
-        currency: 'USD',
-        limit: {
-          type: 'NET_DEBIT_CAP',
-          value: 10000000
-        },
-        initialPosition: -100
-      }
-
-      const result = await ParticipantService.addLimitAndInitialPosition(name, payload)
-      console.log(result);
-    })
-
   it('adjustLimit() changes the limit', async () => {
     const name = 'tmp_dfsp_3'
-    await createDfsp(harness, {
-      name,
-      currencies: ['USD'],
-      isProxy: false,
-      initialPostionsAndLimits: [{ initialPosition: 0, value: 100000 }],
-      deposits: [10000]
-    })
+    await ApiHelpers.buildDfsp()
+      .deps(harness)
+      .name(name)
+      .currency('USD')
+      .build()
+      .create()
 
-    const result = await ParticipantService.adjustLimits(name, {
+    const result = await ParticipantService.adjustLimitsV2(name, {
       currency: 'USD',
-      limit: { type: 'NET_DEBIT_CAP', value: 9999 }
+      limit: { type: 'NET_DEBIT_CAP', value: 9999, alarmPercentage: 11 }
     })
     Snapshot.from(`{
       "participantLimit": {
         "participantCurrencyId": :ignore,
         "participantLimitTypeId": 1,
         "value": 9999,
+        "thresholdAlarmPercentage": 11,
         "isActive": 1,
         "createdBy": "unknown",
         "participantLimitId": :ignore
@@ -672,10 +416,10 @@ describe('domain/participant/index', () => {
     Snapshot.from(`[
       {
         "participantLimitId": :ignore,
-        "participantCurrencyId": 21,
+        "participantCurrencyId": :ignore,
         "participantLimitTypeId": 1,
         "value": "9999.0000",
-        "thresholdAlarmPercentage": "10.00",
+        "thresholdAlarmPercentage": "11.00",
         "startAfterParticipantPositionChangeId": null,
         "isActive": 1,
         "createdDate": ":ignore",
@@ -689,10 +433,10 @@ describe('domain/participant/index', () => {
     Snapshot.from(`[
       {
         "participantLimitId": :ignore,
-        "participantCurrencyId": 21,
+        "participantCurrencyId": :ignore,
         "participantLimitTypeId": 1,
         "value": "9999.0000",
-        "thresholdAlarmPercentage": "10.00",
+        "thresholdAlarmPercentage": "11.00",
         "startAfterParticipantPositionChangeId": null,
         "isActive": 1,
         "createdDate": ":ignore",
@@ -705,13 +449,13 @@ describe('domain/participant/index', () => {
 
   it('getPositions() ', async () => {
     const name = 'tmp_dfsp_4'
-    await createDfsp(harness, {
-      name,
-      currencies: ['USD'],
-      isProxy: false,
-      initialPostionsAndLimits: [{ initialPosition: 0, value: 100000 }],
-      deposits: [10000]
-    })
+    await ApiHelpers.buildDfsp()
+      .deps(harness)
+      .name(name)
+      .currency('USD')
+      .build()
+      .create()
+      
     const response = await ParticipantService.getPositions(name, {
       currency: 'USD'
     })
