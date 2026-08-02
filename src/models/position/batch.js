@@ -97,6 +97,14 @@ const getAllParticipantCurrency = async (trx) => {
   }
 }
 
+/**
+ * @returns {Promise<Array<{changedDate: Date
+ * participantCurrencyId: number
+ * participantPositionId: number
+ * reservedValue: string
+ * value: string
+ * }>>}
+ */
 const getPositionsByAccountIdsForUpdate = async (trx, accountIds) => {
   const knex = Db.getKnex()
   const participantPositions = await knex('participantPosition')

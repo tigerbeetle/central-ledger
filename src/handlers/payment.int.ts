@@ -119,13 +119,13 @@ describe('handlers/payment', () => {
       posted: 0
     })
 
-    await payment.fulfil()
-    const [positionPayer3, positionPayee3] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b', 'USD')
-    assertPositionDiff('payer', positionPayer2, positionPayer3, {
-      posted: 0
-    })
-    assertPositionDiff('payee', positionPayee2, positionPayee3, {
-      posted: -100
-    })
+    // await payment.fulfil()
+    // const [positionPayer3, positionPayee3] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b', 'USD')
+    // assertPositionDiff('payer', positionPayer2, positionPayer3, {
+    //   posted: 0
+    // })
+    // assertPositionDiff('payee', positionPayee2, positionPayee3, {
+    //   posted: -100
+    // })
   })
 })

@@ -218,6 +218,91 @@ const positions = batchConfig => async (error, messages) => {
   }
 }
 
+// TODO: separate handler for each payment-prepare, payment-fulfil, forex-prepare, forex-fulfil
+const positionPaymentPrepare = batchConfig => async (message) => {
+  // Start DB Transaction if there are any bins to process
+  const trx = !!Object.keys(bins).length && await BatchPositionModel.startDbTransaction()
+
+  try {
+    if (trx) {
+      // Call Bin Processor with the list of account-bins and trx
+      const result = await BinProcessor.processBinsPaymentPrepare(bins, trx)
+
+      // If Bin Processor processed bins successfully, commit Kafka offset
+      // Commit the offset of last message in the array
+      for (const message of Object.values(lastPerPartition)) {
+        const params = { message, kafkaTopic: message.topic, consumer: Consumer }
+        // We are using Kafka.proceed() to just commit the offset of the last message in the array
+        await Kafka.proceed(Config.KAFKA_CONFIG, params, { consumerCommit, hubName: Config.HUB_NAME })
+      }
+
+      // Commit DB transaction
+      await trx.commit()
+
+      // Loop through results and produce notification messages and audit messages
+      await Promise.all(result.notifyMessages.map(item => {
+        // Produce notification message and audit message
+        // NOTE: Not sure why we're checking the binItem for the action vs the message
+        //       that is being created.
+        //       Handled FX_NOTIFY and FX_ABORT differently so as not to break existing functionality.
+        let action
+        if (![Enum.Events.Event.Action.FX_NOTIFY, Enum.Events.Event.Action.FX_ABORT].includes(item?.message.metadata.event.action)) {
+          action = item.binItem.message?.value.metadata.event.action
+        } else {
+          action = item.message.metadata.event.action
+        }
+        const eventStatus = item?.message.metadata.event.state.status === Enum.Events.EventStatus.SUCCESS.status ? Enum.Events.EventStatus.SUCCESS : Enum.Events.EventStatus.FAILURE
+        const produce = () => Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, Producer, Enum.Events.Event.Type.NOTIFICATION, action, item.message, eventStatus, null, item.binItem.span)
+        return (Array.isArray(messages) && messages.length > 1)
+          ? otel.startConsumerTracingSpan(item.binItem.message, batchConfig).executeInsideSpanContext(produce)
+          : produce()
+      }).concat(
+        // Loop through followup messages and produce position messages for further processing of the transfer
+        result.followupMessages.map(item => {
+          // Produce position message and audit message
+          const action = item.binItem.message?.value.metadata.event.action
+          const eventStatus = item?.message.metadata.event.state.status === Enum.Events.EventStatus.SUCCESS.status ? Enum.Events.EventStatus.SUCCESS : Enum.Events.EventStatus.FAILURE
+          const produce = () => Kafka.produceGeneralMessage(
+            Config.KAFKA_CONFIG,
+            Producer,
+            Enum.Events.Event.Type.POSITION,
+            action,
+            item.message,
+            eventStatus,
+            item.messageKey,
+            item.binItem.span,
+            Config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.COMMIT
+          )
+          return (Array.isArray(messages) && messages.length > 1)
+            ? otel.startConsumerTracingSpan(item.binItem.message, batchConfig).executeInsideSpanContext(produce)
+            : produce()
+        })
+      ))
+    }
+    histTimerEnd({ success: true })
+  } catch (err) {
+    Logger.error(`handlerBatch failed with error: ${err.message}`)
+    Logger.error(`stack: ${err.stack}`)
+    // If Bin Processor returns failure
+    // -  Rollback DB transaction
+    await trx?.rollback()
+
+    // - Audit Error for each message
+    const fspiopError = ErrorHandler.Factory.reformatFSPIOPError(err)
+    const state = new EventSdk.EventStateMetadata(EventSdk.EventStatusType.failed, fspiopError.apiErrorCode.code, fspiopError.apiErrorCode.message)
+    await BinProcessor.iterateThroughBins(bins, async (_accountID, _action, item) => {
+      const span = item.span
+      await span.error(fspiopError, state)
+    })
+    histTimerEnd({ success: false })
+  } finally {
+    // Finish span for each message
+    await BinProcessor.iterateThroughBins(bins, async (_accountID, action, item) => {
+      item.histTimerMsgEnd({ ...item.result, action })
+    })
+  }
+}
+
 /**
  * @function registerPositionHandler
  *
@@ -278,5 +363,6 @@ const registerAllHandlers = async () => {
 module.exports = {
   registerPositionHandler,
   registerAllHandlers,
-  positions: positions()
+  positions: positions(),
+  positionPaymentPrepare: positionPaymentPrepare()
 }

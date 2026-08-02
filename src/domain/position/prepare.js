@@ -55,7 +55,7 @@ const Config = require('../../lib/config')
  *   @param {object} settlementModel - settlement model object for the currency
  *   @param {object} participantLimit - participant limit object for the currency
  *   @param {boolean} changePositions - whether to change positions or not
- * @returns {object} - Returns an object containing accumulatedPositionValue, accumulatedPositionReservedValue, accumulatedTransferStateChanges, accumulatedTransferStates, resultMessages, limitAlarms or throws an error if failed
+ * @returns {Promise<object>} - Returns an object containing accumulatedPositionValue, accumulatedPositionReservedValue, accumulatedTransferStateChanges, accumulatedTransferStates, resultMessages, limitAlarms or throws an error if failed
  */
 const processPositionPrepareBin = async (
   binItems,

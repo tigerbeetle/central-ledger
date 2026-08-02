@@ -6,12 +6,19 @@ import { CreateRemittanceEntity, KafkaParams, ProxyCache } from "./transfer-type
 import RefactorHelper from "../shared/refactor-helper";
 const { Kafka, Comparators } = Util
 const { decodePayload } = Util.StreamingProtocol
-const Participant = require('../domain/participant')
+// const Participant = require('../domain/participant')
+import Participant from '../domain/participant'
 const { Consumer, Producer } = require('@mojaloop/central-services-stream').Util
 const { Type, Action } = Enum.Events.Event
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const { FSPIOPError } = ErrorHandler
+
+import BatchPositionModel from '../models/position/batch'
+import BatchPositionModelCached from '../models/position/batchCached'
+import SettlementModelCached from '../models/settlement/settlementModelCached'
+import PositionPrepareDomain from '../domain/position/prepare'
+import ParticipantFacade from '../models/participant/facade'
 
 interface Dependencies {
   config: ApplicationConfig,
@@ -27,7 +34,8 @@ interface Dependencies {
     determiningTransferCheckResult: any,
     proxyObligation: any
   }) => Promise<true>
-  positionHandler: null | ((error: null, messages: Array<any>) => Promise<any>)
+  // positionHandler: null | ((error: null, messages: Array<any>) => Promise<any>)
+  positionHandler: null | ((message: any) => Promise<any>)
   definePositionParticipant: (options: {
     isFx: boolean,
     payload: CreatePaymentDto,
@@ -520,18 +528,104 @@ export class PaymentPrepareHandler {
         return
       }
       case "FUSE":
-        assert(this.deps.positionHandler)
-        const wrapped = RefactorHelper.wrapForPositionHandler(params, {
-          eventDetail: {
-            functionality: Type.POSITION,
-            action: Action.PREPARE
-          },
-          messageKey,
-          hubName: config.HUB_NAME
-        })
-        await this.deps.positionHandler(null, [wrapped])
+        return this.positionPrepare(input, determiningTransferCheckResult, proxyObligation)
+        // assert(this.deps.positionHandler)
+        // await this.deps.positionHandler(params)
+        // const wrapped = RefactorHelper.wrapForPositionHandler(params, {
+        //   eventDetail: {
+        //     functionality: Type.POSITION,
+        //     action: Action.PREPARE
+        //   },
+        //   messageKey,
+        //   hubName: config.HUB_NAME
+        // })
+        // await this.deps.positionHandler(null, [wrapped])
+        
     }
   }
+
+
+  // TODO: this should return some notification messages to be passed to the 
+  // notification handler, and pass on errors!
+  private async positionPrepare(input: FusedPrepareHandlerInput,
+    determiningTransferCheckResult: any,
+    proxyObligation: any): Promise<void> {
+      const trx = await BatchPositionModel.startDbTransaction()
+      const transferId = input.transferId
+
+      // get the currencyId from the currency string
+      // const currencyId = await 
+      const { messageKey, cyrilResult } = await this.deps.definePositionParticipant({
+        payload: proxyObligation.payloadClone,
+        isFx: false,
+        determiningTransferCheckResult,
+        proxyObligation
+      })
+
+      const accountPayer = await Participant.getAccountByNameAndCurrency(
+        input.payload.payerFsp,
+        input.payload.amount.currency,
+        Enum.Accounts.LedgerAccountType.POSITION
+      )
+      const allSettlementModels = await SettlementModelCached.getAll()
+      const allParticipantCurrencyIds = await BatchPositionModelCached
+        .getParticipantCurrencyByParticipantIds(trx, [accountPayer.participantId])
+      
+      assert(allParticipantCurrencyIds, 'Expected allParticipantCurrencyIds to be defined.')
+      assert(allParticipantCurrencyIds.length === 2, 'Expected 2 allParticipantCurrencyIds.')
+      
+      // Get the position (obtain a lock).
+      // const { settlementCurrencyIds, accountIdMap } = await _constructRequiredMaps(participantCurrencyIds, allSettlementModels, trx)
+      const positions = await BatchPositionModel.getPositionsByAccountIdsForUpdate(trx, [
+        ...allParticipantCurrencyIds.map(currency => currency.participantCurrencyId)
+      ])
+      assert(positions)
+      const settlementAccount = allParticipantCurrencyIds
+        .find(currency => currency.ledgerAccountTypeId === Enum.Accounts.LedgerAccountType.SETTLEMENT)
+      assert(settlementAccount, 'No settlementAccount found.')
+      const settlementPositionAccount = positions[settlementAccount.participantCurrencyId]
+      // get the participant limit
+      const participantLimit = await ParticipantFacade.getParticipantLimitByParticipantCurrencyLimit(
+        accountPayer.participantId,
+        input.payload.amount.currency,
+        Enum.Accounts.LedgerAccountType.POSITION,
+        Enum.Accounts.ParticipantLimitType.NET_DEBIT_CAP
+      )
+      let accumulatedTransferStates: Record<string, string> = {}
+      accumulatedTransferStates[input.transferId] = 'RECEIVED_PREPARE'
+      // transform into something so we can call prepare.processPositionPrepareBin
+      // take the prepare result and do something with it.
+      const prepareActionResult = await PositionPrepareDomain.processPositionPrepareBin(
+        [{
+          decodedPayload: input.payload,
+          message: {
+            value: {
+              content: {
+                context: {
+                  cyrilResult
+                }
+              }
+            }
+          }
+        }],
+        {
+          accumulatedPositionValue: 0,
+          accumulatedPositionReservedValue: 0,
+          accumulatedTransferStates,
+          // How do we get this?
+          settlementParticipantPosition: settlementPositionAccount.value,
+          participantLimit,
+          changePositions: true
+        }
+      )
+      await BatchPositionModel.bulkInsertParticipantPositionChanges(trx, {
+        TODO
+      })
+      
+
+
+
+    }
 
   /**
    * @description Figure out if the participants in the Payment message are native to the scheme
