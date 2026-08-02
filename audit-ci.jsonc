@@ -9,7 +9,6 @@
     "GHSA-f23m-r3pf-42rh", // lodash vulnerable to Prototype Pollution. This is already overriden but still seems to be getting flagged here.
     "GHSA-r5fr-rjxr-66jc", // lodash vulnerable to Code Injection. This is already overriden but still seems to be getting flagged here.
     "GHSA-xxjr-mmjv-4gpg", // Lodash has Prototype Pollution Vulnerability. This is already overriden but still seems to be getting flagged here.
-    "GHSA-h67p-54hq-rp68", // js-yaml, can't override without breaking unit tests.
-    "GHSA-mh99-v99m-4gvg"  // brace-expansion, can't override without breaking unit tests.
+    "GHSA-h67p-54hq-rp68"  // js-yaml, can't override without breaking unit tests.
   ]
 }
