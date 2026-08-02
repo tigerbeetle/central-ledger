@@ -352,6 +352,15 @@ const addEndpoint = async (participantId, endpoint) => {
   }
 }
 
+/**
+ * 
+ * @returns {Promise<{
+ *  currencyId: string
+ *  participantId: number
+ * participantLimitTypeId: number
+ * value: string
+ * }>}
+ */
 const getParticipantLimitByParticipantCurrencyLimit = async (participantId, currencyId, ledgerAccountTypeId, participantLimitTypeId) => {
   const histGetParticipantLimitEnd = Metrics.getHistogram(
     'model_participant',

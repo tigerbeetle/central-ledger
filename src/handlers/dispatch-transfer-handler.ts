@@ -80,7 +80,7 @@ export class DispatchTransferHandler {
       createRemittanceEntity: createRemittanceEntityPayment,
       sendPositionPrepareMessage,
       definePositionParticipant,
-      positionHandler,
+      positionHandler: require('./positions/handlerBatch').positionPaymentPrepare
     })
 
     const fxService = require('../domain/fx')

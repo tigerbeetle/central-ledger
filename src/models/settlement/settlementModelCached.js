@@ -108,6 +108,24 @@ exports.getByLedgerAccountTypeId = async (ledgerAccountTypeId) => {
   }
 }
 
+
+/**
+ * 
+ * @returns {Promise<Array<{
+ *   adjustPosition: number
+ *   autoPositionReset: number,
+ *   currencyId: string,
+ *   isActive: number
+ *   ledgerAccountTypeId: number
+ *   name: string
+ *   requireLiquidityCheck: number
+ *   settlementAccountTypeId: number 
+ *   settlementDelayId: number
+ *   settlementGranularityId: number
+ *   settlementInterchangeId: number
+ *   settlementModelId: number
+ * }>>}
+ */
 exports.getAll = async () => {
   try {
     const cachedSettlementModels = await getSettlementModelsCached()

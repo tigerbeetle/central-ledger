@@ -40,7 +40,13 @@ export function getAccounts(name: string, query: {currency: string}): Promise<Ar
 export function updateAccount(accountId: any, isActive: boolean): Promise<any>
 export function getParticipantAccount(participantName: string, accountId: any): Promise<any>
 export function recordFundsInOut(payload: any, params: any, enums: any): Promise<any>
-export function getAccountByNameAndCurrency(name: string, currencyId: any, ledgerAccountTypeId: any): Promise<any>
+type GetAccountsByNameAndCurrencyResponse = {
+  participantCurrencyId: number,
+  isActive: boolean,
+  currencyIsActive: number,
+  participantId: number,
+}
+export function getAccountByNameAndCurrency(name: string, currencyId: any, ledgerAccountTypeId: any): Promise<GetAccountsByNameAndCurrencyResponse>
 export function hubAccountExists(currencyId: any, ledgerAccountTypeId: any): Promise<boolean>
 export function getLimitsForAllParticipants(payload: { currency: string, type: string }): Promise<any>
 export function validateHubAccounts(payload: any): Promise<any>

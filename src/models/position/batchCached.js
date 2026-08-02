@@ -97,6 +97,18 @@ exports.getParticipantCurrencyByIds = async (trx, participantCurrencyIds) => {
   }
 }
 
+/**
+ * 
+ * @returns {Promise<Array<{
+ * createdBy: string
+ * createdDate: string
+ * currencyId: string
+ * isActive: 0 | 1
+ * ledgerAccountTypeId: number
+ * participantCurrencyId: number
+ * participantId: number
+ * }>>}
+ */
 exports.getParticipantCurrencyByParticipantIds = async (trx, participantIds) => {
   try {
     let participantCurrencies = []
