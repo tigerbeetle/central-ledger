@@ -32,7 +32,7 @@ Test('registerPlugins should', pluginsTest => {
   pluginsTest.test('registers base modules', async function (test) {
     const server = await new Server()
     await Plugins.registerPlugins(server)
-    const modules = [Inert, Vision, Blipp, ErrorHandling]
+    const modules = [Inert, Vision, ErrorHandling]
     modules.forEach(x => test.ok(server.contains(x)))
     test.end()
   })

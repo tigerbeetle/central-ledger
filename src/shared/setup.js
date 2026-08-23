@@ -142,7 +142,7 @@ const createServer = (port, modules) => {
  * @param {handler[]} handlers List of Handlers to be registered
  * @returns {Promise<boolean>} Returns true if Handlers were registered
  */
-const createHandlers = async (handlers) => {
+const createHandlers = async (handlers, dispatchTransferHandler) => {
   const registeredHandlers = {
     connection: {},
     register: {},
@@ -157,19 +157,11 @@ const createHandlers = async (handlers) => {
       Logger.isInfoEnabled && Logger.info(`Handler Setup - Registering ${JSON.stringify(handler)}!`)
       switch (handler.type) {
         case 'prepare': {
-          await RegisterHandlers.transfers.registerPrepareHandler()
-          // if (!Config.HANDLERS_CRON_DISABLED) {
-          //   Logger.isInfoEnabled && Logger.info('Starting Kafka Cron Jobs...')
-          //   await KafkaCron.start('prepare')
-          // }
+          await RegisterHandlers.transfers.registerPrepareHandler(dispatchTransferHandler)
           break
         }
         case 'position': {
           await RegisterHandlers.positions.registerPositionHandler()
-          // if (!Config.HANDLERS_CRON_DISABLED) {
-          //   Logger.isInfoEnabled && Logger.info('Starting Kafka Cron Jobs...')
-          //   await KafkaCron.start('position')
-          // }
           break
         }
         case 'positionbatch': {
@@ -177,7 +169,7 @@ const createHandlers = async (handlers) => {
           break
         }
         case 'fulfil': {
-          await RegisterHandlers.transfers.registerFulfilHandler()
+          await RegisterHandlers.transfers.registerFulfilHandler(dispatchTransferHandler)
           break
         }
         case 'timeout': {
@@ -300,22 +292,12 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
       return server
     }
 
-    Logger.warn('Handlers Disabled individual registration for now. Calling registerAllHandlers().')
-
     const dispatchTransferHandler = new DispatchTransferHandler(Config)
-    await RegisterHandlers.registerAllHandlers(dispatchTransferHandler)
-
-
-    // if (Array.isArray(handlers) && handlers.length > 0) {
-    //   await createHandlers(handlers)
-    // } else {
-    //   await RegisterHandlers.registerAllHandlers()
-    //   // if (!Config.HANDLERS_CRON_DISABLED) {
-    //   //   Logger.isInfoEnabled && Logger.info('Starting Kafka Cron Jobs...')
-    //   //   // await KafkaCron.start('prepare')
-    //   //   await KafkaCron.start('position')
-    //   // }
-    // }
+    if (Array.isArray(handlers) && handlers.length > 0) {
+      await createHandlers(handlers, dispatchTransferHandler)
+    } else {
+      await RegisterHandlers.registerAllHandlers(dispatchTransferHandler)
+    }
 
     return server
   } catch (err) {

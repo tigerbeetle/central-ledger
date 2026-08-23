@@ -79,7 +79,7 @@ const registerPlugins = async (server) => {
     Vision,
     ErrorHandling,
     RawPayloadToDataUri,
-    HapiEventPlugin
+    HapiEventPlugin,
   ])
 }
 

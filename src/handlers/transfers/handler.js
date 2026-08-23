@@ -1030,7 +1030,7 @@ const registerPrepareHandler = async (dispatchTransferHandler) => {
  * @returns {Promise<boolean>} - Returns a boolean: true if successful, or throws and error if failed
  */
 const registerFulfilHandler = async (dispatchTransferHandler) => {
-  // assert(dispatchTransferHandler)
+  assert(dispatchTransferHandler, 'expected dispatchTransferHandler to be defined.')
 
   try {
     const fulfillHandler = {
@@ -1050,8 +1050,7 @@ const registerFulfilHandler = async (dispatchTransferHandler) => {
     await Consumer.createHandler(
       fulfillHandler.topicName,
       fulfillHandler.config,
-      // dispatchTransferHandler.fulfil
-      fulfil
+      (err, msg) => dispatchTransferHandler.fulfil(err, msg)
     )
     return true
   } catch (err) {
