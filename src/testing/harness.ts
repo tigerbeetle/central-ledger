@@ -188,11 +188,11 @@ export default class Harness {
    * position handler for a specific test.
    * 
    * The bug is related to cyrilResult not being set for a non-fx transfer, which causes the 
-   * position rest message to not be fired.
+   * position reset message to not be fired.
    */
   public async up(positionHandlerType: 'NON_BATCH' | 'BATCH' = 'NON_BATCH') {
-    logger.warn(`harness.up() - NON_BATCH is disabled. Always using BATCH.`)
-    positionHandlerType = 'BATCH'
+    // logger.warn(`harness.up() - NON_BATCH is disabled. Always using BATCH.`)
+    positionHandlerType = 'NON_BATCH'
 
     const timerStart = performance.now()
     await this.checkEnvironment()
@@ -241,6 +241,7 @@ export default class Harness {
       ABORT: 'topic-transfer-position'
     }
 
+    // @ts-ignore
     if (positionHandlerType === 'BATCH') {
       positionHandlerOverrides = {
         PREPARE: 'topic-transfer-position-batch',

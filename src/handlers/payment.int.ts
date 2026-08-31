@@ -44,7 +44,7 @@ let dispatchHandler: DispatchTransferHandler
 
 describe('handlers/payment', () => {
   before(async () => {
-    await harness.up('BATCH')
+    await harness.up()
     await harness.setupGlobals()
 
     dispatchHandler = new DispatchTransferHandler(harness.config)
@@ -102,7 +102,7 @@ describe('handlers/payment', () => {
   })
 
   it('prepares and fulfils a payment', async () => {
-    const [positionPayer1, positionPayee1] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b', 'USD')
+    const [positionPayer1, positionPayee1] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b')
     
     // Create payment of $100.00 USD from dfsp_a to dfsp_b with id 1000001.
     const payment = await ApiHelpers.buildPayment()
@@ -113,7 +113,7 @@ describe('handlers/payment', () => {
       .build()
       .prepare()
 
-    const [positionPayer2, positionPayee2] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b', 'USD')
+    const [positionPayer2, positionPayee2] = await ApiHelpers.getPositions('dfsp_a', 'dfsp_b')
     assertPositionDiff('payer', positionPayer1, positionPayer2, {
       pending: 0,
       posted: 100

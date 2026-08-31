@@ -175,6 +175,50 @@ export type PaymentPrepareResult = {
   error: typeof FSPIOPError
 }
 
+export enum PositionPrepareResultType {
+  /**
+   * Position was prepared correctly.
+   */
+  PASS = 'PASS',
+
+  /**
+   * PositionPrepare failed as the payer didn't have enough liquidity.
+   */
+  FAIL_LIQUIDITY = 'FAIL_LIQUIDITY',
+
+  /**
+   * PositionPrepare failed validation.
+   */
+  FAIL_VALIDATION = 'FAIL_VALIDATION',
+
+  /**
+   * Catch-all Transfer failed for another reason
+   */
+  FAIL_OTHER = 'FAIL_OTHER',
+}
+
+export type PositionPrepareResult = {
+  type: PositionPrepareResultType.PASS,
+  notifications: Array<Notification>
+} | {
+  type: PositionPrepareResultType.FAIL_LIQUIDITY,
+  notifications: Array<Notification>
+} | {
+  type: PositionPrepareResultType.FAIL_VALIDATION,
+  failureReasons: Array<string>
+  notifications: Array<Notification>
+} | {
+  type: PositionPrepareResultType.FAIL_OTHER,
+  notifications: Array<Notification>
+}
+
+/**
+ * A message to be emitted by the messaging layer; results of the PaymentPrepare handling.
+ */
+export type Notification = {
+
+}
+
 export class PaymentPrepareHandler {
   constructor(private deps: Dependencies) { }
 
@@ -323,16 +367,52 @@ export class PaymentPrepareHandler {
       proxyObligation,
     )
 
-    await this.sendMessagePosition(
-      input,
-      determiningTransferCheckResult,
-      proxyObligation
-    )
-    
-    return {
-      type: PaymentPrepareResultType.PASS
+    // Reserve the funds from the payer.
+    switch (this.deps.config.HANDLERS_TRANSFER_POSITION_FUSE) {
+      // Legacy logic: fire and forget.
+      case 'UNFUSE': {
+        await this.sendMessagePosition2(input, determiningTransferCheckResult, proxyObligation)
+        return {
+          type: PaymentPrepareResultType.PASS
+        }
+      }
+
+      // New logic - process the prepare synchronously.
+      case "FUSE": {
+        const result = await this.positionPrepare2(
+          input, determiningTransferCheckResult, proxyObligation
+        )
+
+        // TODO: emit the notifications.
+        // TODO: commit Kafka offsets.
+
+        let type: PaymentPrepareResultType
+        switch (result.type) {
+          case PositionPrepareResultType.PASS:
+            return {
+              type: PaymentPrepareResultType.PASS
+            }
+          case PositionPrepareResultType.FAIL_LIQUIDITY:
+            return {
+              type: PaymentPrepareResultType.FAIL_LIQUIDITY,
+              error: new Error('TODO: some liquidity error')
+            }
+          case PositionPrepareResultType.FAIL_VALIDATION:
+            return {
+              type: PaymentPrepareResultType.FAIL_VALIDATION,
+              failureReasons: result.failureReasons
+            }
+          case PositionPrepareResultType.FAIL_OTHER:
+            return {
+              type: PaymentPrepareResultType.FAIL_OTHER,
+              error: new Error('TODO: some other error.')
+            }
+        }
+      }
     }
   }
+
+
 
   /**
    * Validate the payment for a simple Payment with no 'determiningTransfers'.
@@ -512,7 +592,7 @@ export class PaymentPrepareHandler {
     return Enum.Events.Event.Action[actionUpper] || actionUpper;
   }
 
-  private sendMessagePosition = async (
+  private sendMessagePosition2 = async (
     input: FusedPrepareHandlerInput,
     determiningTransferCheckResult: any,
     proxyObligation: any
@@ -542,119 +622,150 @@ export class PaymentPrepareHandler {
       cyrilResult
     }
 
-    switch (this.deps.config.HANDLERS_TRANSFER_POSITION_FUSE) {
-      case 'UNFUSE': {
-        await Kafka.proceed(config.KAFKA_CONFIG, params, {
-          consumerCommit: true,
-          eventDetail: {
-            functionality: Type.POSITION,
-            action: Action.PREPARE
-          },
-          messageKey,
-          topicNameOverride: config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.PREPARE,
-          hubName: config.HUB_NAME
-        })
-        return
-      }
-      case "FUSE":
-        return this.positionPrepare(input, determiningTransferCheckResult, proxyObligation)
-        // assert(this.deps.positionHandler)
-        // await this.deps.positionHandler(params)
-        // const wrapped = RefactorHelper.wrapForPositionHandler(params, {
-        //   eventDetail: {
-        //     functionality: Type.POSITION,
-        //     action: Action.PREPARE
-        //   },
-        //   messageKey,
-        //   hubName: config.HUB_NAME
-        // })
-        // await this.deps.positionHandler(null, [wrapped])
-        
-    }
+
+    await Kafka.proceed(config.KAFKA_CONFIG, params, {
+      consumerCommit: true,
+      eventDetail: {
+        functionality: Type.POSITION,
+        action: Action.PREPARE
+      },
+      messageKey,
+      topicNameOverride: config.KAFKA_CONFIG.EVENT_TYPE_ACTION_TOPIC_MAP?.POSITION?.PREPARE,
+      hubName: config.HUB_NAME
+    })
+    return
   }
 
+  private async positionPrepare2(
+    input: FusedPrepareHandlerInput,
+    determiningTransferCheckResult: any,
+    proxyObligation: any
+  ): Promise<PositionPrepareResult> {
+
+
+
+
+    
+
+    return {
+      type: PositionPrepareResultType.PASS,
+      notifications: []
+    }
+  }
 
   // TODO: this should return some notification messages to be passed to the 
   // notification handler, and pass on errors!
   private async positionPrepare(input: FusedPrepareHandlerInput,
     determiningTransferCheckResult: any,
     proxyObligation: any): Promise<void> {
-      const trx = await BatchPositionModel.startDbTransaction()
-      const transferId = input.transferId
+    // I think we should just hard code this. In the future we won't be able to support payments
+    // without changing the position.
+    const changePositions = true
 
-      // get the currencyId from the currency string
-      // const currencyId = await 
-      const { messageKey, cyrilResult } = await this.deps.definePositionParticipant({
-        payload: proxyObligation.payloadClone,
-        isFx: false,
-        determiningTransferCheckResult,
-        proxyObligation
-      })
+    const trx = await BatchPositionModel.startDbTransaction()
+    const transferId = input.transferId
 
-      const accountPayer = await Participant.getAccountByNameAndCurrency(
-        input.payload.payerFsp,
-        input.payload.amount.currency,
-        Enum.Accounts.LedgerAccountType.POSITION
-      )
-      const allSettlementModels = await SettlementModelCached.getAll()
-      const allParticipantCurrencyIds = await BatchPositionModelCached
-        .getParticipantCurrencyByParticipantIds(trx, [accountPayer.participantId])
-      
-      assert(allParticipantCurrencyIds, 'Expected allParticipantCurrencyIds to be defined.')
-      assert(allParticipantCurrencyIds.length === 2, 'Expected 2 allParticipantCurrencyIds.')
-      
-      // Get the position (obtain a lock).
-      // const { settlementCurrencyIds, accountIdMap } = await _constructRequiredMaps(participantCurrencyIds, allSettlementModels, trx)
-      const positions = await BatchPositionModel.getPositionsByAccountIdsForUpdate(trx, [
-        ...allParticipantCurrencyIds.map(currency => currency.participantCurrencyId)
-      ])
-      assert(positions)
-      const settlementAccount = allParticipantCurrencyIds
-        .find(currency => currency.ledgerAccountTypeId === Enum.Accounts.LedgerAccountType.SETTLEMENT)
-      assert(settlementAccount, 'No settlementAccount found.')
-      const settlementPositionAccount = positions[settlementAccount.participantCurrencyId]
-      // get the participant limit
-      const participantLimit = await ParticipantFacade.getParticipantLimitByParticipantCurrencyLimit(
-        accountPayer.participantId,
-        input.payload.amount.currency,
-        Enum.Accounts.LedgerAccountType.POSITION,
-        Enum.Accounts.ParticipantLimitType.NET_DEBIT_CAP
-      )
-      let accumulatedTransferStates: Record<string, string> = {}
-      accumulatedTransferStates[input.transferId] = 'RECEIVED_PREPARE'
-      // transform into something so we can call prepare.processPositionPrepareBin
-      // take the prepare result and do something with it.
-      const prepareActionResult = await PositionPrepareDomain.processPositionPrepareBin(
-        [{
-          decodedPayload: input.payload,
-          message: {
-            value: {
-              content: {
-                context: {
-                  cyrilResult
-                }
+    // get the currencyId from the currency string
+    // const currencyId = await 
+    const { messageKey, cyrilResult } = await this.deps.definePositionParticipant({
+      payload: proxyObligation.payloadClone,
+      isFx: false,
+      determiningTransferCheckResult,
+      proxyObligation
+    })
+    const accountID = messageKey
+    assert(typeof accountID === 'string', 'Expected typeof `accountID` to be `string`.')
+    assert(accountID !== '0', `Expected accountId to !== '0'.`)
+
+    const accountPayer = await Participant.getAccountByNameAndCurrency(
+      input.payload.payerFsp,
+      input.payload.amount.currency,
+      Enum.Accounts.LedgerAccountType.POSITION
+    )
+    const allSettlementModels = await SettlementModelCached.getAll()
+    const allParticipantCurrencyIds = await BatchPositionModelCached
+      .getParticipantCurrencyByParticipantIds(trx, [accountPayer.participantId])
+
+    assert(allParticipantCurrencyIds, 'Expected allParticipantCurrencyIds to be defined.')
+    assert(allParticipantCurrencyIds.length === 2, 'Expected 2 allParticipantCurrencyIds.')
+
+    // Get the position (obtain a lock).
+    // const { settlementCurrencyIds, accountIdMap } = await _constructRequiredMaps(participantCurrencyIds, allSettlementModels, trx)
+    const positions = await BatchPositionModel.getPositionsByAccountIdsForUpdate(trx, [
+      ...allParticipantCurrencyIds.map(currency => currency.participantCurrencyId)
+    ])
+    assert(positions)
+    const settlementAccount = allParticipantCurrencyIds
+      .find(currency => currency.ledgerAccountTypeId === Enum.Accounts.LedgerAccountType.SETTLEMENT)
+    assert(settlementAccount, 'No settlementAccount found.')
+    const settlementPositionAccount = positions[settlementAccount.participantCurrencyId]
+    // get the participant limit
+    const participantLimit = await ParticipantFacade.getParticipantLimitByParticipantCurrencyLimit(
+      accountPayer.participantId,
+      input.payload.amount.currency,
+      Enum.Accounts.LedgerAccountType.POSITION,
+      Enum.Accounts.ParticipantLimitType.NET_DEBIT_CAP
+    )
+    let accumulatedTransferStates: Record<string, string> = {}
+    accumulatedTransferStates[input.transferId] = 'RECEIVED_PREPARE'
+    // transform into something so we can call prepare.processPositionPrepareBin
+    // take the prepare result and do something with it.
+    const prepareActionResult = await PositionPrepareDomain.processPositionPrepareBin(
+      [{
+        decodedPayload: input.payload,
+        message: {
+          value: {
+            content: {
+              context: {
+                cyrilResult
               }
             }
           }
-        }],
-        {
-          accumulatedPositionValue: 0,
-          accumulatedPositionReservedValue: 0,
-          accumulatedTransferStates,
-          // How do we get this?
-          settlementParticipantPosition: settlementPositionAccount.value,
-          participantLimit,
-          changePositions: true
         }
+      }],
+      {
+        accumulatedPositionValue: 0,
+        accumulatedPositionReservedValue: 0,
+        accumulatedTransferStates,
+        // How do we get this?
+        settlementParticipantPosition: settlementPositionAccount.value,
+        participantLimit,
+        changePositions
+      }
+    )
+    // Update accumulated position values by calling a facade function
+    // LD: I don't understand this, since positions[accountID].participantPositionId,
+    // would only apply to one `positions[accountID].participantPositionId`.
+
+    // await BatchPositionModel.updateParticipantPosition(
+    //   trx,
+    //   positions[accountID].participantPositionId,
+    //   accumulatedPositionValue,
+    //   accumulatedPositionReservedValue
+    // )
+    await BatchPositionModel.bulkInsertTransferStateChanges(trx, prepareActionResult.accumulatedTransferStates)
+    const fetchedTransferStateChanges = await BatchPositionModel.
+      getLatestTransferStateChangesByTransferIdList(
+        trx,
+        prepareActionResult.accumulatedTransferStateChanges.map(item => item.transferId)
       )
-      await BatchPositionModel.bulkInsertParticipantPositionChanges(trx, {
-        TODO
-      })
-      
 
 
+    if (changePositions) {
+      // Mutate accumulated positionChanges with transferStateChangeIds and fxTransferStateChangeIds
+      for (const positionChange of prepareActionResult.accumulatedPositionChanges) {
+        positionChange.transferStateChangeId = fetchedTransferStateChanges[positionChange.transferId].transferStateChangeId
+        // TODO: need to rewrite these somehow.
+        // positionChange.participantPositionId = position.participantPositionId
+        // positionChange.participantCurrencyId = accountID
+      }
 
+      // Bulk insert accumulated positionChanges by calling a facade function.
+      await BatchPositionModel.bulkInsertParticipantPositionChanges(
+        trx, prepareActionResult.accumulatedPositionChanges,
+      )
     }
+  }
 
   /**
    * @description Figure out if the participants in the Payment message are native to the scheme

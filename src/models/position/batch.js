@@ -41,6 +41,12 @@ const startDbTransaction = async () => {
   return trx
 }
 
+/**
+ * 
+ * @param {*} trx 
+ * @param {*} transfersIdList 
+ * @returns {Promise<Record<{string, any}>>}
+ */
 const getLatestTransferStateChangesByTransferIdList = async (trx, transfersIdList) => {
   const knex = Db.getKnex()
   try {
