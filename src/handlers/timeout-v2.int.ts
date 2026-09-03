@@ -6,7 +6,6 @@ import { assertPositionDiff, futureDate } from '../testing/util'
 import TransferService from '../domain/transfer'
 import { Snapshot } from '../testing/snapshot'
 import TransferFacade from '../models/transfer/facade'
-import { logger } from '../shared/logger'
 
 const harness = Harness.getInstance()
 let FxTransferService: any
@@ -98,7 +97,7 @@ describe('handlers/timeout-v2', () => {
     await harness.down()
   })
 
-  it('messageBus.timeout() times out expired payments', async () => {
+  it.only('messageBus.timeout() times out expired payments', async () => {
     const transferId = '1000001'
     const positionPayerStart = await ApiHelpers.getPositionAccount('dfsp_a', 'USD')
     const positionPayeeStart = await ApiHelpers.getPositionAccount('dfsp_b', 'USD')

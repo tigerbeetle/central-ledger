@@ -56,9 +56,6 @@ const KafkaConsumer = require('@mojaloop/central-services-stream').Util.Consumer
 const Utility = require('@mojaloop/central-services-shared').Util.Kafka
 
 import AdminHandler from '../handlers/admin/handler'
-import PositionHandler from '../handlers/positions/handler'
-import PositionBatchHandler from '../handlers/positions/handlerBatch'
-
 import ParticipantCached from '../models/participant/participantCached'
 import ParticipantCurrencyCached from '../models/participant/participantCurrencyCached'
 import ParticipantLimitCached from '../models/participant/participantLimitCached'
@@ -76,6 +73,7 @@ import { MessageBus } from "../messaging/message-bus"
 import { PositionHandlerV2 } from "../handlers/position-v2"
 import Expect from "./expect"
 import { TimeoutHandlerV2 } from "../handlers/timeout-v2"
+import { LedgerSql } from "../domain/ledger/ledger-sql"
 
 const logger = Logger.child({ scope: 'harness' })
 
@@ -132,6 +130,7 @@ export default class Harness {
   private _messageBus: MessageBus | null = null
   private _expect: Expect | null = null
   private _timeoutHandlerV2: TimeoutHandlerV2 | null = null
+  private _ledger: LedgerSql | null = null
 
   /**
    * 
@@ -377,6 +376,11 @@ export default class Harness {
     return this._expect
   }
 
+  get ledger(): LedgerSql {
+    assert(this._ledger, 'Ledger not initialized. Did you forget to call setupGlobals()?')
+    return this._ledger
+  }
+
   /**
    * Override the Application Config.
    */
@@ -417,6 +421,11 @@ export default class Harness {
       case 'topic-notification-event': {
         assertNestedFields(parsed, 'metadata.event.action')
         switch (parsed.metadata.event.action) {
+          case 'limit-adjustment': {
+            assert(parsed.from)
+            correlationId = parsed.from
+            break;
+          } 
           case 'fx-prepare-duplicate': 
           case 'forwarded':
           case 'fx-forwarded': 
@@ -533,9 +542,23 @@ export default class Harness {
     this._enums = await Enums.getEnums('all')
 
     // Set up the MessageBus.
-    this._dispatchHandler = new DispatchTransferHandler(this.config)
+    const {
+      createRemittanceEntityPayment,
+      createRemittanceEntityForex,
+    } = require('../handlers/transfers/createRemittanceEntity')
+    const { definePositionParticipant } = require('../handlers/transfers/prepare')
+
     const positionHandlerV2 = new PositionHandlerV2(this.config)
-    this._timeoutHandlerV2 = new TimeoutHandlerV2(this.config)
+    this._ledger = new LedgerSql({
+      config: this.config,
+      enums: this._enums,
+      proxyCache: ProxyCache,
+      positionHandler: positionHandlerV2,
+      createRemittanceEntity: createRemittanceEntityPayment,
+      definePositionParticipant
+    })
+    this._dispatchHandler = new DispatchTransferHandler(this.config, this._ledger)
+    this._timeoutHandlerV2 = new TimeoutHandlerV2(this.config, this._ledger)
     this._messageBus = new MessageBus({
       config: this.config,
       handlers: {
@@ -634,7 +657,7 @@ environment!\n ${err.message}`)
   }
 
   /**
-   * @description Like `redpandaDrain()`, but looks only for messages matching a transfer id.
+   * @description Look for messages related to a correlation id.
    */
   public async redpandaDrainSmart(numMessages: number, id: string, attempts: number = 20): 
     Promise<Array<MojaloopKafkaMessage>> {
@@ -702,72 +725,6 @@ Found only ${markNew} new messages.`)
     }
 
     return []
-  }
-
-  /**
-   * @description Wait for redpanda to produce and consume _n_ messages.
-   */
-  public async redpandaDrain(markLast: number, numMessages: number, attempts: number = 20): Promise<void> {
-    const start = performance.now()
-    assert(markLast >= 0)
-    assert(numMessages >= 0)
-
-    let delayMs = 10
-    let markNew = this.messageQueue.length
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        markNew = this.messageQueue.length
-        if (markNew < markLast) {
-          throw new Error(`It appears redpanda went backwards! markLast: ${markLast} --> ${markNew}`)
-        }
-
-        if (markNew > (markLast + numMessages)) {
-          const errorMessage = `Redpanda expected to consume: ${numMessages}, but consumed: ${markNew - markLast}`
-          logger.error(errorMessage)
-          this.printLast(markNew - markLast)
-          throw new Error(errorMessage)
-        }
-
-        if (markNew === (markLast + numMessages)) {
-          const end = performance.now()
-          logger.info(`Redpanda consumed ${numMessages} message${numMessages === 1 ? ' ' : 's'} after ${(end - start).toFixed(0).padStart(4)}ms.`)
-
-          // Cool down for 20ms, check that there are no late messages.
-          await new Promise(resolve => setTimeout(resolve, 20))
-          const extraMessages = this.messageQueue.length - markNew
-          assert(extraMessages >= 0)
-          if (extraMessages !== 0) {
-            const errorMessage = `After cooldown, Redpanda consumed ${extraMessages} extra message${extraMessages === 1 ? ' ' : 's'}.`
-            logger.error(errorMessage)
-
-            this.printLast(numMessages + extraMessages)
-            throw new Error(errorMessage)
-          }
-
-          return
-        }
-
-        throw new Error('Not ready')
-      } catch (err: any) {
-        if (attempt === attempts) {
-          const error = new Error(`redpandaDrain() failed to consume ${numMessages} messages after ${attempts} attempts.\
-Found only ${markNew - markLast} new messages.`)
-          logger.error(error.message)
-          logger.error(error.stack)
-          this.printLast(markNew - markLast)
-          throw error
-        }
-
-        if (err.message !== 'Not ready') {
-          logger.error(err.message)
-          throw err
-        }
-
-        // Slowly back off.
-        delayMs = Math.floor((delayMs * 1.1) + 10)
-        await new Promise(resolve => setTimeout(resolve, delayMs))
-      }
-    }
   }
 
   /**

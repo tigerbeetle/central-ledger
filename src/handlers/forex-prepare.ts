@@ -38,6 +38,7 @@ import { assertNestedFields } from '../lib/config/util'
 import { Effect, MessageBus } from '../messaging/message-bus'
 import { PositionHandlerV2, PositionResultType } from './position-v2'
 import { CreateRemittanceEntityForex, FxTransferProxyObligation, ProxyCache } from './transfer-types'
+import { LedgerSql } from '../domain/ledger/ledger-sql'
 const { decodePayload } = Util.StreamingProtocol
 const Participant = require('../domain/participant')
 const { Type, Action } = Enum.Events.Event
@@ -46,7 +47,8 @@ const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const { FSPIOPError } = ErrorHandler
 
 interface Dependencies {
-  config: ApplicationConfig
+  config: ApplicationConfig,
+  ledger: LedgerSql,
   proxyCache: ProxyCache,
   createRemittanceEntity: CreateRemittanceEntityForex,
   positionHandler: PositionHandlerV2
@@ -180,10 +182,10 @@ export class ForexPrepareHandler {
     const results = await Promise.allSettled(inputs.map(async ({ input }) => this.handleOne(input)))
     results.forEach(result => {
       if (result.status === 'fulfilled' && result.value.type !== ForexPrepareResultType.PASS) {
-        logger.info(`handleOne() returned non-success: \n\t${JSON.stringify(result.value)}`)
+        logger.info(`ForexPrepareHandler.handleOne() returned non-success: \n\t${JSON.stringify(result.value)}`)
       }
       if (result.status === 'rejected') {
-        logger.error(`handleOne() failed with error: \n\t${result.reason}`)
+        logger.error(`ForexPrepareHandler.handleOne() failed with error: \n\t${result.reason}`)
         if (result.reason.stack) logger.error(`stack\n\t${result.reason.stack}`)
       }
     })

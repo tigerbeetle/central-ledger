@@ -1,14 +1,13 @@
-import { Enum, LedgerAccountTypeEnum } from '@mojaloop/central-services-shared'
-import Harness from './harness'
-
-import ParticipantService from '../domain/participant/index'
-import SettlementModelService from '../domain/settlement'
-
 import assert from "node:assert"
+import { randomUUID } from 'node:crypto'
 
+import { Enum, LedgerAccountTypeEnum } from '@mojaloop/central-services-shared'
 import Logger from "@mojaloop/central-services-logger"
+import Harness from './harness'
+import ParticipantService from '../domain/participant/index'
 import { Snapshot } from './snapshot'
 import { sleepSeconds } from './util'
+import { SettlementModel } from "../domain/settlement"
 
 const { ilpFactory, ILP_VERSIONS } = require('@mojaloop/sdk-standard-components').Ilp
 const ilpService = ilpFactory(ILP_VERSIONS.v1, { secret: 'password', logger: Logger })
@@ -35,17 +34,12 @@ export interface CreateHubPayload {
  */
 export const createHub = async (harness: Harness, payload: CreateHubPayload): Promise<void> => {
   assert.equal(payload.currencies.length, payload.settlementModels.length)
-  for (const currency of payload.currencies) {
-    await ParticipantService.createHubAccount(
-      harness.config.HUB_ID, currency, Enum.Accounts.LedgerAccountType.HUB_RECONCILIATION
-    )
-    await ParticipantService.createHubAccount(
-      harness.config.HUB_ID, currency, Enum.Accounts.LedgerAccountType.HUB_MULTILATERAL_SETTLEMENT
-    )
-  }
-
-  for (const settlementModel of payload.settlementModels) {
-    await SettlementModelService.createSettlementModel(settlementModel)
+  for (let idx = 0; idx < payload.currencies.length; idx++) {
+    const currency = payload.currencies[idx]
+    const settlementModel = payload.settlementModels[idx]
+    await harness.ledger.createHubAccount({
+      currency, settlementModel
+    })
   }
 }
 
@@ -63,7 +57,7 @@ export type CreateDfspPayload = {
 /**
  * Creates a DFSP.
  */
-export const createDfsp = async (harness: Harness, payload: CreateDfspPayload): Promise<void> => {
+export const createDfspOld = async (harness: Harness, payload: CreateDfspPayload): Promise<void> => {
   const accountTypes: Array<LedgerAccountTypeEnum> = [
     Enum.Accounts.LedgerAccountType.POSITION,
     Enum.Accounts.LedgerAccountType.SETTLEMENT
@@ -99,11 +93,9 @@ export const createDfsp = async (harness: Harness, payload: CreateDfspPayload): 
       },
       initialPosition: limit.initialPosition
     }
-    const mark = harness.redpandaMark()
     let result = await ParticipantService.addLimitAndInitialPosition(name, payload)
     assert.equal(result, true)
-    // TODO: drain smart, but we don't have an id to look for...
-    await harness.redpandaDrain(mark, 1)
+    await harness.redpandaDrainSmart(1, name)
 
     result = await ParticipantService.getPositions(name, { currency })
     Snapshot.from(`{
@@ -130,13 +122,13 @@ export const createDfsp = async (harness: Harness, payload: CreateDfspPayload): 
     );
     assert(settlementAccount, 'Settlement account not found');
 
-    const mark = harness.redpandaMark()
+    const transferId = `${name}_${currency}_01`
     await ParticipantService.recordFundsInOut(
       payload,
-      { name, id: settlementAccount.participantCurrencyId, transferId: `${name}_${currency}_01` },
+      { name, id: settlementAccount.participantCurrencyId, transferId },
       harness.enums
     )
-    await harness.redpandaDrain(mark, 1)
+    await harness.redpandaDrainSmart(1, transferId)
 
     // Annoyingly we still have a position update race condition here.
     await sleepSeconds(2)
@@ -156,6 +148,63 @@ export const createDfsp = async (harness: Harness, payload: CreateDfspPayload): 
   }
 }
 
+export const createDfsp = async (harness: Harness, payload: CreateDfspPayload): Promise<void> => {
+  const accountTypes: Array<LedgerAccountTypeEnum> = [
+    Enum.Accounts.LedgerAccountType.POSITION,
+    Enum.Accounts.LedgerAccountType.SETTLEMENT
+  ]
+  const { name, currencies, isProxy, initialPostionsAndLimits, deposits } = payload;
+  assert.equal(currencies.length, initialPostionsAndLimits.length)
+  assert.equal(currencies.length, deposits.length)
+
+  // First create on the Ledger.
+  const result = await harness.ledger.createDfsp({
+    dfspId: payload.name,
+    currencies: payload.currencies,
+    isProxy: payload.isProxy,
+  })
+  if (result.type === 'ALREADY_EXISTS') {
+    return;
+  }
+  if (result.type === 'FAILURE') {
+    throw result.error
+  }
+
+  // Then deposit.
+  const depositResults = await Promise.allSettled(deposits.map(async (deposit, idx) => {
+    const currency = currencies[idx]
+    const result = await harness.ledger.deposit({
+      // TODO: this id should be from somewhere else
+      transferId: randomUUID(),
+      dfspId: payload.name,
+      currency,
+      amount: deposit,
+      reason: 'Initial provisioning deposit'
+    })
+    if (result.type === 'FAILURE') {
+      throw result.error
+    }
+    if (result.type === 'ALREADY_EXISTS') {
+      return
+    }
+
+    await harness.ledger.setNetDebitCap({
+      netDebitCapType: "LIMITED",
+      dfspId: name,
+      currency,
+      amount: deposit
+    })
+  }))
+
+  const depositErrors = depositResults.reduce((acc, curr) => {
+    if (curr.status === 'rejected') acc.push(curr.reason)
+    return acc
+  }, [] as Array<Error>)
+  if (depositErrors.length > 0) {
+    throw new Error(`${depositErrors.length} deposit(s) failed with errors: \n[${depositErrors.join(',')}]`)
+  }
+}
+
 /**
  * Helper to get dfsp positions.
  */
@@ -172,6 +221,36 @@ export const getPositionAccount = async (name: string, currency: string) => {
 
   assert(account, `No position account found for name: ${name} + currency: ${currency}.`)
   return account;
+}
+
+
+/**
+ * Helper to set up the Hub.
+ * @example
+ * // Set up the hub for `USD` with default settlement model.
+ * await ApiHelpers.buildHub()
+ *     .deps(harness)
+ *     .currency('USD')
+ *     .build()
+ *     .create()
+ */
+export function buildHub(): HubBuilder {
+  return new HubBuilder()
+}
+
+/**
+ * Helper to build a Dfsp and run lifecycle operations
+ * @example
+ * // Create dfsp 'dfsp_b' with USD and default deposit (10,000).
+ * const dfsp = await ApiHelpers.buildDfsp()
+ *     .deps(harness)
+ *     .name('dfsp_b')
+ *     .currency('USD')
+ *     .build()
+ *     .create()
+ */
+export function buildDfsp(): DfspBuilder {
+  return new DfspBuilder()
 }
 
 /**
@@ -324,7 +403,7 @@ export class Payment {
     }
 
     await this.options.harness.redpandaDrainSmart(this.expectedMessagesFulfil(), this.options.transferId)
-    
+
     return this
   }
 
@@ -361,6 +440,160 @@ export class Payment {
       case 'UNFUSE': return 2
       case 'FUSE': return 1
     }
+  }
+}
+
+export interface HubOptions {
+  harness: Harness
+  currencies: Array<string>
+  settlementModels: Array<CreateSettlementModelPayload>
+}
+
+export class Hub {
+  public constructor(private options: HubOptions) { }
+
+  public async create(): Promise<this> {
+    const payload: CreateHubPayload = {
+      currencies: this.options.currencies,
+      settlementModels: this.options.settlementModels,
+    }
+
+    await createHub(this.options.harness, payload)
+
+    return this
+  }
+
+  public async settle(): Promise<this> {
+    throw new Error('not implemented')
+  }
+}
+
+export class HubBuilder {
+  private harness!: Harness
+  private currencies: Array<string> = []
+  private settlementModels: Array<CreateSettlementModelPayload> = []
+  
+  deps(harness: Harness): this {
+    this.harness = harness
+    return this
+  }
+
+  // For now just defaults to multilateral net.
+  currency(name: string): this {
+    this.currencies.push(name)
+    const model: CreateSettlementModelPayload = {
+      name: `DEFERRED_MULTILATERAL_NET_${name}`,
+      settlementGranularity: 'NET',
+      settlementInterchange: 'MULTILATERAL',
+      settlementDelay: 'DEFERRED',
+      currency: name,
+      requireLiquidityCheck: true,
+      ledgerAccountType: 'POSITION',
+      settlementAccountType: 'SETTLEMENT',
+      autoPositionReset: true
+    }
+    this.settlementModels.push(model)
+
+    return this
+  }
+
+  build(): Hub {
+    assert(this.harness)
+    assert.equal(this.currencies.length, this.settlementModels.length)
+
+    const options: HubOptions = {
+      harness: this.harness,
+      currencies: this.currencies,
+      settlementModels: this.settlementModels
+    }
+
+    return new Hub(options)
+  }
+}
+
+
+export interface DfspOptions {
+  harness: Harness,
+  name: string,
+  currencies: Array<string>,
+  initialPostionsAndLimits: Array<{
+    value: number,
+    initialPosition: number
+  }>,
+  deposits: Array<number>
+  isProxy: boolean
+}
+
+export class Dfsp {
+  public constructor(private options: DfspOptions) { }
+
+  public async create(): Promise<this> {
+    const payload: CreateDfspPayload = {
+      name: this.options.name,
+      currencies: this.options.currencies,
+      initialPostionsAndLimits: this.options.initialPostionsAndLimits,
+      deposits: this.options.deposits,
+      isProxy: this.options.isProxy
+    }
+
+    await createDfsp(this.options.harness, payload)
+    return this
+  }
+
+  public async disable(): Promise<this> {
+    throw new Error('Not implemented')
+  }
+
+  public async enable(): Promise<this> {
+    throw new Error('Not implemented')
+  }
+
+}
+
+export class DfspBuilder {
+  private harness!: Harness
+  private _name!: string
+  private currencies: Array<string> = []
+  private _proxy: boolean = false
+  private initialPostionsAndLimits: Array<{ initialPosition: number, value: number }> = []
+  private deposits: Array<number> = []
+
+  deps(harness: Harness): this {
+    this.harness = harness
+    return this
+  }
+
+  name(name: string): this {
+    this._name = name
+    return this
+  }
+
+  currency(name: string, initialPosition: number = 0, deposit: number = 10000): this {
+    this.currencies.push(name)
+    this.initialPostionsAndLimits.push({ initialPosition, value: deposit })
+    this.deposits.push(deposit)
+
+    return this
+  }
+
+  proxy(): this {
+    this._proxy = true
+    return this
+  }
+
+  build(): Dfsp {
+    assert(this.harness)
+
+    const options: DfspOptions = {
+      harness: this.harness,
+      name: this._name,
+      currencies: this.currencies,
+      initialPostionsAndLimits: this.initialPostionsAndLimits,
+      deposits: this.deposits,
+      isProxy: this._proxy
+    }
+
+    return new Dfsp(options)
   }
 }
 

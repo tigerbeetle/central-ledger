@@ -1431,13 +1431,21 @@ const reconciliationTransferPrepare = async function (payload, transactionTimest
         })
         .transacting(trx)
 
-      // Retrieve hub reconciliation account for the specified currency
-      const { reconciliationAccountId } = await knex('participantCurrency')
+      // Retrieve hub reconciliation account for the specified currency.
+      const reconciliationAccountIdResult = await knex('participantCurrency')
         .select('participantCurrencyId AS reconciliationAccountId')
         .where('participantId', Config.HUB_ID)
         .andWhere('currencyId', payload.amount.currency)
         .first()
         .transacting(trx)
+
+      if (!reconciliationAccountIdResult) {
+        throw ErrorHandler.Factory.createFSPIOPError(
+          ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR,
+          `Hub reconciliation account not found for currency: ${payload.amount.currency}`
+        )
+      }
+      const { reconciliationAccountId } = reconciliationAccountIdResult
 
       // Get participantId based on participantCurrencyId
       const { participantId } = await knex('participantCurrency')
@@ -1695,6 +1703,17 @@ const recordFundsIn = async (payload, transactionTimestamp, enums) => {
   })
 }
 
+/**
+ * @param {Object} payload
+ * @param {Date} transactionDate
+ * @param {Object} enums
+ * @returns {Promise<void>}
+ */
+const recordFundsInV2 = async (payload, transactionDate, enums) => {
+  const transactionTimestamp = Time.getUTCString(transactionDate)
+  return recordFundsIn(payload, transactionTimestamp, enums)
+}
+
 const TransferFacade = {
   getById,
   getByIdLight,
@@ -1714,6 +1733,7 @@ const TransferFacade = {
   reconciliationTransferAbort,
   getTransferParticipant,
   recordFundsIn,
+  recordFundsInV2,
   updatePrepareReservedForwarded
 }
 

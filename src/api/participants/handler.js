@@ -305,7 +305,7 @@ const getLimitsForAllParticipants = async function (request) {
 
 const adjustLimits = async function (request, h) {
   try {
-    const result = await ParticipantService.adjustLimits(request.params.name, request.payload)
+    const result = await ParticipantService.adjustLimitsV2(request.params.name, request.payload)
     const { participantLimit } = result
     const updatedLimit = {
       currency: request.payload.currency,

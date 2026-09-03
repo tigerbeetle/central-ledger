@@ -27,10 +27,8 @@
 import { after, before, describe, it } from "node:test"
 import assert from "node:assert"
 import Harness from '../../testing/harness'
-import { Snapshot } from "../../testing/snapshot"
 import * as ApiHelpers from '../../testing/api-helpers'
-import { assertPositionDiff, futureDate, sleepSeconds } from "../../testing/util"
-import TimeoutHandler from '../timeouts/handler'
+import { assertPositionDiff, futureDate } from "../../testing/util"
 
 const harness = Harness.getInstance()
 let ExternalParticipantCached: any

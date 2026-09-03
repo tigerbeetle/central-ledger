@@ -1,12 +1,33 @@
+export interface ParticipantCurrency {
+  participantCurrencyId: number
+  participantId: number
+  currencyId: string
+  ledgerAccountTypeId: number
+  isActive: number
+  createdDate: string
+  createdBy: string
+}
+
+export interface Participant {
+  participantId: number
+  name: string
+  description: string | null
+  isActive: number
+  createdDate: string
+  createdBy: string
+  isProxy: number
+  currencyList: ParticipantCurrency[]
+}
+
 export function create(payload: any): Promise<any>
 export function ensureExists(name: string): Promise<void>
 export function getAll(): Promise<any>
-export function getById(id: any): Promise<any>
-export function getByName(name: string): Promise<any>
+export function getById(id: any): Promise<Participant | undefined>
+export function getByName(name: string): Promise<Participant | undefined>
 export function getLedgerAccountTypeName(ledgerAccountTypeId: any): Promise<string>
 export function update(name: string, payload: any): Promise<any>
 export function createParticipantCurrency(participantId: any, currencyId: any, ledgerAccountTypeId: any, isActive: boolean): Promise<any>
-export function createHubAccount(currencyId: any, ledgerAccountTypeId: any, ledgerAccountTypeId: any): Promise<any>
+export function createHubAccount(participantId: number, currencyId: any, ledgerAccountTypeId: any): Promise<any>
 export function getParticipantCurrencyById(participantCurrencyId: any): Promise<any>
 export function destroyByName(name: string): Promise<void>
 export function addEndpoint(name: string, payload: { type: string, value: string }): Promise<any>
@@ -21,6 +42,7 @@ export function destroyParticipantPositionByNameAndCurrency(name: string, curren
 export function destroyParticipantLimitByNameAndCurrency(name: string, currencyId: any): Promise<void>
 export function getLimits(name: string, params?: any): Promise<any>
 export function adjustLimits(name: string, params: any): Promise<any>
+export function adjustLimitsV2(name: string, params: any, trx?: any): Promise<any>
 export function getPositions(name: string, query?: any): Promise<any>
 
 

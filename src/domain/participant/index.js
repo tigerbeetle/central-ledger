@@ -559,6 +559,32 @@ const adjustLimits = async (name, payload) => {
   }
 }
 
+/**
+ * @function adjustLimitsV2
+ * @description This adds/updates limits for a participant, creating the limit if it doesn't exist.
+ *   This updated version doesn't produce any kafka messages.
+ */
+const adjustLimitsV2 = async (name, payload) => {
+  try {
+    const { limit, currency } = payload
+    const participant = await ParticipantFacade.getByNameAndCurrency(
+      name, currency, Enum.Accounts.LedgerAccountType.POSITION
+    )
+    participantExists(participant)
+    const result = await ParticipantFacade.adjustLimitsV2(
+      participant.participantCurrencyId, limit
+    )
+    payload.name = name
+
+    // TODO: remove this!
+    // await Kafka.produceGeneralMessage(Config.KAFKA_CONFIG, KafkaProducer, Enum.Events.Event.Type.NOTIFICATION, Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, createLimitAdjustmentMessageProtocol(payload), Enum.Events.EventStatus.SUCCESS)
+
+    return result
+  } catch (err) {
+    throw ErrorHandler.Factory.reformatFSPIOPError(err)
+  }
+}
+
 const createLimitAdjustmentMessageProtocol = (payload, action = Enum.Transfers.AdminNotificationActions.LIMIT_ADJUSTMENT, state = '', pp = '') => {
   return {
     id: randomUUID(),
@@ -899,6 +925,7 @@ module.exports = {
   destroyParticipantLimitByNameAndCurrency,
   getLimits,
   adjustLimits,
+  adjustLimitsV2,
   getPositions,
   getAccounts,
   updateAccount,
