@@ -45,7 +45,7 @@ interface Dependencies {
  */
 export class MessageBus {
   private config: ApplicationConfig
-  
+
   constructor(private deps: Dependencies) {
     this.config = deps.config
   }
@@ -88,35 +88,6 @@ export class MessageBus {
     return Consumer.getListOfTopics()
   }
 
-  // public async prepareOld(error: any, messages: Array<any>): Promise<void> {
-  //   const results = await this.deps.handlers.dispatchTransferHandler.prepare(error, messages)
-  //   const effects = this.collectEffects(results)
-
-  //   if (this.deps.config.HANDLERS_TRANSFER_POSITION_FUSE === 'UNFUSE') {
-  //     // Collect all messages to be emitted.
-  //     await this.emit(effects)
-  //     await this.commit('topic-transfer-prepare', messages)
-
-  //     return
-  //   }
-
-  //   assert(this.deps.config.HANDLERS_TRANSFER_POSITION_FUSE === 'FUSE')
-
-  //   // First emit any notifications from the prepare step.
-  //   const effectsNotification = effects.filter(effect => effect.functionality === 'notification')
-  //   await this.emit(effectsNotification)
-
-  //   const effectsPosition = effects.filter(effect => effect.functionality === 'position')
-  //   // Transform effectsPrepare to something that positionBatchHandler can tolerate.
-  //   const kafkaPrepares = effectsPosition.map(MessageBus.effectToKafkaMessage)
-  //   const resultsPosition = await this.positionMutex.runExclusive(async () => {
-  //     return await this.deps.handlers.positionBatchHandler.handle(error, kafkaPrepares)
-  //   })
-
-  //   await this.emit(this.collectEffects(resultsPosition))
-  //   await this.commit('topic-transfer-prepare', messages)
-  // }
-
   public async prepare(error: any, messages: Array<any>): Promise<void> {
     const results = await this.deps.handlers.dispatchTransferHandler.prepare(error, messages)
     await this.emit(this.collectEffects(results))
@@ -131,9 +102,7 @@ export class MessageBus {
 
   public async position(error: any, messages: Array<any>): Promise<void> {
     // This code path should only be called from an external handler, therefore it must be UNFUSE.
-
-    // TODO: reenable this assertion once we handle positions directly when doing timeouts.
-    // assert(this.deps.config.HANDLERS_TRANSFER_POSITION_FUSE === 'UNFUSE')
+    assert(this.deps.config.HANDLERS_TRANSFER_POSITION_FUSE === 'UNFUSE')
 
     const results = await this.deps.handlers.positionBatchHandler.handle(error, messages)
     const effects = results.reduce((acc: Array<Effect>, curr) => acc.concat(curr.effects), [])

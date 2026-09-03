@@ -36,9 +36,11 @@ const ParticipantService = require('../../domain/participant')
 const SettlementService = require('../../domain/settlement')
 const UrlParser = require('../../lib/urlParser')
 const Config = require('../../lib/config')
+console.log("Config.TMP_REFACTOR", Config.TMP_REFACTOR)
 const Enums = require('../../lib/enumCached')
 const rethrow = require('../../shared/rethrow')
 const fspiopErrorFactory = require('../../shared/fspiopErrorFactory')
+const assert = require('node:assert')
 const logger = require('../../shared/logger').logger
 
 const LocalEnum = {
@@ -49,12 +51,14 @@ const LocalEnum = {
 const entityItem = ({ name, createdDate, isActive, currencyList, isProxy }, ledgerAccountIds) => {
   const link = UrlParser.toParticipantUri(name)
   const accounts = currencyList.map((currentValue) => {
+    assert(typeof currentValue.createdDate === 'string')
     return {
       id: currentValue.participantCurrencyId,
       ledgerAccountType: ledgerAccountIds[currentValue.ledgerAccountTypeId],
       currency: currentValue.currencyId,
       isActive: currentValue.isActive,
       createdDate: new Date(currentValue.createdDate),
+      // createdDate: currentValue.createdDate,
       createdBy: currentValue.createdBy
     }
   })
@@ -104,14 +108,10 @@ const create = async function (request, h) {
       }
     }
     for (const settlementModel of settlementModels) {
-      const [participantCurrencyId1, participantCurrencyId2] = await Promise.all([
-        ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.ledgerAccountTypeId, false),
-        ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)])
-      if (Array.isArray(participant.currencyList)) {
-        participant.currencyList = participant.currencyList.concat([await ParticipantService.getParticipantCurrencyById(participantCurrencyId1), await ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
-      } else {
-        participant.currencyList = await Promise.all([ParticipantService.getParticipantCurrencyById(participantCurrencyId1), ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
-      }
+      const participantCurrencyId1 = await ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.ledgerAccountTypeId, false)
+      const participantCurrencyId2 = await ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)
+      assert(Array.isArray(participant.currencyList))
+      participant.currencyList = participant.currencyList.concat([await ParticipantService.getParticipantCurrencyById(participantCurrencyId1), await ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
     }
     return h.response(entityItem(participant, ledgerAccountIds)).code(201)
   } catch (err) {
@@ -200,7 +200,7 @@ const update = async function (request) {
     if (request.payload.isActive !== undefined) {
       const isActiveText = request.payload.isActive ? LocalEnum.activated : LocalEnum.disabled
       const changeLog = JSON.stringify(Object.assign({}, request.params, { isActive: request.payload.isActive }))
-      logger.isInfoEnabled && logger.info(`Participant has been ${isActiveText} :: ${changeLog}`)
+      logger.info(`Participant has been ${isActiveText} :: ${changeLog}`)
     }
     const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
     const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
@@ -264,12 +264,13 @@ const getLimits = async function (request) {
     const limits = []
     if (Array.isArray(result) && result.length > 0) {
       result.forEach(item => {
+        assert(item.thresholdAlarmPercentage !== undefined)
         limits.push({
           currency: (item.currencyId || request.query.currency),
           limit: {
             type: item.name,
             value: new MLNumber(item.value).toNumber(),
-            alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
+            alarmPercentage: new MLNumber(item.thresholdAlarmPercentage).toNumber()
           }
         })
       })
@@ -286,13 +287,14 @@ const getLimitsForAllParticipants = async function (request) {
     const limits = []
     if (Array.isArray(result) && result.length > 0) {
       result.forEach(item => {
+        assert(item.thresholdAlarmPercentage !== undefined)
         limits.push({
           name: item.name,
           currency: item.currencyId,
           limit: {
             type: item.limitType,
             value: new MLNumber(item.value).toNumber(),
-            alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
+            alarmPercentage: new MLNumber(item.thresholdAlarmPercentage).toNumber()
           }
         })
       })
@@ -305,14 +307,15 @@ const getLimitsForAllParticipants = async function (request) {
 
 const adjustLimits = async function (request, h) {
   try {
-    const result = await ParticipantService.adjustLimits(request.params.name, request.payload)
+    const result = await ParticipantService.adjustLimitsV2(request.params.name, request.payload)
     const { participantLimit } = result
+    assert(participantLimit.thresholdAlarmPercentage !== undefined)
     const updatedLimit = {
       currency: request.payload.currency,
       limit: {
         type: request.payload.limit.type,
         value: new MLNumber(participantLimit.value).toNumber(),
-        alarmPercentage: participantLimit.thresholdAlarmPercentage !== undefined ? new MLNumber(participantLimit.thresholdAlarmPercentage).toNumber() : undefined
+        alarmPercentage: new MLNumber(participantLimit.thresholdAlarmPercentage).toNumber()
       }
 
     }
@@ -329,10 +332,13 @@ const getPositions = async function (request) {
     // Convert value from string to number
     if (Array.isArray(result)) {
       // Multiple positions (no currency specified)
-      return result.map(position => ({
-        ...position,
-        value: position.value !== undefined ? new MLNumber(position.value).toNumber() : undefined
-      }))
+      return result.map(position => {
+        assert(position.value !== undefined)
+        return {
+          ...position,
+          value: new MLNumber(position.value).toNumber()
+        }
+      })
     } else if (result && typeof result === 'object' && result.value !== undefined) {
       // Single position (currency specified)
       return {
@@ -349,16 +355,18 @@ const getPositions = async function (request) {
 const getAccounts = async function (request) {
   try {
     const result = await ParticipantService.getAccounts(request.params.name, request.query)
+    assert(Array.isArray(result))
 
     // Convert value and reservedValue from string to number
-    if (Array.isArray(result)) {
-      return result.map(account => ({
+    return result.map(account => {
+      assert(account.value !== undefined)
+      assert(account.reservedValue !== undefined)
+      return {
         ...account,
-        value: account.value !== undefined ? new MLNumber(account.value).toNumber() : undefined,
-        reservedValue: account.reservedValue !== undefined ? new MLNumber(account.reservedValue).toNumber() : undefined
-      }))
-    }
-    return result
+        value: new MLNumber(account.value).toNumber(),
+        reservedValue: new MLNumber(account.reservedValue).toNumber(),
+      }
+    })
   } catch (err) {
     rethrowAndCountFspiopError(err, 'participantGetAccounts')
   }
@@ -373,7 +381,7 @@ const updateAccount = async function (request, h) {
     if (request.payload.isActive !== undefined) {
       const isActiveText = request.payload.isActive ? LocalEnum.activated : LocalEnum.disabled
       const changeLog = JSON.stringify(Object.assign({}, request.params, { isActive: request.payload.isActive }))
-      logger.isInfoEnabled && logger.info(`Participant account has been ${isActiveText} :: ${changeLog}`)
+      logger.info(`Participant account has been ${isActiveText} :: ${changeLog}`)
     }
     return h.response().code(200)
   } catch (err) {

@@ -56,9 +56,6 @@ const KafkaConsumer = require('@mojaloop/central-services-stream').Util.Consumer
 const Utility = require('@mojaloop/central-services-shared').Util.Kafka
 
 import AdminHandler from '../handlers/admin/handler'
-import PositionHandler from '../handlers/positions/handler'
-import PositionBatchHandler from '../handlers/positions/handlerBatch'
-
 import ParticipantCached from '../models/participant/participantCached'
 import ParticipantCurrencyCached from '../models/participant/participantCurrencyCached'
 import ParticipantLimitCached from '../models/participant/participantLimitCached'
@@ -68,7 +65,7 @@ const ExternalParticipantCached = require('../models/participant/externalPartici
 import Logger from "@mojaloop/central-services-logger"
 import knex from 'knex'
 import { ApplicationConfig, overrideForTesting, RecursivePartial, resetOverride } from "../lib/config"
-import { randomAvailablePort } from "./util"
+import { envOrDefaultNumber, randomAvailablePort } from "./util"
 import { Consumer } from "./kafka"
 import { Message } from "node-rdkafka"
 import { DispatchTransferHandler } from "../handlers/dispatch-transfer-handler"
@@ -76,16 +73,21 @@ import { MessageBus } from "../messaging/message-bus"
 import { PositionHandlerV2 } from "../handlers/position-v2"
 import Expect from "./expect"
 import { TimeoutHandlerV2 } from "../handlers/timeout-v2"
+import { LedgerSql } from "../domain/ledger/ledger-sql"
+import PRNG from "./prng"
+import {Clock} from "./mock-clock"
+import MockClock from "./mock-clock"
 
 const logger = Logger.child({ scope: 'harness' })
 
 let ProxyCache: any
+let SettlementModelCached: any
 
 export interface HarnessOptions {
   /**
    * A unique id used in naming and logs to disambiguate between multiple harness runs.
    */
-  id: number
+  id: number,
 }
 
 /**
@@ -120,6 +122,8 @@ export interface HarnessOptions {
 export default class Harness {
   private static instance: Harness | null = null;
   private options: HarnessOptions
+  private static _prng: PRNG
+  private static _clock: Clock
   private dependencyRedpanda: Redpanda
   private dependencyMySql: MySql
   private dependencyRedis: Redis
@@ -132,6 +136,7 @@ export default class Harness {
   private _messageBus: MessageBus | null = null
   private _expect: Expect | null = null
   private _timeoutHandlerV2: TimeoutHandlerV2 | null = null
+  private _ledger: LedgerSql | null = null
 
   /**
    * 
@@ -147,12 +152,22 @@ export default class Harness {
   public constructor(options: HarnessOptions) {
     this.options = options
 
+    if (!Harness._prng) {
+      logger.info('Harness.constructor() - lazy init prng.')
+      Harness._prng = new PRNG(envOrDefaultNumber('SEED', Math.floor(Math.random() * 1e8)))
+    }
+    if (!Harness._clock) {
+      logger.info('Harness.constructor() - lazy init clock.')
+      Harness._clock = new Clock()
+    }
+
     this.dependencyRedpanda = new Redpanda({
       harnessId: this.options.id
     })
 
     this.dependencyMySql = new MySql({
       harnessId: this.options.id,
+      clock: this.clock,
       databaseName: 'central_ledger',
       migration: {
         type: 'sql',
@@ -177,15 +192,7 @@ export default class Harness {
 
   public static getInstance(): Harness {
     if (!Harness.instance) {
-      let run = Harness.randomRunId()
-      if (process.env.RUN) {
-        try {
-          run = Number.parseInt(process.env.RUN)
-        } catch (err: any) {
-          throw new Error(`Invalid test run id. process.env.RUN should be an integer.`)
-        }
-      }
-
+      const run = envOrDefaultNumber('RUN', Harness.randomRunId())
       Harness.instance = new Harness({
         id: run,
       })
@@ -301,7 +308,7 @@ export default class Harness {
     this.applicationConfig = deepMerge(defaultConfig, override)
 
     this.omniConsumer = new Consumer('omniconsumer', kafkaBroker)
-    await this.omniConsumer?.subscribe([
+    await this.omniConsumer.subscribe([
       'topic-transfer-prepare',
       'topic-transfer-fulfil',
       'topic-transfer-position',
@@ -377,12 +384,35 @@ export default class Harness {
     return this._expect
   }
 
+  get ledger(): LedgerSql {
+    assert(this._ledger, 'Ledger not initialized. Did you forget to call setupGlobals()?')
+    return this._ledger
+  }
+
+  get prng() {
+    return Harness._prng
+  }
+
+  get clock() {
+    assert(Harness._clock, 'no Harness._clock, did you call `Harness.injectPrngAndPatchDateGlobal`?')
+    return Harness._clock
+  }
+
+  get seed(): number {
+    assert(Harness._prng, 'no Harness._prng, did you call `Harness.injectPrngAndPatchDateGlobal`?')
+    return Harness._prng.seed
+  }
+
   /**
    * Override the Application Config.
    */
   public configOverride(override: Partial<ApplicationConfig>): void {
+    // Override this instance.
     this.applicationConfigOriginal = this.applicationConfig
     this.applicationConfig = deepMerge(this.config, override)
+
+    // Override for global imports.
+    overrideForTesting(override)
   }
 
   /**
@@ -417,16 +447,21 @@ export default class Harness {
       case 'topic-notification-event': {
         assertNestedFields(parsed, 'metadata.event.action')
         switch (parsed.metadata.event.action) {
-          case 'fx-prepare-duplicate': 
-          case 'forwarded':
-          case 'fx-forwarded': 
-          case 'fx-fulfil': 
-          {
-            assertNestedFields(parsed, 'content.uriParams.id')
-            correlationId = parsed.content.uriParams.id
+          case 'limit-adjustment': {
+            assert(parsed.from)
+            correlationId = parsed.from
             break;
           }
-           case 'fx-prepare': {
+          case 'fx-prepare-duplicate':
+          case 'forwarded':
+          case 'fx-forwarded':
+          case 'fx-fulfil':
+            {
+              assertNestedFields(parsed, 'content.uriParams.id')
+              correlationId = parsed.content.uriParams.id
+              break;
+            }
+          case 'fx-prepare': {
             if (parsed.id) {
               correlationId = parsed.id
             } else {
@@ -459,23 +494,23 @@ export default class Harness {
         }
         break;
       }
-      case 'topic-transfer-position': 
+      case 'topic-transfer-position':
       case 'topic-transfer-position-batch': {
         assertNestedFields(parsed, 'metadata.event.action')
         switch (parsed.metadata.event.action) {
-          case 'commit': 
-          case 'fx-reserve': 
+          case 'commit':
+          case 'fx-reserve':
           case 'fx-abort':
-          case 'abort': 
-          case 'timeout-reserved': 
-          case 'fx-abort-validation': 
-          case 'fx-timeout-reserved': 
-          {
-            assertNestedFields(parsed, 'content.uriParams.id')
-            correlationId = parsed.content.uriParams.id
-            break;
-          }
-          case 'fx-prepare':  { 
+          case 'abort':
+          case 'timeout-reserved':
+          case 'fx-abort-validation':
+          case 'fx-timeout-reserved':
+            {
+              assertNestedFields(parsed, 'content.uriParams.id')
+              correlationId = parsed.content.uriParams.id
+              break;
+            }
+          case 'fx-prepare': {
             assertNestedFields(parsed, 'content.payload.commitRequestId')
             correlationId = parsed.content.payload.commitRequestId
             break;
@@ -484,7 +519,7 @@ export default class Harness {
             assertNestedFields(parsed, 'content.payload.transferId', `for action: ${parsed.metadata.event.action}`)
             correlationId = parsed.content.payload.transferId
           }
-        }   
+        }
         break;
       }
       default: {
@@ -516,7 +551,7 @@ export default class Harness {
     ProxyCache = require('../lib/proxyCache')
     await ProxyCache.connect()
 
-    const SettlementModelCached = require('../models/settlement/settlementModelCached')
+    SettlementModelCached = require('../models/settlement/settlementModelCached')
     await SettlementModelCached.initialize()
 
     await Db.connect(this.config.DATABASE)
@@ -533,9 +568,23 @@ export default class Harness {
     this._enums = await Enums.getEnums('all')
 
     // Set up the MessageBus.
-    this._dispatchHandler = new DispatchTransferHandler(this.config)
+    const {
+      createRemittanceEntityPayment,
+      createRemittanceEntityForex,
+    } = require('../handlers/transfers/createRemittanceEntity')
+    const { definePositionParticipant } = require('../handlers/transfers/prepare')
+
     const positionHandlerV2 = new PositionHandlerV2(this.config)
-    this._timeoutHandlerV2 = new TimeoutHandlerV2(this.config)
+    this._ledger = new LedgerSql({
+      config: this.config,
+      enums: this._enums,
+      proxyCache: ProxyCache,
+      positionHandler: positionHandlerV2,
+      createRemittanceEntity: createRemittanceEntityPayment,
+      definePositionParticipant
+    })
+    this._dispatchHandler = new DispatchTransferHandler(this.config, this._ledger)
+    this._timeoutHandlerV2 = new TimeoutHandlerV2(this.config, this._ledger)
     this._messageBus = new MessageBus({
       config: this.config,
       handlers: {
@@ -554,6 +603,16 @@ export default class Harness {
       logger.info('teardownGlobals()')
       assert(this.messageBus)
       await this.messageBus?.deinit()
+
+      // Reset the caches.
+      await ParticipantCached.invalidateParticipantsCache()
+      await ParticipantCurrencyCached.invalidateParticipantCurrencyCache()
+      await ParticipantLimitCached.invalidateParticipantLimitCache()
+      await ExternalParticipantCached.invalidateCache()
+      await SettlementModelCached.invalidateSettlementModelsCache()
+      await Enums.invalidateEnumCache()
+    
+      // await SettlementModelCached.disconnect()
       await ProxyCache.disconnect()
       await Cache.destroyCache()
       await Db.disconnect()
@@ -629,14 +688,10 @@ environment!\n ${err.message}`)
     }
   }
 
-  public redpandaMark(): number {
-    return this.messageQueue.length
-  }
-
   /**
-   * @description Like `redpandaDrain()`, but looks only for messages matching a transfer id.
+   * @description Look for messages related to a correlation id.
    */
-  public async redpandaDrainSmart(numMessages: number, id: string, attempts: number = 20): 
+  public async redpandaDrainSmart(numMessages: number, id: string, attempts: number = 50):
     Promise<Array<MojaloopKafkaMessage>> {
     const start = performance.now()
     let delayMs = 10
@@ -659,7 +714,7 @@ environment!\n ${err.message}`)
 
         if (markNew === numMessages) {
           const end = performance.now()
-          
+
           // Cool down for 20ms, check that there are no late messages.
           await new Promise(resolve => setTimeout(resolve, 20))
           const checkAgain = this.messageQueuePerId[id].length
@@ -702,72 +757,6 @@ Found only ${markNew} new messages.`)
     }
 
     return []
-  }
-
-  /**
-   * @description Wait for redpanda to produce and consume _n_ messages.
-   */
-  public async redpandaDrain(markLast: number, numMessages: number, attempts: number = 20): Promise<void> {
-    const start = performance.now()
-    assert(markLast >= 0)
-    assert(numMessages >= 0)
-
-    let delayMs = 10
-    let markNew = this.messageQueue.length
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        markNew = this.messageQueue.length
-        if (markNew < markLast) {
-          throw new Error(`It appears redpanda went backwards! markLast: ${markLast} --> ${markNew}`)
-        }
-
-        if (markNew > (markLast + numMessages)) {
-          const errorMessage = `Redpanda expected to consume: ${numMessages}, but consumed: ${markNew - markLast}`
-          logger.error(errorMessage)
-          this.printLast(markNew - markLast)
-          throw new Error(errorMessage)
-        }
-
-        if (markNew === (markLast + numMessages)) {
-          const end = performance.now()
-          logger.info(`Redpanda consumed ${numMessages} message${numMessages === 1 ? ' ' : 's'} after ${(end - start).toFixed(0).padStart(4)}ms.`)
-
-          // Cool down for 20ms, check that there are no late messages.
-          await new Promise(resolve => setTimeout(resolve, 20))
-          const extraMessages = this.messageQueue.length - markNew
-          assert(extraMessages >= 0)
-          if (extraMessages !== 0) {
-            const errorMessage = `After cooldown, Redpanda consumed ${extraMessages} extra message${extraMessages === 1 ? ' ' : 's'}.`
-            logger.error(errorMessage)
-
-            this.printLast(numMessages + extraMessages)
-            throw new Error(errorMessage)
-          }
-
-          return
-        }
-
-        throw new Error('Not ready')
-      } catch (err: any) {
-        if (attempt === attempts) {
-          const error = new Error(`redpandaDrain() failed to consume ${numMessages} messages after ${attempts} attempts.\
-Found only ${markNew - markLast} new messages.`)
-          logger.error(error.message)
-          logger.error(error.stack)
-          this.printLast(markNew - markLast)
-          throw error
-        }
-
-        if (err.message !== 'Not ready') {
-          logger.error(err.message)
-          throw err
-        }
-
-        // Slowly back off.
-        delayMs = Math.floor((delayMs * 1.1) + 10)
-        await new Promise(resolve => setTimeout(resolve, delayMs))
-      }
-    }
   }
 
   /**
@@ -849,6 +838,43 @@ Found only ${markNew - markLast} new messages.`)
 
   public static payloadsOf(messages: Array<MojaloopKafkaMessage>): Array<any> {
     return messages.map(message => message.valueParsed.content.payload)
+  }
+
+  public static injectPrngAndPatchDateGlobal(prng: PRNG, now?: Date): MockClock {
+    Harness._prng = prng
+    if (!now) {
+      now = new Date('2026-02-01T00:00:00.000Z')
+    }
+    const clock = new MockClock(prng, now)
+
+    // Harness._originalDate = global.Date
+    const OriginalDate = global.Date
+
+    global.Date = class extends OriginalDate {
+      constructor(...args: any[]) {
+        if (args.length === 0) {
+          super(clock.now.getTime())
+        } else {
+          // @ts-ignore
+          super(...args)
+        }
+      }
+
+      static now() {
+        return clock.now.getTime()
+      }
+
+      static parse(str: string) {
+        return OriginalDate.parse(str)
+      }
+
+      static UTC(...args: any[]) {
+        return (OriginalDate.UTC as any)(...args)
+      }
+    } as any
+
+    Harness._clock = clock
+    return clock
   }
 }
 
@@ -1047,7 +1073,8 @@ class Redpanda {
 
 interface DependencyOptionsMySql extends DependencyOptions {
   databaseName: string,
-  migration: MigrationOptions
+  migration: MigrationOptions,
+  clock: Clock
 }
 
 interface MigrationOptionsKnex {
@@ -1076,6 +1103,7 @@ class MySql {
   private options: DependencyOptionsMySql
   private containerName: string
   private _connectionOptions: MySqlConnectionOptions | null
+  private clock: Clock
 
   constructor(options: DependencyOptionsMySql) {
     assert(options)
@@ -1084,6 +1112,7 @@ class MySql {
     this.options = options;
     this.containerName = `int_${this.options.harnessId}_mysql`
     this._connectionOptions = null
+    this.clock = options.clock
   }
 
   public async up(): Promise<void> {
@@ -1259,6 +1288,10 @@ class MySql {
       },
       seeds: {
         directory: './src/seeds'
+      },
+      // @ts-ignore
+      userParams: {
+        clock: this.clock
       }
     })
   }
@@ -1346,6 +1379,9 @@ class MySql {
 
   private async seed(): Promise<void> {
     const knexClient = this.getKnexClient();
+    // knexClient.prototype.context = {
+    //   date: new Date('2026-01-02')
+    // }
     try {
       await knexClient.seed.run()
       logger.debug('seed() - complete.')

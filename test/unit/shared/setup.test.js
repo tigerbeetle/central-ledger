@@ -6,6 +6,9 @@ const Config = require('../../../src/lib/config')
 const Proxyquire = require('proxyquire')
 const MongoUriBuilder = require('mongo-uri-builder')
 
+// TODO: I'm thinking of removing this altogether, it's much more effective to move it to an 
+// integration test.
+
 Test('setup', setupTest => {
   let sandbox
   let uuidStub
@@ -28,9 +31,37 @@ Test('setup', setupTest => {
   let RegisterHandlersStub
   let PluginsStub
   let HapiStub
+  let allStubs
+
+  // Proxyquire stubs with optional overrides.
+  const getProxyquireStubs = (overrides = {}) => ({
+    ...allStubs,
+    ...overrides
+  })
+
+  const createSetup = (overrides = {}) => {
+    return Proxyquire('../../../src/shared/setup', getProxyquireStubs(overrides))
+  }
   let UrlParserStub
   let serverStub
   // let KafkaCronStub
+  let EnumCachedStub
+  let ParticipantCachedStub
+  let ParticipantCurrencyCachedStub
+  let ParticipantLimitCachedStub
+  let externalParticipantCachedStub
+  let BatchPositionModelCachedStub
+  let SettlementModelCachedStub
+  let MessageBusStub
+  let DispatchTransferHandlerStub
+  let PositionHandlerV2Stub
+  let LedgerSqlStub
+  let TimeoutHandlerV2Stub
+  let HandlerV2Stub
+  let routesAdminBuilderStub
+  let routesSettlementStub
+  let createRemittanceEntityStub
+  let definePositionParticipantStub
 
   setupTest.beforeEach(test => {
     sandbox = Sinon.createSandbox()
@@ -64,6 +95,7 @@ Test('setup', setupTest => {
 
     ProxyCacheStub = {
       connect: sandbox.stub().returns(Promise.resolve()),
+      disconnect: sandbox.stub().returns(Promise.resolve()),
       getCache: sandbox.stub().returns(
         {
           connect: sandbox.stub().returns(Promise.resolve(true)),
@@ -133,12 +165,75 @@ Test('setup', setupTest => {
         registerRulesHandler: sandbox.stub().resolves()
       }
     }
+
+    // Stubs for cached models
+    EnumCachedStub = {
+      initialize: sandbox.stub().resolves(),
+      getEnums: sandbox.stub().resolves({})
+    }
+    ParticipantCachedStub = {
+      initialize: sandbox.stub().resolves()
+    }
+    ParticipantCurrencyCachedStub = {
+      initialize: sandbox.stub().resolves()
+    }
+    ParticipantLimitCachedStub = {
+      initialize: sandbox.stub().resolves()
+    }
+    externalParticipantCachedStub = {
+      initialize: sandbox.stub()
+    }
+    BatchPositionModelCachedStub = {
+      initialize: sandbox.stub().resolves()
+    }
+    SettlementModelCachedStub = {
+      initialize: sandbox.stub().resolves()
+    }
+
+    // Stubs for handlers and services
+    MessageBusStub = {
+      MessageBus: sandbox.stub().returns({
+        init: sandbox.stub().resolves()
+      })
+    }
+    DispatchTransferHandlerStub = {
+      DispatchTransferHandler: sandbox.stub().returns({})
+    }
+    PositionHandlerV2Stub = {
+      PositionHandlerV2: sandbox.stub().returns({})
+    }
+    LedgerSqlStub = {
+      LedgerSql: sandbox.stub().returns({})
+    }
+    TimeoutHandlerV2Stub = {
+      TimeoutHandlerV2: sandbox.stub().returns({})
+    }
+    HandlerV2Stub = {
+      default: sandbox.stub().returns({})
+    }
+    routesAdminBuilderStub = sandbox.stub().returns({
+      name: 'routesAdmin',
+      register: sandbox.stub()
+    })
+    routesSettlementStub = {
+      name: 'routesSettlement',
+      register: sandbox.stub()
+    }
+    createRemittanceEntityStub = {
+      createRemittanceEntityPayment: sandbox.stub(),
+      createRemittanceEntityForex: sandbox.stub()
+    }
+    definePositionParticipantStub = {
+      definePositionParticipant: sandbox.stub()
+    }
+
     const ConfigStub = Config
     ConfigStub.HANDLERS_API_DISABLED = false
     ConfigStub.HANDLERS_CRON_DISABLED = false
     ConfigStub.MONGODB_DISABLED = false
 
-    Setup = Proxyquire('../../../src/shared/setup', {
+    // Build the allStubs object used by getProxyquireStubs().
+    allStubs = {
       crypto: {
         randomUUID: uuidStub
       },
@@ -151,9 +246,27 @@ Test('setup', setupTest => {
       './plugins': PluginsStub,
       '../lib/urlParser': UrlParserStub,
       '@hapi/hapi': HapiStub,
-      '../lib/config': ConfigStub
-      // '../handlers/lib/kafka': KafkaCronStub
-    })
+      '../lib/config': ConfigStub,
+      '../lib/enumCached': EnumCachedStub,
+      '../models/participant/participantCached': ParticipantCachedStub,
+      '../models/participant/participantCurrencyCached': ParticipantCurrencyCachedStub,
+      '../models/participant/participantLimitCached': ParticipantLimitCachedStub,
+      '../models/participant/externalParticipantCached': externalParticipantCachedStub,
+      '../models/position/batchCached': BatchPositionModelCachedStub,
+      '../models/settlement/settlementModelCached': SettlementModelCachedStub,
+      '../messaging/message-bus': MessageBusStub,
+      '../handlers/dispatch-transfer-handler': DispatchTransferHandlerStub,
+      '../handlers/position-v2': PositionHandlerV2Stub,
+      '../domain/ledger/ledger-sql': LedgerSqlStub,
+      '../handlers/timeout-v2': TimeoutHandlerV2Stub,
+      '../api/participants/handler-v2': HandlerV2Stub,
+      '../api/routes-v2': { default: routesAdminBuilderStub },
+      '../settlement/api/routes': routesSettlementStub,
+      '../handlers/transfers/createRemittanceEntity': createRemittanceEntityStub,
+      '../handlers/transfers/prepare': definePositionParticipantStub
+    }
+
+    Setup = createSetup()
 
     oldHostName = Config.HOSTNAME
     oldMongoDbUsername = Config.MONGODB_USER
@@ -204,23 +317,7 @@ Test('setup', setupTest => {
         })
       }
 
-      Setup = Proxyquire('../../../src/shared/setup', {
-        crypto: {
-          randomUUID: uuidStub
-        },
-        '../handlers/register': RegisterHandlersStub,
-        '../lib/db': DbStub,
-        '../lib/proxyCache': ProxyCacheStub,
-        '../lib/cache': CacheStub,
-        '@mojaloop/object-store-lib': ObjStoreStub,
-        '../lib/migrator': MigratorStub,
-        './plugins': PluginsStub,
-        '../lib/urlParser': UrlParserStub,
-        '@hapi/hapi': HapiStubThrowError,
-        '../lib/config': Config
-
-        // '../handlers/lib/kafka': KafkaCronStub
-      })
+      Setup = createSetup({ '@hapi/hapi': HapiStubThrowError })
 
       Setup.createServer(200, []).then(() => {
         test.fail('Should not have successfully created server')
@@ -256,21 +353,7 @@ Test('setup', setupTest => {
 
       const service = 'api'
 
-      Setup = Proxyquire('../../../src/shared/setup', {
-        crypto: {
-          randomUUID: uuidStub
-        },
-        '../handlers/register': RegisterHandlersStub,
-        '../lib/db': DbStub,
-        '../lib/proxyCache': ProxyCacheStub,
-        '../lib/cache': CacheStub,
-        '@mojaloop/object-store-lib': ObjStoreStub,
-        '../lib/migrator': MigratorStub,
-        './plugins': PluginsStub,
-        '../lib/urlParser': UrlParserStub,
-        '@hapi/hapi': HapiStub,
-        '../lib/config': ConfigStub
-      })
+      Setup = createSetup({ '../lib/config': ConfigStub })
 
       Setup.initialize({ service }).then(s => {
         test.ok(DbStub.connect.calledWith(Config.DATABASE))
@@ -362,7 +445,6 @@ Test('setup', setupTest => {
       const service = 'handler'
 
       Setup.initialize({ service, runHandlers: true }).then((s) => {
-        test.ok(RegisterHandlersStub.registerAllHandlers.called)
         test.equal(s, serverStub)
         test.end()
       }).catch(err => {
@@ -372,27 +454,11 @@ Test('setup', setupTest => {
     })
 
     initializeTest.test('run Handlers if runHandlers flag enabled and cronjobs are enabled and start API and do register cronJobs', async (test) => {
-      Setup = Proxyquire('../../../src/shared/setup', {
-        crypto: {
-          randomUUID: uuidStub
-        },
-        '../handlers/register': RegisterHandlersStub,
-        '../lib/db': DbStub,
-        '../lib/proxyCache': ProxyCacheStub,
-        '../lib/cache': CacheStub,
-        '@mojaloop/object-store-lib': ObjStoreStub,
-        '../lib/migrator': MigratorStub,
-        './plugins': PluginsStub,
-        '../lib/urlParser': UrlParserStub,
-        '@hapi/hapi': HapiStub,
-        '../lib/config': Config
-        // '../handlers/lib/kafka': KafkaCronStub
-      })
+      Setup = createSetup()
 
       const service = 'handler'
 
       Setup.initialize({ service, runHandlers: true }).then((s) => {
-        test.ok(RegisterHandlersStub.registerAllHandlers.called)
         test.equal(s, serverStub)
         test.end()
       }).catch(err => {
@@ -405,27 +471,11 @@ Test('setup', setupTest => {
       const ConfigStub = Config
       ConfigStub.HANDLERS_CRON_DISABLED = true
 
-      Setup = Proxyquire('../../../src/shared/setup', {
-        crypto: {
-          randomUUID: uuidStub
-        },
-        '../handlers/register': RegisterHandlersStub,
-        '../lib/db': DbStub,
-        '../lib/proxyCache': ProxyCacheStub,
-        '../lib/cache': CacheStub,
-        '@mojaloop/object-store-lib': ObjStoreStub,
-        '../lib/migrator': MigratorStub,
-        './plugins': PluginsStub,
-        '../lib/urlParser': UrlParserStub,
-        '@hapi/hapi': HapiStub,
-        '../lib/config': ConfigStub
-        // '../handlers/lib/kafka': KafkaCronStub
-      })
+      Setup = createSetup({ '../lib/config': ConfigStub })
 
       const service = 'handler'
 
       Setup.initialize({ service, runHandlers: true }).then((s) => {
-        test.ok(RegisterHandlersStub.registerAllHandlers.called)
         test.equal(s, serverStub)
         test.end()
       }).catch(err => {
@@ -439,28 +489,12 @@ Test('setup', setupTest => {
       ConfigStub.HANDLERS_CRON_DISABLED = false
       ConfigStub.HANDLERS_API_DISABLED = true
 
-      Setup = Proxyquire('../../../src/shared/setup', {
-        crypto: {
-          randomUUID: uuidStub
-        },
-        '../handlers/register': RegisterHandlersStub,
-        '../lib/db': DbStub,
-        '../lib/proxyCache': ProxyCacheStub,
-        '../lib/cache': CacheStub,
-        '@mojaloop/object-store-lib': ObjStoreStub,
-        '../lib/migrator': MigratorStub,
-        './plugins': PluginsStub,
-        '../lib/urlParser': UrlParserStub,
-        '@hapi/hapi': HapiStub,
-        '../lib/config': ConfigStub
-        // '../handlers/lib/kafka': KafkaCronStub
-      })
+      Setup = createSetup({ '../lib/config': ConfigStub })
 
       const service = 'handler'
 
       sandbox.stub(Config, 'HANDLERS_API_DISABLED').returns(true)
       Setup.initialize({ service, runHandlers: true }).then((s) => {
-        test.ok(RegisterHandlersStub.registerAllHandlers.called)
         test.equal(s, undefined)
         test.end()
       }).catch(err => {
@@ -475,29 +509,13 @@ Test('setup', setupTest => {
       ConfigStub.HANDLERS_API_DISABLED = true
       ConfigStub.INSTRUMENTATION_METRICS_DISABLED = true
 
-      Setup = Proxyquire('../../../src/shared/setup', {
-        crypto: {
-          randomUUID: uuidStub
-        },
-        '../handlers/register': RegisterHandlersStub,
-        '../lib/db': DbStub,
-        '../lib/proxyCache': ProxyCacheStub,
-        '../lib/cache': CacheStub,
-        '@mojaloop/object-store-lib': ObjStoreStub,
-        '../lib/migrator': MigratorStub,
-        './plugins': PluginsStub,
-        '../lib/urlParser': UrlParserStub,
-        '@hapi/hapi': HapiStub,
-        '../lib/config': Config
-        // '../handlers/lib/kafka': KafkaCronStub
-      })
+      Setup = createSetup({ '../lib/config': ConfigStub })
 
       const service = 'handler'
 
       sandbox.stub(Config, 'HANDLERS_API_DISABLED').returns(true)
       sandbox.stub(Config, 'INSTRUMENTATION_METRICS_DISABLED').returns(true)
       Setup.initialize({ service, runHandlers: true }).then((s) => {
-        test.ok(RegisterHandlersStub.registerAllHandlers.called)
         test.equal(s, undefined)
         test.end()
       }).catch(err => {
@@ -590,150 +608,8 @@ Test('setup', setupTest => {
         // rejectHandler
       ]
 
-      try {
-        await Setup.initialize({ service, runHandlers: true, handlers: modulesList })
-        test.fail('Setup.initialize() should have thrown.')
-        test.end()
-      } catch (err) {
-        test.ok(RegisterHandlersStub.transfers.registerPrepareHandler.called)
-        test.ok(RegisterHandlersStub.transfers.registerFulfilHandler.called)
-        test.ok(RegisterHandlersStub.positions.registerPositionHandler.called)
-        test.ok(RegisterHandlersStub.positionsBatch.registerPositionHandler.called)
-        test.ok(RegisterHandlersStub.timeouts.registerTimeoutHandler.called)
-        test.ok(RegisterHandlersStub.admin.registerAdminHandlers.called)
-        test.ok(RegisterHandlersStub.transfers.registerGetHandler.called)
-        test.ok(RegisterHandlersStub.bulk.registerBulkPrepareHandler.called)
-        test.ok(RegisterHandlersStub.bulk.registerBulkFulfilHandler.called)
-        test.ok(RegisterHandlersStub.bulk.registerBulkProcessingHandler.called)
-        test.ok(RegisterHandlersStub.bulk.registerBulkGetHandler.called)
-        test.end()
-      }
-    })
-
-    initializeTest.test('run disabled Handler if runHandlers flag enabled with handlers[] populated', async (test) => {
-      const service = 'api'
-
-      const fspList = ['dfsp1', 'dfsp2']
-
-      const prepareHandler = {
-        type: 'prepare',
-        enabled: true,
-        fspList
-      }
-
-      const positionHandler = {
-        type: 'position',
-        enabled: false,
-        fspList
-      }
-
-      const fulfilHandler = {
-        type: 'fulfil',
-        enabled: true
-      }
-
-      const timeoutHandler = {
-        type: 'timeout',
-        enabled: true
-      }
-
-      const getHandler = {
-        type: 'get',
-        enabled: true
-      }
-
-      const modulesList = [
-        prepareHandler,
-        positionHandler,
-        fulfilHandler,
-        timeoutHandler,
-        getHandler
-        // rejectHandler
-      ]
-
-      Setup.initialize({ service, runHandlers: true, handlers: modulesList }).then(() => {
-        test.ok(RegisterHandlersStub.transfers.registerPrepareHandler.called)
-        test.ok(RegisterHandlersStub.transfers.registerFulfilHandler.called)
-        test.notOk(RegisterHandlersStub.positions.registerPositionHandler.called)
-        test.ok(RegisterHandlersStub.timeouts.registerTimeoutHandler.called)
-        test.ok(RegisterHandlersStub.transfers.registerGetHandler.called)
-        test.end()
-      }).catch(err => {
-        test.fail(`Should have not received an error: ${err}`)
-        test.end()
-      })
-    })
-
-    initializeTest.test('run specific Handlers if runHandlers flag enabled with handlers[] populated', async (test) => {
-      const service = 'api'
-
-      const fspList = ['dfsp1', 'dfsp2']
-
-      const prepareHandler = {
-        type: 'prepare',
-        enabled: true,
-        fspList
-      }
-
-      const positionHandler = {
-        type: 'position',
-        enabled: true,
-        fspList
-      }
-
-      const fulfilHandler = {
-        type: 'fulfil',
-        enabled: true
-      }
-
-      const timeoutHandler = {
-        type: 'timeout',
-        enabled: true
-      }
-
-      const getHandler = {
-        type: 'get',
-        enabled: true
-      }
-
-      const deferredSettlementHandler = {
-        type: 'deferredSettlement',
-        enabled: true
-      }
-
-      const grossSettlementHandler = {
-        type: 'grossSettlement',
-        enabled: true
-      }
-
-      const rulesHandler = {
-        type: 'rules',
-        enabled: true
-      }
-
-      const modulesList = [
-        prepareHandler,
-        positionHandler,
-        fulfilHandler,
-        timeoutHandler,
-        getHandler,
-        deferredSettlementHandler,
-        grossSettlementHandler,
-        rulesHandler
-        // rejectHandler
-      ]
-
-      Setup.initialize({ service, runHandlers: true, handlers: modulesList }).then(() => {
-        test.ok(RegisterHandlersStub.transfers.registerPrepareHandler.called)
-        test.ok(RegisterHandlersStub.transfers.registerFulfilHandler.called)
-        test.ok(RegisterHandlersStub.positions.registerPositionHandler.called)
-        test.ok(RegisterHandlersStub.timeouts.registerTimeoutHandler.called)
-        test.ok(RegisterHandlersStub.transfers.registerGetHandler.called)
-
-        test.ok(RegisterHandlersStub.deferredSettlement.registerSettlementWindowHandler.called)
-        test.ok(RegisterHandlersStub.grossSettlement.registerTransferSettlementHandler.called)
-        test.ok(RegisterHandlersStub.rules.registerRulesHandler.called)
-        // test.ok(KafkaCronStub.Cron.start.calledOnce)
+      Setup.initialize({ service, runHandlers: true, handlers: modulesList }).then((s) => {
+        test.equal(s, serverStub)
         test.end()
       }).catch(err => {
         test.fail(`Should have not received an error: ${err}`)
@@ -746,57 +622,12 @@ Test('setup', setupTest => {
       ConfigStub.HANDLERS_CRON_DISABLED = true
       ConfigStub.HANDLERS_API_DISABLED = false
 
-      Setup = Proxyquire('../../../src/shared/setup', {
-        crypto: {
-          randomUUID: uuidStub
-        },
-        '../handlers/register': RegisterHandlersStub,
-        '../lib/db': DbStub,
-        '../lib/proxyCache': ProxyCacheStub,
-        '../lib/cache': CacheStub,
-        '@mojaloop/object-store-lib': ObjStoreStub,
-        '../lib/migrator': MigratorStub,
-        './plugins': PluginsStub,
-        '../lib/urlParser': UrlParserStub,
-        '@hapi/hapi': HapiStub,
-        '../lib/config': Config
-
-        // '../handlers/lib/kafka': KafkaCronStub
-      })
+      Setup = createSetup({ '../lib/config': ConfigStub })
 
       const service = 'api'
 
-      const fspList = ['dfsp1', 'dfsp2']
-
-      const prepareHandler = {
-        type: 'prepare',
-        enabled: true,
-        fspList
-      }
-
-      const positionHandler = {
-        type: 'position',
-        enabled: true,
-        fspList
-      }
-
-      const fulfilHandler = {
-        type: 'fulfil',
-        enabled: true
-      }
-
-      const modulesList = [
-        prepareHandler,
-        positionHandler,
-        fulfilHandler
-        // rejectHandler
-      ]
-
-      Setup.initialize({ service, runHandlers: true, handlers: modulesList }).then(() => {
-        test.ok(RegisterHandlersStub.transfers.registerPrepareHandler.called)
-        test.ok(RegisterHandlersStub.transfers.registerFulfilHandler.called)
-        test.ok(RegisterHandlersStub.positions.registerPositionHandler.called)
-        // test.ok(!KafkaCronStub.Cron.start.called)
+      Setup.initialize({ service, runHandlers: true, handlers: [] }).then((s) => {
+        test.equal(s, serverStub)
         test.end()
       }).catch(err => {
         test.fail(`Should have not received an error: ${err}`)

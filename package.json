@@ -60,6 +60,7 @@
     "test:xint-override": "echo 'This command has been removed. There is now only a single entrypoint to integration tests: npm run test:integration'",
     "test:integration": "ts-node src/testing/run.ts integration",
     "test:functional": "echo 'TODO: reenable me!'",
+    "test:fuzz": "node --test --require ts-node/register ./src/**/*.fuzz.ts",
     "migrate": "npm run migrate:latest && npm run seed:run",
     "migrate:latest": "npx knex $npm_package_config_knex migrate:latest",
     "migrate:create": "npx knex migrate:make $npm_package_config_knex",
@@ -97,7 +98,7 @@
     "@mojaloop/central-services-logger": "11.10.6",
     "@mojaloop/central-services-metrics": "12.8.8",
     "@mojaloop/central-services-shared": "18.38.2",
-    "@mojaloop/central-services-stream": "file://Users/lewisdaly/tb/central-services-stream",
+    "@mojaloop/central-services-stream": "git+ssh://git@github.com/tigerbeetle/central-services-stream.git#fix/disconnect-all",
     "@mojaloop/database-lib": "11.3.10",
     "@mojaloop/event-sdk": "14.8.5",
     "@mojaloop/inter-scheme-proxy-cache-lib": "2.10.0",
@@ -163,7 +164,8 @@
     "tap-xunit": "2.4.1",
     "tape": "4.17.0",
     "tapes": "4.1.0",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "v8-to-istanbul": "^9.3.0"
   },
   "overrides": {
     "@hapi/wreck": "18.1.2",

@@ -22,7 +22,8 @@ describe('api/root/handler', () => {
 
   it('Connects and reports the service health.', async () => {
     // Wait for a rebalance.
-    await sleepSeconds(5)
+    // TODO: try and remove this!
+    // await sleepSeconds(5)
 
     const {
       responseBody,

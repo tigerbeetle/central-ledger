@@ -46,12 +46,13 @@ import { logger } from '../shared/logger';
 import { TransferHelper } from './transfer-helper';
 import { Effect, MessageBus } from '../messaging/message-bus';
 import { PositionHandlerV2, PositionResultType } from './position-v2';
+import { LedgerSql } from '../domain/ledger/ledger-sql';
 
-const { Consumer, Producer } = require('@mojaloop/central-services-stream').Util
 const { Type, Action } = Enum.Events.Event
 
 interface Dependencies {
-  config: ApplicationConfig
+  config: ApplicationConfig,
+  ledger: LedgerSql,
   cyril: {
     processFxFulfilMessage: (commitRequestId: string) => Promise<true>
     processFxAbortMessage: (commitRequestId: string) => Promise<{
@@ -173,10 +174,10 @@ export class ForexFulfilHandler {
     const results = await Promise.allSettled(inputs.map(async ({ input }) => this.handleOne(input)))
     results.forEach(result => {
       if (result.status === 'fulfilled' && result.value.type !== ForexFulfilResultType.PASS) {
-        logger.info(`handleOne() returned non-success: \n\t${JSON.stringify(result.value)}`)
+        logger.info(`ForexFulfilHandler.handleOne() returned non-success: \n\t${JSON.stringify(result.value, null, 2)}`)
       }
       if (result.status === 'rejected') {
-        logger.error(`handleOne() failed with error: \n\t${result.reason}`)
+        logger.error(`ForexFulfilHandler.handleOne() failed with error: \n\t${result.reason}`)
         if (result.reason.stack) logger.error(`stack\n\t${result.reason.stack}`)
       }
     })

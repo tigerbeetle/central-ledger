@@ -148,6 +148,7 @@ export interface ApplicationConfig {
    * @default 'LEGACY'
    */
   LEDGER: LedgerType
+  TMP_REFACTOR: boolean
   
   /**
    * Experimental Configs. Not recommended for production usage.
