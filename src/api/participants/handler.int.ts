@@ -7,6 +7,7 @@ import * as ApiHelpers from '../../testing/api-helpers'
 import Coverage from "../../testing/coverage"
 import { randomAvailablePort } from "../../testing/util"
 import { Server } from "@hapi/hapi"
+import Db from '../../lib/db'
 
 const harness = Harness.getInstance()
 let Handler: any
@@ -27,10 +28,12 @@ describe('api/participants/handler', () => {
       server.route(routes)
       await server.start()
 
-      const coverage = new Coverage([
-        'src/api/participants/handler.js'
-      ])
-      coverage.start()
+      // TODO: would be cool if we can make this work with nyc, since that's what we're using
+      // elsewhere.
+      // const coverage = new Coverage([
+      //   'src/api/participants/handler.js'
+      // ])
+      // coverage.start()
 
       const seed = 1
       const prng = new PRNG(seed)
@@ -40,7 +43,7 @@ describe('api/participants/handler', () => {
       console.log(`trace is:\n\n${fuzzer.traceOutput}`)
 
       await server.stop()
-      coverage.stopAndReport()
+      // coverage.stopAndReport()
     } catch (err: any) {
       logger.error(err.message)
       logger.error(err.stack)
@@ -79,7 +82,7 @@ type Mutation =
 
 class HandlerApiFuzzer {
   private step = 1
-  private readonly stepsMax = 3500
+  private readonly stepsMax = 5000
   private responses: Array<{
     action: ActionName,
     input: any,
@@ -94,7 +97,7 @@ class HandlerApiFuzzer {
   private registeredCurrencies: Array<string> = []
 
   private weights: Record<ActionName, number> = {
-    getAll: 1,
+    getAll: 100,
     getByName: 1,
     create: 1,
     update: 1,
@@ -118,7 +121,9 @@ class HandlerApiFuzzer {
     private server: Server,
     private prng: PRNG,
     private seed: number,
-  ) { }
+  ) {
+    this.injectDbFaults()
+  }
 
   public async run() {
     try {
@@ -148,7 +153,30 @@ class HandlerApiFuzzer {
   }
 
   private async doStep() {
+    // await this.maybeInjectFault()
     return this.randomAction()()
+  }
+
+  // private async maybeInjectFault() {
+  //   if (this.prng.intExclusive(250) === 0){
+  //     await this.harness.mysqlKillConnection()
+  //   }
+  //   if (this.prng.intExclusive(100) === 0) {
+  //     // TODO: Not sure if we need to run this not async?
+  //     await this.harness.mysqlKillQueries()
+  //   }
+  // }
+
+  private injectDbFaults() {
+    const Db = require('../../lib/db')
+    const originalFrom = Db.from.bind(Db)
+
+    Db.from = (tableName: string) => {
+      if (this.prng.intExclusive(100) === 0) {
+        throw new Error('Injected DB fault.')
+      }
+      return originalFrom(tableName)
+    }
   }
 
   private actions: Record<ActionName, () => Promise<void>> = {
@@ -236,9 +264,8 @@ class HandlerApiFuzzer {
           .proxy(this.prng.headsOrTails())
           .build()
           .create()
-      } catch (err) {
-        logger.error(`create() buildDfsp died on currency: ${currency}`)
-        throw err
+      } catch (err: any) {
+        assert.equal(err.message, 'Injected DB fault.')
       }
 
       this.weights.createHubAccount = 1
@@ -336,11 +363,15 @@ class HandlerApiFuzzer {
     // set up the hub if true.
     if (this.prng.headsOrTails() && this.registeredCurrencies.length < 2) {
       const currency = this.prng.randomElementFrom(['USD', 'EUR', 'GBP'])
-      await ApiHelpers.buildHub()
-        .deps(this.harness)
-        .currency(currency)
-        .build()
-        .create()
+      try {
+        await ApiHelpers.buildHub()
+          .deps(this.harness)
+          .currency(currency)
+          .build()
+          .create()
+      } catch (err: any) {
+        assert.equal(err.message, 'Injected DB fault.')
+      }
       this.registeredCurrencies.push(currency)
 
       this.weights.createHubAccount = 1
@@ -390,7 +421,7 @@ class HandlerApiFuzzer {
     const account = this.randomDfspAccountPosition(name)
     const url = `/participants/${name}/accounts/${account}`
     const payload = {
-      isActive: this.prng.headsOrTails(), 
+      isActive: this.prng.headsOrTails(),
     }
     await this.req('updateAccount', 'PUT', url, payload)
   }
@@ -454,8 +485,8 @@ class HandlerApiFuzzer {
   }
 
   private randomDfspAccountSettlement(dfsp: string): number {
-    if (this.dfspAccountsSettlement[dfsp] && 
-      this.dfspAccountsSettlement[dfsp].length > 0 && 
+    if (this.dfspAccountsSettlement[dfsp] &&
+      this.dfspAccountsSettlement[dfsp].length > 0 &&
       this.prng.headsOrTails()
     ) {
       return this.prng.randomElementFrom(this.dfspAccountsSettlement[dfsp])
@@ -491,11 +522,9 @@ class HandlerApiFuzzer {
     }
 
     if (this.prng.headsOrTails() && input.length > 0) {
-      // Make it shorter.
       return input.substring(0, this.prng.intInRange(0, input.length))
     }
 
-    // Make it longer.
     return input + this.prng.randomString(this.prng.intInRange(1, 5))
   }
 

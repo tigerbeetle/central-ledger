@@ -389,6 +389,22 @@ export default class Harness {
     this.applicationConfig = deepMerge(this.config, override)
   }
 
+  public async mysqlPause(): Promise<void> {
+    return this.dependencyMySql.pause()
+  }
+
+  public async mysqlResume(): Promise<void> {
+    return this.dependencyMySql.resume()
+  }
+
+  public async mysqlKillConnection(): Promise<void> {
+    return this.dependencyMySql.killConnection()
+  }
+
+  public async mysqlKillQueries(): Promise<void> {
+    return this.dependencyMySql.killQueries()
+  }
+
   /**
    * Reset the override
    */
@@ -425,17 +441,17 @@ export default class Harness {
             assert(parsed.from)
             correlationId = parsed.from
             break;
-          } 
-          case 'fx-prepare-duplicate': 
-          case 'forwarded':
-          case 'fx-forwarded': 
-          case 'fx-fulfil': 
-          {
-            assertNestedFields(parsed, 'content.uriParams.id')
-            correlationId = parsed.content.uriParams.id
-            break;
           }
-           case 'fx-prepare': {
+          case 'fx-prepare-duplicate':
+          case 'forwarded':
+          case 'fx-forwarded':
+          case 'fx-fulfil':
+            {
+              assertNestedFields(parsed, 'content.uriParams.id')
+              correlationId = parsed.content.uriParams.id
+              break;
+            }
+          case 'fx-prepare': {
             if (parsed.id) {
               correlationId = parsed.id
             } else {
@@ -468,23 +484,23 @@ export default class Harness {
         }
         break;
       }
-      case 'topic-transfer-position': 
+      case 'topic-transfer-position':
       case 'topic-transfer-position-batch': {
         assertNestedFields(parsed, 'metadata.event.action')
         switch (parsed.metadata.event.action) {
-          case 'commit': 
-          case 'fx-reserve': 
+          case 'commit':
+          case 'fx-reserve':
           case 'fx-abort':
-          case 'abort': 
-          case 'timeout-reserved': 
-          case 'fx-abort-validation': 
-          case 'fx-timeout-reserved': 
-          {
-            assertNestedFields(parsed, 'content.uriParams.id')
-            correlationId = parsed.content.uriParams.id
-            break;
-          }
-          case 'fx-prepare':  { 
+          case 'abort':
+          case 'timeout-reserved':
+          case 'fx-abort-validation':
+          case 'fx-timeout-reserved':
+            {
+              assertNestedFields(parsed, 'content.uriParams.id')
+              correlationId = parsed.content.uriParams.id
+              break;
+            }
+          case 'fx-prepare': {
             assertNestedFields(parsed, 'content.payload.commitRequestId')
             correlationId = parsed.content.payload.commitRequestId
             break;
@@ -493,7 +509,7 @@ export default class Harness {
             assertNestedFields(parsed, 'content.payload.transferId', `for action: ${parsed.metadata.event.action}`)
             correlationId = parsed.content.payload.transferId
           }
-        }   
+        }
         break;
       }
       default: {
@@ -659,7 +675,7 @@ environment!\n ${err.message}`)
   /**
    * @description Look for messages related to a correlation id.
    */
-  public async redpandaDrainSmart(numMessages: number, id: string, attempts: number = 20): 
+  public async redpandaDrainSmart(numMessages: number, id: string, attempts: number = 20):
     Promise<Array<MojaloopKafkaMessage>> {
     const start = performance.now()
     let delayMs = 10
@@ -682,7 +698,7 @@ environment!\n ${err.message}`)
 
         if (markNew === numMessages) {
           const end = performance.now()
-          
+
           // Cool down for 20ms, check that there are no late messages.
           await new Promise(resolve => setTimeout(resolve, 20))
           const checkAgain = this.messageQueuePerId[id].length
@@ -1109,6 +1125,50 @@ class MySql {
     } catch (err: any) {
       this.logger.error(`down() - failed to remove containers: ${err.message}`)
       throw err
+    }
+  }
+
+  public async pause(): Promise<void> {
+    await execAsync(`docker pause ${this.containerName}`)
+  }
+
+  public async resume(): Promise<void> {
+    await execAsync(`docker unpause ${this.containerName}`)
+  }
+
+  public async killConnection(): Promise<void> {
+    // Try killing all connections?
+    const getCmd = `docker exec ${this.containerName} mariadb -u root -ppassword -s -N -e "
+      SELECT id FROM information_schema.processlist WHERE db = 'central_ledger' OR db IS NULL
+    "`
+    const { stdout } = await execAsync(getCmd, { silent: true, force: true })
+
+    const ids = stdout.trim().split('\n').filter(id => id)
+
+    // Kill each one
+    for (const id of ids) {
+      await execAsync(
+        `docker exec ${this.containerName} mariadb -u root -ppassword -e "KILL ${id}"`,
+        { silent: true, force: true }
+      )
+    }
+  }
+
+  public async killQueries(): Promise<void> {
+    const getCmd = `docker exec ${this.containerName} mariadb -u root -ppassword -s -N -e "
+      SELECT id FROM information_schema.processlist WHERE command = 'Query' AND db = 'central_ledger'
+    "`
+    const { stdout } = await execAsync(getCmd, { silent: true, force: true })
+
+    // TODO: I don't think this works, queries happen too fast to be able to kill them reliably.
+    const ids = stdout.trim().split('\n').filter(id => id)
+    for (const id of ids) {
+      const result = await execAsync(
+        `docker exec ${this.containerName} mariadb -u root -ppassword -e "KILL QUERY ${id}"`,
+        { silent: true, force: true }
+      )
+      console.log('result.stdout', result.stdout)
+      console.log('result.stderr', result.stderr)
     }
   }
 
