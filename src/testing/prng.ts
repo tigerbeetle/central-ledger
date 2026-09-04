@@ -63,6 +63,15 @@ export default class PRNG {
     return buffer
   }
 
+  public randomString(length: number): string {
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    let result = ''
+    for (let i = 0; i < length; i++) {
+      result += alphabet[this.intExclusive(alphabet.length)]
+    }
+    return result
+  }
+
   public uuidv4(): string {
     const buf = this.randomBytes(16)
     // Set version (4) bits: byte 6 (index 6), bits 4 high bits.

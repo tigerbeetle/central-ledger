@@ -5,6 +5,7 @@ import { unwrapResponse, createRequest, sleepSeconds } from "../../testing/util"
 import PRNG from "../../testing/prng"
 import { logger } from "../../shared/logger"
 import * as ApiHelpers from '../../testing/api-helpers'
+import Coverage from "../../testing/coverage"
 
 const harness = Harness.getInstance()
 let Handler: any
@@ -23,6 +24,11 @@ describe('api/participants/handler', () => {
   })
 
   it('handler fuzz', async () => {
+    const coverage = new Coverage([
+      'src/api/participants/handler.js'
+    ])
+    coverage.start()
+
     const seed = 1
     const prng = new PRNG(seed)
     const fuzzer = new HandlerApiFuzzer(harness, Handler, prng, seed)
@@ -30,28 +36,54 @@ describe('api/participants/handler', () => {
 
     console.log(`trace is:\n\n${fuzzer.traceOutput}`)
 
+    coverage.stopAndReport()
   })
 })
 
-type ActionName = 'getAll' | 'createDfsp' | 'createHub'
+type ActionName = 
+  'getAll' | 
+  'getByName' |
+  'update' |
+  'addEndpoint' |
+  'getEndpoint' |
+  'addLimitAndInitialPosition' |
+  'getLimits' |
+  'getLimitsForAllParticipants' |
+  'adjustLimits' |
+  'getPositions' |
+  'getAccounts' |
+  'updateAccount' |
+  'recordFunds' |
+  'createDfsp' | 
+  'createHub'
 
 class HandlerApiFuzzer {
-  
-
   private step = 1
   private readonly stepsMax = 100
-  private responses: Array<{ 
+  private responses: Array<{
     action: ActionName,
-    body: any, 
-    code: any 
+    body: any,
+    code: any
   }> = []
 
   private dfspNames: Array<string> = []
 
   private weights: Record<ActionName, number> = {
     getAll: 0,
+    getByName: 0,
     createDfsp: 0,
-    createHub: 10
+    createHub: 10,
+    update: 1,
+    addEndpoint: 2,
+    getEndpoint: 2,
+    addLimitAndInitialPosition: 0,
+    getLimits: 0,
+    getLimitsForAllParticipants: 0,
+    adjustLimits: 0,
+    getPositions: 0,
+    getAccounts: 0,
+    updateAccount: 0,
+    recordFunds: 0
   }
 
   constructor(
@@ -77,7 +109,7 @@ class HandlerApiFuzzer {
 
   get traceOutput(): string {
     return this.responses
-      .map(response => `${response.action}:\t${response.code}\t${JSON.stringify(response.body)}`)
+      .map(response => `${response.action.padEnd(12)}:\t${JSON.stringify(response.body).padEnd(200).slice(0, 200)}`)
       .join('\n')
   }
 
@@ -89,6 +121,34 @@ class HandlerApiFuzzer {
     getAll: () => this.getAll(),
     createDfsp: () => this.createDfsp(),
     createHub: () => this.createHub(),
+    getByName: () => this.getByName(),
+    update: () => this.update(),
+    addEndpoint: () => this.addEndpoint(),
+    getEndpoint: () => this.getEndpoint(),
+    addLimitAndInitialPosition: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    },
+    getLimits: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    },
+    getLimitsForAllParticipants: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    },
+    adjustLimits: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    },
+    getPositions: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    },
+    getAccounts: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    },
+    updateAccount: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    },
+    recordFunds: function (): Promise<void> {
+      throw new Error("Function not implemented.")
+    }
   }
 
   private randomAction(): () => Promise<void> {
@@ -99,19 +159,123 @@ class HandlerApiFuzzer {
 
   // API Methods under test.
   public async getAll() {
-    const {
-      responseBody,
-      responseCode
-    } = await unwrapResponse((reply: any) => Handler.getAll(
-      // @ts-ignore
-      createRequest({}), reply
-    ))
+    // TODO: mutate this.
+    const request = {
+      query: {
+        isProxy: this.prng.headsOrTails()
+      }
+    }
+    try {
+      const response = await this.handler.getAll(request)
+      this.responses.push({
+        action: 'getAll',
+        body: response,
+        code: 0
+      })
+    } catch (err: any) {
+      this.responses.push({
+        action: 'getAll',
+        body: err.message,
+        code: 0
+      })
+    }
+  }
 
-    this.responses.push({ 
-      action: 'getAll',
-      body: responseBody, 
-      code: responseCode 
-    })
+  public async getByName() {
+    // TODO: mutate this.
+    const request = {
+      params: {
+        name: this.randomDfspName()
+      }
+    }
+    try {
+      const response = await this.handler.getByName(request)
+      this.responses.push({
+        action: 'getByName',
+        body: response,
+        code: 0
+      })
+    } catch (err: any) {
+      this.responses.push({
+        action: 'getByName',
+        body: err.message,
+        code: 0
+      })
+    }
+  }
+
+  public async addEndpoint() {
+    // TODO: need to wrap the hapi request
+    const request = {
+      params: {
+        name: this.randomDfspName()
+      },
+      payload: {}
+    }
+    try {
+      const response = await this.handler.addEndpoint(request)
+      this.responses.push({
+        action: 'addEndpoint',
+        body: response,
+        code: 0
+      })
+    } catch (err: any) {
+      this.responses.push({
+        action: 'addEndpoint',
+        body: err.message,
+        code: 0
+      })
+    }
+  }
+
+  public async getEndpoint() {
+    // TODO: need to wrap the hapi request
+    const request = {
+      params: {
+        name: this.randomDfspName()
+      },
+      query: {
+        type: this.randomEndpointType()
+      }
+    }
+    try {
+      const response = await this.handler.getEndpoint(request)
+      this.responses.push({
+        action: 'getEndpoint',
+        body: response,
+        code: 0
+      })
+    } catch (err: any) {
+      this.responses.push({
+        action: 'getEndpoint',
+        body: err.message,
+        code: 0
+      })
+    }
+  }
+
+  public async update() {
+    // TODO: mutate this.
+    const request = {
+      params: {
+        name: this.randomDfspName()
+      },
+      payload: {}
+    }
+    try {
+      const response = await this.handler.update(request)
+      this.responses.push({
+        action: 'update',
+        body: response,
+        code: 0
+      })
+    } catch (err: any) {
+      this.responses.push({
+        action: 'update',
+        body: err.message,
+        code: 0
+      })
+    }
   }
 
   // Helper methods to make things interesting.
@@ -161,6 +325,10 @@ class HandlerApiFuzzer {
 
       this.weights.createDfsp = 2
       this.weights.getAll = 10
+      this.weights.getByName = 10
+      this.weights.update = 5
+      this.weights.addEndpoint = 2
+      this.weights.getEndpoint = 5
     } catch (err) {
       this.responses.push({
         action: 'createDfsp',
@@ -176,7 +344,7 @@ class HandlerApiFuzzer {
       this.prng.randomElementFrom(this.dfspNames)
     }
 
-    const name = `dfsp_${this.prng.randomBytes(10).toString()}`
+    const name = `dfsp_${this.prng.randomString(this.prng.intInRange(1,5))}`
     this.dfspNames.push(name)
 
     return name
@@ -199,6 +367,50 @@ class HandlerApiFuzzer {
     }
 
     // Make it longer.
-    return input + this.prng.randomBytes(1).toString()
+    return input + this.prng.randomString(this.prng.intInRange(1, 5))
+  }
+
+  private randomEndpointType(): string {
+    const endpointTypesValid = [
+      'FSPIOP_CALLBACK_URL_TRANSFER_POST',
+      'FSPIOP_CALLBACK_URL_TRANSFER_PUT',
+      'FSPIOP_CALLBACK_URL_TRANSFER_ERROR',
+      'FSPIOP_CALLBACK_URL_FX_QUOTES',
+      'FSPIOP_CALLBACK_URL_FX_TRANSFER_POST',
+      'FSPIOP_CALLBACK_URL_FX_TRANSFER_PUT',
+      'FSPIOP_CALLBACK_URL_FX_TRANSFER_ERROR',
+      'FSPIOP_CALLBACK_URL_BULK_TRANSFER_POST',
+      'FSPIOP_CALLBACK_URL_BULK_TRANSFER_PUT',
+      'FSPIOP_CALLBACK_URL_BULK_TRANSFER_ERROR',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_PUT',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_SUB_ID_PUT',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_PUT_ERROR',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_SUB_ID_PUT_ERROR',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_DELETE',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_SUB_ID_DELETE',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_BATCH_PUT',
+      'FSPIOP_CALLBACK_URL_PARTICIPANT_BATCH_PUT_ERROR',
+      'FSPIOP_CALLBACK_URL_PARTIES_GET',
+      'FSPIOP_CALLBACK_URL_PARTIES_SUB_ID_GET',
+      'FSPIOP_CALLBACK_URL_PARTIES_PUT',
+      'FSPIOP_CALLBACK_URL_PARTIES_SUB_ID_PUT',
+      'FSPIOP_CALLBACK_URL_PARTIES_PUT_ERROR',
+      'FSPIOP_CALLBACK_URL_PARTIES_SUB_ID_PUT_ERROR',
+      'FSPIOP_CALLBACK_URL_QUOTES',
+      'FSPIOP_CALLBACK_URL_BULK_QUOTES',
+      'FSPIOP_CALLBACK_URL_AUTHORIZATIONS',
+      'FSPIOP_CALLBACK_URL_TRX_REQ_SERVICE',
+      'ALARM_NOTIFICATION_URL',
+      'ALARM_NOTIFICATION_TOPIC',
+      'NET_DEBIT_CAP_THRESHOLD_BREACH_EMAIL',
+      'NET_DEBIT_CAP_ADJUSTMENT_EMAIL',
+      'SETTLEMENT_TRANSFER_POSITION_CHANGE_EMAIL',
+    ]
+    let endpoint = this.prng.randomElementFrom(endpointTypesValid)
+    if (this.prng.headsOrTails()) {
+      return endpoint
+    }
+
+    return this.mutateString(endpoint)
   }
 }
