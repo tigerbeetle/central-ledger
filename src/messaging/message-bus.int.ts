@@ -30,14 +30,9 @@
 
 import { after, before, describe, it } from 'node:test'
 import Harness from '../testing/harness'
-import { DispatchTransferHandler } from '../handlers/dispatch-transfer-handler'
-import { MessageBus } from './message-bus'
 import { Snapshot } from '../testing/snapshot'
-import { PositionHandlerV2 } from '../handlers/position-v2'
 
 const harness = Harness.getInstance()
-let dispatchHandler: DispatchTransferHandler
-let messageBus: MessageBus
 
 describe('messaging/message-bus', () => {
   before(async () => {

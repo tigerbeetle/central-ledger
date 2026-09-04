@@ -32,9 +32,8 @@ export interface Ledger {
   getAllDfspAccounts(query: GetAllDfspAccountsQuery): Promise<DfspAccountResponse>
   getNetDebitCap(query: GetNetDebitCapQuery): Promise<QueryResult<LegacyLimit>>
 
-
   /**
-   * Clearing Methods
+   * Clearing Methods.
    */
 
   /**

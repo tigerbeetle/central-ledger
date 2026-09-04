@@ -607,7 +607,6 @@ describe('domain/participant/index', () => {
     ]`).checkUnwrap(positions);
   })
 
-
   it('adjustLimit() changes the limit', async () => {
     const name = 'tmp_dfsp_3'
     await ApiHelpers.buildDfsp()
@@ -677,14 +676,7 @@ describe('domain/participant/index', () => {
       .currency('USD')
       .build()
       .create()
-
-    // await createDfsp(harness, {
-    //   name,
-    //   currencies: ['USD'],
-    //   isProxy: false,
-    //   initialPostionsAndLimits: [{ initialPosition: 0, value: 100000 }],
-    //   deposits: [10000]
-    // })
+      
     const response = await ParticipantService.getPositions(name, {
       currency: 'USD'
     })
