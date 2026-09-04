@@ -18,6 +18,15 @@ export default class PRNG {
     return array[index]
   }
 
+  public headsOrTails(): boolean {
+    const index = this.intExclusive(2)
+    if (index === 1) {
+      return true
+    }
+
+    return false
+  }
+
   public randomSampleFrom<T>(array: Array<T>, count: number): Array<T> {
     assert(array.length >= count)
     const shuffled = [...array].sort(() => this.prng() - 0.5)
