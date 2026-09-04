@@ -72,6 +72,24 @@ export default class PRNG {
     return result
   }
 
+  public randomValue(): any {
+    return this.randomElementFrom([
+      0,
+      1,
+      -1,
+      Number.MAX_SAFE_INTEGER,
+      NaN,
+      '',
+      this.randomString(10),
+      null,
+      undefined,
+      true,
+      false,
+      [],
+      {}
+    ])
+  }
+
   public uuidv4(): string {
     const buf = this.randomBytes(16)
     // Set version (4) bits: byte 6 (index 6), bits 4 high bits.

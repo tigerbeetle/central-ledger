@@ -1,67 +1,87 @@
 import { after, before, describe, it } from "node:test"
 import assert from "node:assert"
 import Harness from '../../testing/harness'
-import { unwrapResponse, createRequest, sleepSeconds } from "../../testing/util"
 import PRNG from "../../testing/prng"
 import { logger } from "../../shared/logger"
 import * as ApiHelpers from '../../testing/api-helpers'
 import Coverage from "../../testing/coverage"
+import { randomAvailablePort } from "../../testing/util"
+import { Server } from "@hapi/hapi"
 
 const harness = Harness.getInstance()
 let Handler: any
+let server: Server
 
 describe('api/participants/handler', () => {
-  before(async () => {
-    await harness.up()
-    await harness.setupGlobals()
-
-    Handler = require('./handler')
-  })
-
-  after(async () => {
-    await harness.teardownGlobals()
-    await harness.down()
-  })
 
   it('handler fuzz', async () => {
-    const coverage = new Coverage([
-      'src/api/participants/handler.js'
-    ])
-    coverage.start()
+    try {
+      await harness.up()
+      await harness.setupGlobals()
+      // const setup = require('../../shared/setup')
+      const routes = require('./routes')
+      const port = await randomAvailablePort()
+      server = new Server({
+        port
+      })
+      server.route(routes)
+      await server.start()
 
-    const seed = 1
-    const prng = new PRNG(seed)
-    const fuzzer = new HandlerApiFuzzer(harness, Handler, prng, seed)
-    await fuzzer.run()
+      const coverage = new Coverage([
+        'src/api/participants/handler.js'
+      ])
+      coverage.start()
 
-    console.log(`trace is:\n\n${fuzzer.traceOutput}`)
+      const seed = 1
+      const prng = new PRNG(seed)
+      const fuzzer = new HandlerApiFuzzer(harness, Handler, server, prng, seed)
+      await fuzzer.run()
 
-    coverage.stopAndReport()
+      console.log(`trace is:\n\n${fuzzer.traceOutput}`)
+
+      await server.stop()
+      coverage.stopAndReport()
+    } catch (err: any) {
+      logger.error(err.message)
+      logger.error(err.stack)
+      throw err
+    } finally {
+      await harness.teardownGlobals()
+      await harness.down()
+    }
   })
 })
 
-type ActionName = 
-  'getAll' | 
-  'getByName' |
-  'update' |
-  'addEndpoint' |
-  'getEndpoint' |
-  'addLimitAndInitialPosition' |
-  'getLimits' |
-  'getLimitsForAllParticipants' |
-  'adjustLimits' |
-  'getPositions' |
-  'getAccounts' |
-  'updateAccount' |
-  'recordFunds' |
-  'createDfsp' | 
-  'createHub'
+type ActionName =
+  | 'getAll'
+  | 'getByName'
+  | 'update'
+  | 'addEndpoint'
+  | 'getEndpoint'
+  | 'addLimitAndInitialPosition'
+  | 'getLimits'
+  | 'getLimitsForAllParticipants'
+  | 'adjustLimits'
+  | 'getPositions'
+  | 'getAccounts'
+  | 'updateAccount'
+  | 'recordFunds'
+  | 'createDfsp'
+  | 'createHub'
+
+type Mutation =
+  | 'deleteKey'
+  | 'addKey'
+  | 'nullifyValue'
+  | 'changeType'
+  | 'mutate'
 
 class HandlerApiFuzzer {
   private step = 1
   private readonly stepsMax = 100
   private responses: Array<{
     action: ActionName,
+    input: any,
     body: any,
     code: any
   }> = []
@@ -69,7 +89,7 @@ class HandlerApiFuzzer {
   private dfspNames: Array<string> = []
 
   private weights: Record<ActionName, number> = {
-    getAll: 0,
+    getAll: 100,
     getByName: 0,
     createDfsp: 0,
     createHub: 10,
@@ -89,6 +109,7 @@ class HandlerApiFuzzer {
   constructor(
     private harness: Harness,
     private handler: any,
+    private server: Server,
     private prng: PRNG,
     private seed: number,
   ) { }
@@ -108,8 +129,15 @@ class HandlerApiFuzzer {
   }
 
   get traceOutput(): string {
+    const width = 150
     return this.responses
-      .map(response => `${response.action.padEnd(12)}:\t${JSON.stringify(response.body).padEnd(200).slice(0, 200)}`)
+      .map(response => {
+        return [
+          `${response.action.padEnd(12)}:`,
+          `\t${JSON.stringify(response.input).padEnd(width).slice(0, width)}`,
+          `\t${JSON.stringify(response.body).padEnd(width).slice(0, width)}`
+        ].join('\n')
+      })
       .join('\n')
   }
 
@@ -159,45 +187,65 @@ class HandlerApiFuzzer {
 
   // API Methods under test.
   public async getAll() {
-    // TODO: mutate this.
-    const request = {
-      query: {
-        isProxy: this.prng.headsOrTails()
-      }
-    }
-    try {
-      const response = await this.handler.getAll(request)
-      this.responses.push({
-        action: 'getAll',
-        body: response,
-        code: 0
-      })
-    } catch (err: any) {
-      this.responses.push({
-        action: 'getAll',
-        body: err.message,
-        code: 0
-      })
-    }
+    const method = 'GET'
+    const path = '/participants'
+    const payload = {}
+    const res = await this.server.inject({
+      method,
+      url: path,
+      payload,
+      headers: { 'Content-Type': 'application/json' }
+    })
+
+    this.responses.push({
+      action: `getAll`,
+      input: payload,
+      code: res.statusCode,
+      body: res.result
+    })
+
+
+    // const request = this.mutateObject({
+    //   query: {
+    //     isProxy: this.prng.headsOrTails()
+    //   }
+    // })
+    // try {
+    //   const response = await this.handler.getAll(request)
+    //   this.responses.push({
+    //     action: 'getAll',
+    //     input: request,
+    //     body: response,
+    //     code: 0
+    //   })
+    // } catch (err: any) {
+    //   this.responses.push({
+    //     action: 'getAll',
+    //     input: request,
+    //     body: err.message,
+    //     code: 0
+    //   })
+    // }
   }
 
   public async getByName() {
-    // TODO: mutate this.
-    const request = {
+    const request = this.mutateObject({
       params: {
         name: this.randomDfspName()
       }
-    }
+    })
     try {
       const response = await this.handler.getByName(request)
       this.responses.push({
         action: 'getByName',
+        input: request,
         body: response,
         code: 0
       })
     } catch (err: any) {
       this.responses.push({
         action: 'getByName',
+        input: request,
         body: err.message,
         code: 0
       })
@@ -216,12 +264,14 @@ class HandlerApiFuzzer {
       const response = await this.handler.addEndpoint(request)
       this.responses.push({
         action: 'addEndpoint',
+        input: request,
         body: response,
         code: 0
       })
     } catch (err: any) {
       this.responses.push({
         action: 'addEndpoint',
+        input: request,
         body: err.message,
         code: 0
       })
@@ -242,12 +292,14 @@ class HandlerApiFuzzer {
       const response = await this.handler.getEndpoint(request)
       this.responses.push({
         action: 'getEndpoint',
+        input: request,
         body: response,
         code: 0
       })
     } catch (err: any) {
       this.responses.push({
         action: 'getEndpoint',
+        input: request,
         body: err.message,
         code: 0
       })
@@ -266,12 +318,14 @@ class HandlerApiFuzzer {
       const response = await this.handler.update(request)
       this.responses.push({
         action: 'update',
+        input: request,
         body: response,
         code: 0
       })
     } catch (err: any) {
       this.responses.push({
         action: 'update',
+        input: request,
         body: err.message,
         code: 0
       })
@@ -279,6 +333,7 @@ class HandlerApiFuzzer {
   }
 
   // Helper methods to make things interesting.
+  // TODO: we should just replace this with the api itself!
   private async createHub() {
     const currency = this.randomCurrency()
     try {
@@ -290,6 +345,7 @@ class HandlerApiFuzzer {
 
       this.responses.push({
         action: 'createHub',
+        input: '',
         body: `success currency: ${currency}`,
         code: 1
       })
@@ -300,6 +356,7 @@ class HandlerApiFuzzer {
     } catch (err) {
       this.responses.push({
         action: 'createHub',
+        input: '',
         body: `fail currency: ${currency}`,
         code: 1
       })
@@ -319,6 +376,7 @@ class HandlerApiFuzzer {
 
       this.responses.push({
         action: 'createDfsp',
+        input: '',
         body: `createDfsp() success: dfsp: ${name} currency: ${currency}`,
         code: 1
       })
@@ -332,6 +390,7 @@ class HandlerApiFuzzer {
     } catch (err) {
       this.responses.push({
         action: 'createDfsp',
+        input: '',
         body: `createDfsp() fail: dfsp: ${name} currency: ${currency}`,
         code: 1
       })
@@ -344,7 +403,7 @@ class HandlerApiFuzzer {
       this.prng.randomElementFrom(this.dfspNames)
     }
 
-    const name = `dfsp_${this.prng.randomString(this.prng.intInRange(1,5))}`
+    const name = `dfsp_${this.prng.randomString(this.prng.intInRange(1, 5))}`
     this.dfspNames.push(name)
 
     return name
@@ -368,6 +427,82 @@ class HandlerApiFuzzer {
 
     // Make it longer.
     return input + this.prng.randomString(this.prng.intInRange(1, 5))
+  }
+
+  private mutateNumber(input: number): number {
+    const mutation = this.prng.randomElementFrom([
+      'negate',
+      'zero',
+      'overflow',
+      'fraction',
+      'increment',
+    ])
+
+    switch (mutation) {
+      case 'negate': return input * -1
+      case 'zero': return 0
+      case 'overflow': return Number.MAX_SAFE_INTEGER
+      case 'fraction': return input + 0.1
+      case 'increment': return input + this.prng.intInRange(-10, 10)
+      default: return input
+    }
+  }
+
+  private mutateObject(input: any, iterations: number = 3): any {
+    if (iterations === 0 || this.prng.headsOrTails()) {
+      return input
+    }
+
+    const clone = structuredClone(input)
+    const keys = Object.keys(clone)
+
+    if (keys.length === 0) {
+      clone[this.prng.randomString(5)] = this.prng.randomValue()
+      return clone
+    }
+
+    const table = PRNG.generateWeightedChoiceTable<Mutation>({
+      'deleteKey': 1,
+      'addKey': 1,
+      'nullifyValue': 1,
+      'changeType': 2,
+      'mutate': 7,
+    })
+    const mutation = this.prng.randomElementFrom(table)
+    const key = this.prng.randomElementFrom(keys)
+    switch (mutation) {
+      case "deleteKey":
+        delete clone[key]
+        break
+      case "addKey":
+        clone[this.prng.randomString(5)] = this.prng.randomValue()
+        break
+      case "nullifyValue":
+        clone[key] = this.prng.randomElementFrom([null, undefined, ''])
+        break
+      case "changeType":
+        clone[key] = this.randomValueDifferentType(clone[key])
+        break
+      case "mutate":
+        if (typeof clone[key] === 'string') {
+          clone[key] = this.mutateString(clone[key])
+        }
+        if (typeof clone[key] === 'number') {
+          clone[key] = this.mutateNumber(clone[key])
+        }
+        if (typeof clone[key] === 'object' && clone[key] !== null) {
+          clone[key] = this.mutateObject(clone[key])
+        }
+        break;
+    }
+
+    return this.mutateObject(clone, iterations - 1)
+  }
+
+  private randomValueDifferentType(current: any): any {
+    const type = typeof current
+    const options = [0, '', null, true, [], {}].filter(v => typeof v !== type)
+    return this.prng.randomElementFrom(options)
   }
 
   private randomEndpointType(): string {
@@ -413,4 +548,6 @@ class HandlerApiFuzzer {
 
     return this.mutateString(endpoint)
   }
+
+
 }
