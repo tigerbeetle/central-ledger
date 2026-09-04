@@ -576,8 +576,8 @@ export class DfspBuilder {
     return this
   }
 
-  proxy(): this {
-    this._proxy = true
+  proxy(isProxy: boolean = true): this {
+    this._proxy = isProxy
     return this
   }
 

@@ -39,6 +39,7 @@ const Config = require('../../lib/config')
 const Enums = require('../../lib/enumCached')
 const rethrow = require('../../shared/rethrow')
 const fspiopErrorFactory = require('../../shared/fspiopErrorFactory')
+const assert = require('node:assert')
 const logger = require('../../shared/logger').logger
 
 const LocalEnum = {
@@ -106,12 +107,10 @@ const create = async function (request, h) {
     for (const settlementModel of settlementModels) {
       const [participantCurrencyId1, participantCurrencyId2] = await Promise.all([
         ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.ledgerAccountTypeId, false),
-        ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)])
-      if (Array.isArray(participant.currencyList)) {
-        participant.currencyList = participant.currencyList.concat([await ParticipantService.getParticipantCurrencyById(participantCurrencyId1), await ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
-      } else {
-        participant.currencyList = await Promise.all([ParticipantService.getParticipantCurrencyById(participantCurrencyId1), ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
-      }
+        ParticipantService.createParticipantCurrency(participant.participantId, request.payload.currency, settlementModel.settlementAccountTypeId, false)]
+      )
+      assert(Array.isArray(participant.currencyList))
+      participant.currencyList = participant.currencyList.concat([await ParticipantService.getParticipantCurrencyById(participantCurrencyId1), await ParticipantService.getParticipantCurrencyById(participantCurrencyId2)])
     }
     return h.response(entityItem(participant, ledgerAccountIds)).code(201)
   } catch (err) {
@@ -147,9 +146,6 @@ const createHubAccount = async function (request, h) {
         throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR, 'The requested hub operator account type is not allowed.')
       }
       const newCurrencyAccount = await ParticipantService.createHubAccount(participant.participantId, request.payload.currency, ledgerAccountType.ledgerAccountTypeId)
-      if (!newCurrencyAccount) {
-        throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR, 'Participant account and Position create have failed.')
-      }
       participant.currencyList.push(newCurrencyAccount.participantCurrency)
     } else {
       throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR, 'Participant was not found.')
@@ -200,7 +196,7 @@ const update = async function (request) {
     if (request.payload.isActive !== undefined) {
       const isActiveText = request.payload.isActive ? LocalEnum.activated : LocalEnum.disabled
       const changeLog = JSON.stringify(Object.assign({}, request.params, { isActive: request.payload.isActive }))
-      logger.isInfoEnabled && logger.info(`Participant has been ${isActiveText} :: ${changeLog}`)
+      logger.info(`Participant has been ${isActiveText} :: ${changeLog}`)
     }
     const ledgerAccountTypes = await Enums.getEnums('ledgerAccountType')
     const ledgerAccountIds = Util.transpose(ledgerAccountTypes)
@@ -349,16 +345,14 @@ const getPositions = async function (request) {
 const getAccounts = async function (request) {
   try {
     const result = await ParticipantService.getAccounts(request.params.name, request.query)
+    assert(Array.isArray(result))
 
     // Convert value and reservedValue from string to number
-    if (Array.isArray(result)) {
-      return result.map(account => ({
-        ...account,
-        value: account.value !== undefined ? new MLNumber(account.value).toNumber() : undefined,
-        reservedValue: account.reservedValue !== undefined ? new MLNumber(account.reservedValue).toNumber() : undefined
-      }))
-    }
-    return result
+    return result.map(account => ({
+      ...account,
+      value: account.value !== undefined ? new MLNumber(account.value).toNumber() : undefined,
+      reservedValue: account.reservedValue !== undefined ? new MLNumber(account.reservedValue).toNumber() : undefined
+    }))
   } catch (err) {
     rethrowAndCountFspiopError(err, 'participantGetAccounts')
   }
@@ -373,7 +367,7 @@ const updateAccount = async function (request, h) {
     if (request.payload.isActive !== undefined) {
       const isActiveText = request.payload.isActive ? LocalEnum.activated : LocalEnum.disabled
       const changeLog = JSON.stringify(Object.assign({}, request.params, { isActive: request.payload.isActive }))
-      logger.isInfoEnabled && logger.info(`Participant account has been ${isActiveText} :: ${changeLog}`)
+      logger.info(`Participant account has been ${isActiveText} :: ${changeLog}`)
     }
     return h.response().code(200)
   } catch (err) {

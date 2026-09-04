@@ -63,7 +63,10 @@ export default class PRNG {
     return buffer
   }
 
-  public randomString(length: number): string {
+  public randomString(length?: number): string {
+    if (!length) {
+      length = this.intInRange(0, 50)
+    }
     const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
     let result = ''
     for (let i = 0; i < length; i++) {
