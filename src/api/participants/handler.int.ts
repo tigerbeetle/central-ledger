@@ -79,7 +79,7 @@ type Mutation =
 
 class HandlerApiFuzzer {
   private step = 1
-  private readonly stepsMax = 11000
+  private readonly stepsMax = 3500
   private responses: Array<{
     action: ActionName,
     input: any,
@@ -88,6 +88,7 @@ class HandlerApiFuzzer {
   }> = []
 
   private dfspNames: Array<string> = []
+  private dfspAccountsPosition: Record<string, Array<number>> = {}
   private dfspAccountsSettlement: Record<string, Array<number>> = {}
   private transferIds: Array<string> = []
   private registeredCurrencies: Array<string> = []
@@ -196,6 +197,11 @@ class HandlerApiFuzzer {
       assert(name !== null && name[1], `Could not match dfsp name from path: '${path}'.`)
       const accounts = res.result as Array<{ id: number, ledgerAccountType: string }>
       // Store the dfsp=>[account] mapping to the list of ids.
+      this.dfspAccountsPosition[name[1]] = [
+        ...accounts
+          .filter(account => account.ledgerAccountType === 'POSITION')
+          .map(account => account.id)
+      ]
       this.dfspAccountsSettlement[name[1]] = [
         ...accounts
           .filter(account => account.ledgerAccountType === 'SETTLEMENT')
@@ -276,7 +282,7 @@ class HandlerApiFuzzer {
 
   public async addLimitAndInitialPosition() {
     const name = this.randomDfspName()
-    const payload = this.mutateObject({
+    const payload = {
       currency: this.randomCurrency(),
       limit: {
         type: this.prng.randomElementFrom([
@@ -285,9 +291,8 @@ class HandlerApiFuzzer {
         ]),
         value: this.prng.intInRange(0, 1000000)
       },
-      type: this.randomEndpointType(),
       initialPosition: this.prng.intInRange(0, 1000000),
-    })
+    }
     await this.req(
       'addLimitAndInitialPosition',
       'POST',
@@ -382,20 +387,17 @@ class HandlerApiFuzzer {
 
   public async updateAccount() {
     const name = this.randomDfspName()
-    const account = this.randomDfspAccount(name)
+    const account = this.randomDfspAccountPosition(name)
     const url = `/participants/${name}/accounts/${account}`
     const payload = {
-      isActive: this.prng.randomElementFrom([
-        this.prng.headsOrTails(), 
-        // this.prng.randomValue
-      ])
+      isActive: this.prng.headsOrTails(), 
     }
     await this.req('updateAccount', 'PUT', url, payload)
   }
 
   public async recordFundsCreate() {
     const name = this.randomDfspName()
-    const account = this.randomDfspAccount(name)
+    const account = this.randomDfspAccountSettlement(name)
     const url = `/participants/${name}/accounts/${account}`
     const payload = this.mutateObject({
       transferId: this.randomTransferId(),
@@ -416,7 +418,7 @@ class HandlerApiFuzzer {
 
   public async recordFundsUpdate() {
     const name = this.randomDfspName()
-    const account = this.randomDfspAccount(name)
+    const account = this.randomDfspAccountSettlement(name)
     const transferId = this.randomTransferId()
     const url = `/participants/${name}/accounts/${account}/${transferId}`
     const payload = this.mutateObject({
@@ -440,7 +442,18 @@ class HandlerApiFuzzer {
     return name
   }
 
-  private randomDfspAccount(dfsp: string): number {
+  private randomDfspAccountPosition(dfsp: string): number {
+    if (this.dfspAccountsPosition[dfsp] &&
+      this.dfspAccountsPosition[dfsp].length > 0 &&
+      this.prng.headsOrTails()
+    ) {
+      return this.prng.randomElementFrom(this.dfspAccountsPosition[dfsp])
+    }
+
+    return this.prng.intInRange(-1, 10)
+  }
+
+  private randomDfspAccountSettlement(dfsp: string): number {
     if (this.dfspAccountsSettlement[dfsp] && 
       this.dfspAccountsSettlement[dfsp].length > 0 && 
       this.prng.headsOrTails()

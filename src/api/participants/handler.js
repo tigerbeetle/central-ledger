@@ -260,12 +260,13 @@ const getLimits = async function (request) {
     const limits = []
     if (Array.isArray(result) && result.length > 0) {
       result.forEach(item => {
+        assert(item.thresholdAlarmPercentage !== undefined)
         limits.push({
           currency: (item.currencyId || request.query.currency),
           limit: {
             type: item.name,
             value: new MLNumber(item.value).toNumber(),
-            alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
+            alarmPercentage: new MLNumber(item.thresholdAlarmPercentage).toNumber()
           }
         })
       })
@@ -282,13 +283,14 @@ const getLimitsForAllParticipants = async function (request) {
     const limits = []
     if (Array.isArray(result) && result.length > 0) {
       result.forEach(item => {
+        assert(item.thresholdAlarmPercentage !== undefined)
         limits.push({
           name: item.name,
           currency: item.currencyId,
           limit: {
             type: item.limitType,
             value: new MLNumber(item.value).toNumber(),
-            alarmPercentage: item.thresholdAlarmPercentage !== undefined ? new MLNumber(item.thresholdAlarmPercentage).toNumber() : undefined
+            alarmPercentage: new MLNumber(item.thresholdAlarmPercentage).toNumber()
           }
         })
       })
@@ -303,12 +305,13 @@ const adjustLimits = async function (request, h) {
   try {
     const result = await ParticipantService.adjustLimitsV2(request.params.name, request.payload)
     const { participantLimit } = result
+    assert(participantLimit.thresholdAlarmPercentage !== undefined)
     const updatedLimit = {
       currency: request.payload.currency,
       limit: {
         type: request.payload.limit.type,
         value: new MLNumber(participantLimit.value).toNumber(),
-        alarmPercentage: participantLimit.thresholdAlarmPercentage !== undefined ? new MLNumber(participantLimit.thresholdAlarmPercentage).toNumber() : undefined
+        alarmPercentage: new MLNumber(participantLimit.thresholdAlarmPercentage).toNumber()
       }
 
     }
@@ -325,10 +328,13 @@ const getPositions = async function (request) {
     // Convert value from string to number
     if (Array.isArray(result)) {
       // Multiple positions (no currency specified)
-      return result.map(position => ({
-        ...position,
-        value: position.value !== undefined ? new MLNumber(position.value).toNumber() : undefined
-      }))
+      return result.map(position => {
+        assert(position.value !== undefined)
+        return {
+          ...position,
+          value: new MLNumber(position.value).toNumber()
+        }
+      })
     } else if (result && typeof result === 'object' && result.value !== undefined) {
       // Single position (currency specified)
       return {
@@ -348,11 +354,15 @@ const getAccounts = async function (request) {
     assert(Array.isArray(result))
 
     // Convert value and reservedValue from string to number
-    return result.map(account => ({
-      ...account,
-      value: account.value !== undefined ? new MLNumber(account.value).toNumber() : undefined,
-      reservedValue: account.reservedValue !== undefined ? new MLNumber(account.reservedValue).toNumber() : undefined
-    }))
+    return result.map(account => {
+      assert(account.value !== undefined)
+      assert(account.reservedValue !== undefined)
+      return {
+        ...account,
+        value: new MLNumber(account.value).toNumber(),
+        reservedValue: new MLNumber(account.reservedValue).toNumber(),
+      }
+    })
   } catch (err) {
     rethrowAndCountFspiopError(err, 'participantGetAccounts')
   }
