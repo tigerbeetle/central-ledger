@@ -19,36 +19,13 @@ describe('handlers/timeout-v2', () => {
     FxTransferService = require('../domain/fx/index')
     proxyCache = require('../lib/proxyCache')
 
-    // Create the hub accounts + settlement model.
-    const createHubPayload: ApiHelpers.CreateHubPayload = {
-      currencies: ['USD', 'BWP'],
-      settlementModels: [
-        {
-          name: `DEFERRED_MULTILATERAL_NET_USD`,
-          settlementGranularity: 'NET',
-          settlementInterchange: 'MULTILATERAL',
-          settlementDelay: 'DEFERRED',
-          currency: 'USD',
-          requireLiquidityCheck: true,
-          ledgerAccountType: 'POSITION',
-          settlementAccountType: 'SETTLEMENT',
-          autoPositionReset: true
-        },
-        {
-          name: `DEFERRED_MULTILATERAL_NET_BWP`,
-          settlementGranularity: "NET",
-          settlementInterchange: "MULTILATERAL",
-          settlementDelay: "DEFERRED",
-          currency: 'BWP',
-          requireLiquidityCheck: true,
-          ledgerAccountType: "POSITION",
-          settlementAccountType: "SETTLEMENT",
-          autoPositionReset: true
-        },
-      ]
-    }
-    await ApiHelpers.createHub(harness, createHubPayload)
-    // Create 2 test dfsps to transfer between.
+    await ApiHelpers.buildHub()
+      .deps(harness)
+      .currency('USD')
+      .currency('BWP')
+      .build()
+      .create()
+   
     await ApiHelpers.createDfsp(harness, {
       name: 'dfsp_a',
       currencies: ['USD', 'BWP'],
@@ -88,8 +65,6 @@ describe('handlers/timeout-v2', () => {
       ],
       deposits: [10000, 10000]
     })
-    // await proxyCache.getCache().addDfspIdToProxyMapping('external_dfsp_a', 'dfsp_a_proxy')
-
   })
 
   after(async () => {
@@ -97,7 +72,7 @@ describe('handlers/timeout-v2', () => {
     await harness.down()
   })
 
-  it.only('messageBus.timeout() times out expired payments', async () => {
+  it('messageBus.timeout() times out expired payments', async () => {
     const transferId = '1000001'
     const positionPayerStart = await ApiHelpers.getPositionAccount('dfsp_a', 'USD')
     const positionPayeeStart = await ApiHelpers.getPositionAccount('dfsp_b', 'USD')
