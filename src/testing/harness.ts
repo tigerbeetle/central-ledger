@@ -65,7 +65,7 @@ const ExternalParticipantCached = require('../models/participant/externalPartici
 import Logger from "@mojaloop/central-services-logger"
 import knex from 'knex'
 import { ApplicationConfig, overrideForTesting, RecursivePartial, resetOverride } from "../lib/config"
-import { randomAvailablePort } from "./util"
+import { envOrDefaultNumber, randomAvailablePort } from "./util"
 import { Consumer } from "./kafka"
 import { Message } from "node-rdkafka"
 import { DispatchTransferHandler } from "../handlers/dispatch-transfer-handler"
@@ -75,7 +75,8 @@ import Expect from "./expect"
 import { TimeoutHandlerV2 } from "../handlers/timeout-v2"
 import { LedgerSql } from "../domain/ledger/ledger-sql"
 import PRNG from "./prng"
-import Clock from "./clock"
+import Clock from "./mock-clock"
+import MockClock from "./mock-clock"
 
 const logger = Logger.child({ scope: 'harness' })
 
@@ -125,8 +126,8 @@ export interface HarnessOptions {
 export default class Harness {
   private static instance: Harness | null = null;
   private options: HarnessOptions
-  private prng: PRNG
-  private clock: Clock
+  private static _prng: PRNG
+  private static _clock: Clock
   private dependencyRedpanda: Redpanda
   private dependencyMySql: MySql
   private dependencyRedis: Redis
@@ -155,8 +156,6 @@ export default class Harness {
   public constructor(options: HarnessOptions) {
     this.options = options
 
-    this.prng = new PRNG(options.seed)
-    this.clock = new Clock(this.prng, new Date('2026-01-01'))
 
     this.dependencyRedpanda = new Redpanda({
       harnessId: this.options.id
@@ -189,17 +188,11 @@ export default class Harness {
 
   public static getInstance(): Harness {
     if (!Harness.instance) {
-      let run = Harness.randomRunId()
-      if (process.env.RUN) {
-        try {
-          run = Number.parseInt(process.env.RUN)
-        } catch (err: any) {
-          throw new Error(`Invalid test run id. process.env.RUN should be an integer.`)
-        }
-      }
-
+      const run = envOrDefaultNumber('RUN', Harness.randomRunId())
+      const seed = envOrDefaultNumber('SEED', Harness.randomRunId())
       Harness.instance = new Harness({
         id: run,
+        seed,
       })
     }
     return Harness.instance;
@@ -392,6 +385,19 @@ export default class Harness {
   get ledger(): LedgerSql {
     assert(this._ledger, 'Ledger not initialized. Did you forget to call setupGlobals()?')
     return this._ledger
+  }
+
+  get prng() {
+    return Harness._prng
+  }
+
+  get clock() {
+    assert(Harness._clock, 'no Harness._clock, did you call `Harness.patchDateGlobal`?')
+    return Harness._clock
+  }
+
+  get seed(): number {
+    return this.options.seed
   }
 
   /**
@@ -815,6 +821,40 @@ Found only ${markNew} new messages.`)
 
   public static payloadsOf(messages: Array<MojaloopKafkaMessage>): Array<any> {
     return messages.map(message => message.valueParsed.content.payload)
+  }
+
+  public static patchDateGlobal(prng: PRNG): MockClock {
+    Harness._prng = prng
+    const clock = new MockClock(prng, new Date('2026-02-01'))
+
+    // Harness._originalDate = global.Date
+    const OriginalDate = global.Date
+
+    global.Date = class extends OriginalDate {
+      constructor(...args: any[]) {
+        if (args.length === 0) {
+          super(clock.now.getTime())
+        } else {
+          // @ts-ignore
+          super(...args)
+        }
+      }
+
+      static now() {
+        return clock.now.getTime()
+      }
+
+      static parse(str: string) {
+        return OriginalDate.parse(str)
+      }
+
+      static UTC(...args: any[]) {
+        return (OriginalDate.UTC as any)(...args)
+      }
+    } as any
+
+    Harness._clock = clock
+    return clock
   }
 }
 

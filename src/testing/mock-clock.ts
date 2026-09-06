@@ -7,12 +7,14 @@ import { futureDate } from "./util";
  *   For now, this clock only ticks forwards, but who knows, maybe it will be
  *   able to tick backwas
  */
-export default class Clock {
+export default class MockClock{
+  private dateStart: Date
   private _now
 
   constructor (private prng: PRNG, start: Date) {
     assert(prng instanceof PRNG)
     assert.ok(start instanceof Date)
+    this.dateStart = start
 
     this._now = start
   }
@@ -25,6 +27,10 @@ export default class Clock {
     const amount = this.prng.intExclusive(3) + 1
 
     this._now = futureDate(amount, unit as Parameters<typeof futureDate>[1], this._now)
+  }
+
+  public reset() {
+    this._now = this.dateStart
   }
 
   get now(): Date {

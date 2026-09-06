@@ -1,9 +1,9 @@
 import { describe, it } from "node:test";
-import Clock from "./clock";
+import Clock from "./mock-clock";
 import PRNG from "./prng";
 import assert from "node:assert";
 
-describe('clock', () => {
+describe('mock-clock', () => {
   it('ticks and ticks and ticks', () => {
     const prng = new PRNG(2141)
     const clock = new Clock(prng, new Date('2026-01-01'))

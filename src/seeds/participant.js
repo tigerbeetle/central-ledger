@@ -28,9 +28,7 @@
  ******/
 
 'use strict'
-const assert = require('node:assert')
 const Config = require('../lib/config')
-const { assertNestedFields } = require('../lib/config/util')
 
 const participant = [
   {
@@ -42,9 +40,7 @@ const participant = [
 ]
 
 exports.seed = async function (knex) {
-  assert(knex)
-  assertNestedFields(knex, 'userParams.clock')
-  participant[0].createdDate = knex.userParams.clock.now
+  participant[0].createdDate = new Date()
 
   try {
     return await knex('participant').insert(participant).onConflict('id').merge()

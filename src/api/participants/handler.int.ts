@@ -11,23 +11,73 @@ import * as ApiHelpers from '../../testing/api-helpers'
 import Coverage from "../../testing/coverage"
 import { envOrDefaultNumber, randomAvailablePort } from "../../testing/util"
 import { Server } from "@hapi/hapi"
-import Clock from "../../testing/clock"
+import Clock from "../../testing/mock-clock"
 import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
 const logger = loggerFactory()
 
+// We need to patch the date globally before starting the harness.
+const prng = new PRNG(envOrDefaultNumber('SEED', 123124))
+Harness.patchDateGlobal(prng)
 const harness = Harness.getInstance()
 let Handler: any
 let server: Server
 
 describe('api/participants/handler', () => {
+  it.only('is fully deterministic', async () => {
+    // const traces: Array<string> = []
+    
+    const stepsMax = 5
+    const traceA = await run(stepsMax)
+    const traceB = await run(stepsMax)
+
+    console.log(`traceA:\n${traceA}\n`)
+    console.log(`traceB:\n${traceB}\n`)
+
+    // assert.deepStrictEqual(traceA, traceB)
+  })
+
+  const run = async (stepsMax: number): Promise<string> => {
+    harness.clock.reset()
+    harness.prng.reset()
+
+    try {
+      const options: FuzzOptions = {
+        stepsMax
+      }
+
+      await harness.up()
+      await harness.setupGlobals()
+
+      const routes = require('./routes')
+      const port = await randomAvailablePort()
+      server = new Server({
+        port
+      })
+      server.route(routes)
+      await server.start()
+
+      harness.prng.reset()
+      const fuzzer = new HandlerApiFuzzer(options, harness, server)
+      await fuzzer.run()
+
+      await server.stop()
+      return fuzzer.traceOutput
+    } catch (err: any) {
+      logger.error(err.message)
+      logger.error(err.stack)
+      throw err
+    } finally {
+      await harness.teardownGlobals()
+      await harness.down()
+    }
+  }
+
+
   it('handler fuzz', async () => {
     try {
       const options: FuzzOptions = {
-        seed: envOrDefaultNumber('SEED', 42),
         stepsMax: envOrDefaultNumber('STEPS_MAX', 5000),
       }
-      const prng = new PRNG(options.seed)
-      const clock = new Clock(prng, new Date('2026-01-01'))
 
       await harness.up()
       await harness.setupGlobals()
@@ -47,8 +97,8 @@ describe('api/participants/handler', () => {
       // ])
       // coverage.start()
 
-      
-      const fuzzer = new HandlerApiFuzzer(prng, clock, options, harness, server)
+
+      const fuzzer = new HandlerApiFuzzer(options, harness, server)
       await fuzzer.run()
       logger.info(`trace:\n${fuzzer.traceOutput}`)
 
@@ -95,17 +145,10 @@ interface FuzzOptions {
    * How many steps the fuzzer should take.
    */
   stepsMax: number,
-
-  /**
-   * Seed for the PRNG.
-   */
-  seed: number
 }
 
 class HandlerApiFuzzer {
   private step = 1
-  // private prng: PRNG
-  // private clock: Clock
   private readonly stepsMax: number
   private responses: Array<{
     action: ActionName,
@@ -141,37 +184,31 @@ class HandlerApiFuzzer {
   }
 
   constructor(
-    private prng: PRNG,
-    private clock: Clock,
     private options: FuzzOptions,
     private harness: Harness,
     private server: Server,
   ) {
     assert(options.stepsMax)
-    assert(options.seed)
 
     this.stepsMax = options.stepsMax
-    // this.prng = new PRNG(options.seed)
-    // TODO: how to get this clock where it needs to go?
-    // this.clock = new Clock(this.prng, new Date('2026-01-01'))
     this.injectDbFaults()
   }
 
   public async run() {
     logger.warn(`HandlerApiFuzzer.run() running:`)
-    logger.warn(`\tSEED = ${ this.options.seed }`)
-    logger.warn(`\tSTEPS_MAX = ${ this.stepsMax } `)
+    logger.warn(`\tSEED = ${this.harness.seed}`)
+    logger.warn(`\tSTEPS_MAX = ${this.stepsMax} `)
 
     try {
       while (this.step <= this.stepsMax) {
         await this.doStep()
-        this.clock.tick()
+        this.harness.clock.tick()
 
         this.step += 1
       }
     } catch (err: any) {
       logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.\nError: ${err.message}\nStack: ${err.stack}`)
-      logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.options.seed}`)
+      logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.harness.seed}`)
       throw err
     }
   }
@@ -182,8 +219,8 @@ class HandlerApiFuzzer {
       .map(response => {
         return [
           `${response.action.padEnd(12)}:`,
-          `\t${JSON.stringify(response.input).padEnd(width).slice(0, width)}`,
-          `\t${JSON.stringify(response.body).padEnd(width).slice(0, width)}`
+          // `\t${JSON.stringify(response.input).padEnd(width).slice(0, width)}`,
+          // `\t${JSON.stringify(response.body).padEnd(width).slice(0, width)}`
         ].join('\n')
       })
       .join('\n')
@@ -198,7 +235,7 @@ class HandlerApiFuzzer {
     const originalFrom = Db.from.bind(Db)
 
     Db.from = (tableName: string) => {
-      if (this.prng.intExclusive(250) === 0) {
+      if (this.harness.prng.intExclusive(250) === 0) {
         throw new Error('Injected DB fault.')
       }
       return originalFrom(tableName)
@@ -226,7 +263,7 @@ class HandlerApiFuzzer {
 
   private randomAction(): () => Promise<void> {
     const table = PRNG.generateWeightedChoiceTable<ActionName>(this.weights)
-    const action = this.prng.randomElementFrom(table)
+    const action = this.harness.prng.randomElementFrom(table)
     return this.actions[action]
   }
 
@@ -280,8 +317,8 @@ class HandlerApiFuzzer {
 
   // API Methods under test.
   public async getAll() {
-    const query = this.prng.randomElementFrom([
-      this.mutateString(`?isProxy=${this.prng.headsOrTails()}`), ''
+    const query = this.harness.prng.randomElementFrom([
+      this.mutateString(`?isProxy=${this.harness.prng.headsOrTails()}`), ''
     ])
     await this.req('getAll', 'GET', '/participants' + query, {})
   }
@@ -292,16 +329,16 @@ class HandlerApiFuzzer {
   }
 
   public async create() {
-    if (this.prng.headsOrTails() && this.registeredCurrencies.length > 0) {
-      const name = `dfsp_${this.prng.randomString(this.prng.intInRange(1, 5))}`
+    if (this.harness.prng.headsOrTails() && this.registeredCurrencies.length > 0) {
+      const name = `dfsp_${this.harness.prng.randomString(this.harness.prng.intInRange(1, 5))}`
       this.dfspNames.push(name)
-      const currency = this.prng.randomElementFrom(this.registeredCurrencies)
+      const currency = this.harness.prng.randomElementFrom(this.registeredCurrencies)
       try {
         await ApiHelpers.buildDfsp()
           .deps(this.harness)
           .name(name)
           .currency(currency)
-          .proxy(this.prng.headsOrTails())
+          .proxy(this.harness.prng.headsOrTails())
           .build()
           .create()
       } catch (err: any) {
@@ -315,7 +352,7 @@ class HandlerApiFuzzer {
     const payload = this.mutateObject({
       name: this.randomDfspName(),
       currency: this.randomCurrency(),
-      isProxy: this.prng.headsOrTails()
+      isProxy: this.harness.prng.headsOrTails()
     })
     await this.req('create', 'POST', `/participants`, payload)
   }
@@ -323,7 +360,7 @@ class HandlerApiFuzzer {
   public async update() {
     const name = this.randomDfspName()
     const payload = this.mutateObject({
-      isActive: this.prng.headsOrTails()
+      isActive: this.harness.prng.headsOrTails()
     })
     await this.req('update', 'PUT', `/participants/${name}`, payload)
   }
@@ -332,14 +369,14 @@ class HandlerApiFuzzer {
     const name = this.randomDfspName()
     const payload = this.mutateObject({
       type: this.randomEndpointType(),
-      value: `http://` + this.prng.randomString()
+      value: `http://` + this.harness.prng.randomString()
     })
     await this.req('addEndpoint', 'POST', `/participants/${name}/endpoints`, payload)
   }
 
   public async getEndpoint() {
     // const name = this.randomDfspName()
-    // const query = this.prng.randomElementFrom([
+    // const query = this.harness.prng.randomElementFrom([
     //   this.mutateString(`?type=${this.randomEndpointType()}`),
     //   ''
     // ])
@@ -347,15 +384,15 @@ class HandlerApiFuzzer {
     // await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints` + query, {})
     const knownDfsps = Object.keys(this.dfspEndpoints).filter(d => this.dfspEndpoints[d].length > 0)
 
-    if (knownDfsps.length > 0 && this.prng.headsOrTails()) {
-      const name = this.prng.randomElementFrom(knownDfsps)
-      const endpointType = this.prng.randomElementFrom(this.dfspEndpoints[name])
+    if (knownDfsps.length > 0 && this.harness.prng.headsOrTails()) {
+      const name = this.harness.prng.randomElementFrom(knownDfsps)
+      const endpointType = this.harness.prng.randomElementFrom(this.dfspEndpoints[name])
       await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints?type=${endpointType}`, {})
       return
     }
 
     const name = this.randomDfspName()
-    const query = this.prng.randomElementFrom([
+    const query = this.harness.prng.randomElementFrom([
       `?type=${this.randomEndpointType()}`,
       ''
     ])
@@ -369,14 +406,14 @@ class HandlerApiFuzzer {
     const payload = {
       currency,
       limit: {
-        type: this.prng.randomElementWeighted([
+        type: this.harness.prng.randomElementWeighted([
           'NET_DEBIT_CAP', // Valid.
-          this.prng.randomString()
+          this.harness.prng.randomString()
         ], [5, 1]),
-        value: this.prng.intInRange(0, 1000000)
+        value: this.harness.prng.intInRange(0, 1000000)
       },
-      initialPosition: this.prng.randomElementFrom([
-        this.prng.intInRange(0, 1000000),
+      initialPosition: this.harness.prng.randomElementFrom([
+        this.harness.prng.intInRange(0, 1000000),
       ])
     }
     await this.req(
@@ -406,12 +443,12 @@ class HandlerApiFuzzer {
     const payload = this.mutateObject({
       currency: this.randomCurrency(),
       limit: {
-        type: this.prng.randomElementFrom([
+        type: this.harness.prng.randomElementFrom([
           'NET_DEBIT_CAP', // Valid.
-          this.prng.randomString()
+          this.harness.prng.randomString()
         ]),
-        value: this.prng.intInRange(0, 1000000),
-        alarmPercentage: this.prng.intInRange(-1, 101),
+        value: this.harness.prng.intInRange(0, 1000000),
+        alarmPercentage: this.harness.prng.intInRange(-1, 101),
       },
     })
     await this.req('adjustLimits', 'PUT', url, payload)
@@ -420,8 +457,8 @@ class HandlerApiFuzzer {
   public async createHubAccount() {
     // The odds of this all getting created properly are quite low, so let's flip a coin and just
     // set up the hub if true.
-    if (this.prng.headsOrTails() && this.registeredCurrencies.length < 2) {
-      const currency = this.prng.randomElementFrom(['USD', 'EUR', 'GBP'])
+    if (this.harness.prng.headsOrTails() && this.registeredCurrencies.length < 2) {
+      const currency = this.harness.prng.randomElementFrom(['USD', 'EUR', 'GBP'])
       try {
         await ApiHelpers.buildHub()
           .deps(this.harness)
@@ -437,15 +474,15 @@ class HandlerApiFuzzer {
       this.weights.create = 10
     }
 
-    const name = this.prng.randomElementFrom([
+    const name = this.harness.prng.randomElementFrom([
       'Hub',
       this.randomDfspName(),
       this.mutateString('Hub')
     ])
     const url = `/participants/${name}/accounts`
     const payload = this.mutateObject({
-      currency: this.prng.randomElementFrom(['USD', 'EUR', 'GBP']),
-      type: this.prng.randomElementFrom([
+      currency: this.harness.prng.randomElementFrom(['USD', 'EUR', 'GBP']),
+      type: this.harness.prng.randomElementFrom([
         'POSITION',
         'SETTLEMENT',
         'HUB_RECONCILIATION',
@@ -453,7 +490,7 @@ class HandlerApiFuzzer {
         'HUB_FEE',
         'POSITION_REMITTANCE',
         'SETTLEMENT_REMITTANCE',
-        this.prng.randomString(),
+        this.harness.prng.randomString(),
       ])
     })
     await this.req('createHubAccount', 'POST', url, payload)
@@ -469,7 +506,7 @@ class HandlerApiFuzzer {
   public async getAccounts() {
     const name = this.randomDfspName()
     const url = `/participants/${name}/accounts`
-    const query = this.prng.randomElementFrom([
+    const query = this.harness.prng.randomElementFrom([
       '', `?currency${this.randomCurrency}`
     ])
     await this.req('getAccounts', 'GET', url + query, {})
@@ -480,7 +517,7 @@ class HandlerApiFuzzer {
     const account = this.randomDfspAccountPosition(name)
     const url = `/participants/${name}/accounts/${account}`
     const payload = {
-      isActive: this.prng.headsOrTails(),
+      isActive: this.harness.prng.headsOrTails(),
     }
     await this.req('updateAccount', 'PUT', url, payload)
   }
@@ -491,15 +528,15 @@ class HandlerApiFuzzer {
     const url = `/participants/${name}/accounts/${account}`
     const payload = this.mutateObject({
       transferId: this.randomTransferId(),
-      externalReference: this.prng.randomString(),
-      action: this.prng.randomElementFrom([
+      externalReference: this.harness.prng.randomString(),
+      action: this.harness.prng.randomElementFrom([
         'recordFundsIn',
         'recordFundsOutPrepareReserve',
-        this.prng.randomString(),
+        this.harness.prng.randomString(),
       ]),
-      reason: this.prng.randomString(),
+      reason: this.harness.prng.randomString(),
       amount: {
-        amount: this.prng.intInRange(-1, 10000) / 100,
+        amount: this.harness.prng.intInRange(-1, 10000) / 100,
         currency: this.randomCurrency()
       }
     })
@@ -512,80 +549,80 @@ class HandlerApiFuzzer {
     const transferId = this.randomTransferId()
     const url = `/participants/${name}/accounts/${account}/${transferId}`
     const payload = this.mutateObject({
-      action: this.prng.randomElementFrom([
+      action: this.harness.prng.randomElementFrom([
         'recordFundsOutCommit',
         'recordFundsOutAbort',
-        this.prng.randomString(),
+        this.harness.prng.randomString(),
       ]),
-      reason: this.prng.randomString(),
+      reason: this.harness.prng.randomString(),
     })
     await this.req('recordFundsUpdate', 'PUT', url, payload)
   }
 
   private randomDfspName(): string {
-    if (this.dfspNames.length > 0 && this.prng.intExclusive(100) > 20) {
+    if (this.dfspNames.length > 0 && this.harness.prng.intExclusive(100) > 20) {
       // Reuse
-      return this.prng.randomElementFrom(this.dfspNames)
+      return this.harness.prng.randomElementFrom(this.dfspNames)
     }
 
-    const name = `dfsp_${this.prng.randomString(this.prng.intInRange(1, 5))}`
+    const name = `dfsp_${this.harness.prng.randomString(this.harness.prng.intInRange(1, 5))}`
     return name
   }
 
   private randomDfspAccountPosition(dfsp: string): number {
     if (this.dfspAccountsPosition[dfsp] &&
       this.dfspAccountsPosition[dfsp].length > 0 &&
-      this.prng.headsOrTails()
+      this.harness.prng.headsOrTails()
     ) {
-      return this.prng.randomElementFrom(this.dfspAccountsPosition[dfsp])
+      return this.harness.prng.randomElementFrom(this.dfspAccountsPosition[dfsp])
     }
 
-    return this.prng.intInRange(-1, 10)
+    return this.harness.prng.intInRange(-1, 10)
   }
 
   private randomDfspAccountSettlement(dfsp: string): number {
     if (this.dfspAccountsSettlement[dfsp] &&
       this.dfspAccountsSettlement[dfsp].length > 0 &&
-      this.prng.headsOrTails()
+      this.harness.prng.headsOrTails()
     ) {
-      return this.prng.randomElementFrom(this.dfspAccountsSettlement[dfsp])
+      return this.harness.prng.randomElementFrom(this.dfspAccountsSettlement[dfsp])
     }
 
-    return this.prng.intInRange(-1, 10)
+    return this.harness.prng.intInRange(-1, 10)
   }
 
   private randomTransferId(): string {
-    if (this.transferIds.length > 0 && this.prng.headsOrTails()) {
+    if (this.transferIds.length > 0 && this.harness.prng.headsOrTails()) {
       // Reuse
-      return this.prng.randomElementFrom(this.transferIds)
+      return this.harness.prng.randomElementFrom(this.transferIds)
     }
 
-    const id = this.mutateString(this.prng.uuidv4())
+    const id = this.mutateString(this.harness.prng.uuidv4())
     this.transferIds.push(id)
 
     return id
   }
 
   private randomCurrency(): string {
-    const currency = this.prng.randomElementFrom(['USD', 'BGP', 'EUR', 'GBP'])
-    return this.prng.randomElementWeighted([currency, this.mutateString(currency)], [8, 2])
+    const currency = this.harness.prng.randomElementFrom(['USD', 'BGP', 'EUR', 'GBP'])
+    return this.harness.prng.randomElementWeighted([currency, this.mutateString(currency)], [8, 2])
   }
 
   private mutateString(input: string): string {
-    if (this.prng.headsOrTails()) {
+    if (this.harness.prng.headsOrTails()) {
       // Safe.
       return input
     }
 
-    if (this.prng.headsOrTails() && input.length > 0) {
-      return input.substring(0, this.prng.intInRange(0, input.length))
+    if (this.harness.prng.headsOrTails() && input.length > 0) {
+      return input.substring(0, this.harness.prng.intInRange(0, input.length))
     }
 
-    return input + this.prng.randomString(this.prng.intInRange(1, 5))
+    return input + this.harness.prng.randomString(this.harness.prng.intInRange(1, 5))
   }
 
   private mutateNumber(input: number): number {
-    const mutation = this.prng.randomElementFrom([
+    const mutation = this.harness.prng.randomElementFrom([
       'negate',
       'zero',
       'overflow',
@@ -598,13 +635,13 @@ class HandlerApiFuzzer {
       case 'zero': return 0
       case 'overflow': return Number.MAX_SAFE_INTEGER
       case 'fraction': return input + 0.1
-      case 'increment': return input + this.prng.intInRange(-10, 10)
+      case 'increment': return input + this.harness.prng.intInRange(-10, 10)
       default: return input
     }
   }
 
   private mutateObject(input: any, iterations: number = 3): any {
-    if (iterations === 0 || this.prng.headsOrTails()) {
+    if (iterations === 0 || this.harness.prng.headsOrTails()) {
       return input
     }
 
@@ -612,7 +649,7 @@ class HandlerApiFuzzer {
     const keys = Object.keys(clone)
 
     if (keys.length === 0) {
-      clone[this.prng.randomString(5)] = this.prng.randomValue()
+      clone[this.harness.prng.randomString(5)] = this.harness.prng.randomValue()
       return clone
     }
 
@@ -623,17 +660,17 @@ class HandlerApiFuzzer {
       'changeType': 2,
       'mutate': 7,
     })
-    const mutation = this.prng.randomElementFrom(table)
-    const key = this.prng.randomElementFrom(keys)
+    const mutation = this.harness.prng.randomElementFrom(table)
+    const key = this.harness.prng.randomElementFrom(keys)
     switch (mutation) {
       case "deleteKey":
         delete clone[key]
         break
       case "addKey":
-        clone[this.prng.randomString(5)] = this.prng.randomValue()
+        clone[this.harness.prng.randomString(5)] = this.harness.prng.randomValue()
         break
       case "nullifyValue":
-        clone[key] = this.prng.randomElementFrom([null, undefined, ''])
+        clone[key] = this.harness.prng.randomElementFrom([null, undefined, ''])
         break
       case "changeType":
         clone[key] = this.randomValueDifferentType(clone[key])
@@ -657,7 +694,7 @@ class HandlerApiFuzzer {
   private randomValueDifferentType(current: any): any {
     const type = typeof current
     const options = [0, '', null, true, [], {}].filter(v => typeof v !== type)
-    return this.prng.randomElementFrom(options)
+    return this.harness.prng.randomElementFrom(options)
   }
 
   private randomEndpointType(): string {
@@ -696,8 +733,8 @@ class HandlerApiFuzzer {
       'NET_DEBIT_CAP_ADJUSTMENT_EMAIL',
       'SETTLEMENT_TRANSFER_POSITION_CHANGE_EMAIL',
     ]
-    let endpoint = this.prng.randomElementFrom(endpointTypesValid)
-    if (this.prng.headsOrTails()) {
+    let endpoint = this.harness.prng.randomElementFrom(endpointTypesValid)
+    if (this.harness.prng.headsOrTails()) {
       return endpoint
     }
 

@@ -6,10 +6,16 @@ import assert from 'node:assert'
  *   Reference: https://stackoverflow.com/questions/521295/seeding-the-random-number-generator-in-javascript
  */
 export default class PRNG {
+  private _seed: number
   prng: () => number
 
   constructor(seed: number) {
+    this._seed = seed
     this.prng = splitmix32(seed)
+  }
+
+  public reset() {
+    this.prng = splitmix32(this._seed)
   }
 
   public randomElementFrom<T>(array: Array<T>): T {
@@ -154,6 +160,8 @@ function splitmix32(a: number) {
     t = Math.imul(t, 0x21f0aaad)
     t = t ^ t >>> 15
     t = Math.imul(t, 0x735a2d97)
-    return ((t = t ^ t >>> 15) >>> 0) / 4294967296
+    const num = ((t = t ^ t >>> 15) >>> 0) / 4294967296
+    // console.log('prng state: ', num)
+    return num
   }
 }
