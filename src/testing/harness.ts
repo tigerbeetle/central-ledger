@@ -389,22 +389,6 @@ export default class Harness {
     this.applicationConfig = deepMerge(this.config, override)
   }
 
-  public async mysqlPause(): Promise<void> {
-    return this.dependencyMySql.pause()
-  }
-
-  public async mysqlResume(): Promise<void> {
-    return this.dependencyMySql.resume()
-  }
-
-  public async mysqlKillConnection(): Promise<void> {
-    return this.dependencyMySql.killConnection()
-  }
-
-  public async mysqlKillQueries(): Promise<void> {
-    return this.dependencyMySql.killQueries()
-  }
-
   /**
    * Reset the override
    */
@@ -668,8 +652,11 @@ environment!\n ${err.message}`)
     }
   }
 
-  public redpandaMark(): number {
-    return this.messageQueue.length
+  /**
+   * Hide all Mojaloop logs. Useful when fuzzing to keep the terminal output down.
+   */
+  public logsHide() {
+
   }
 
   /**
@@ -1125,50 +1112,6 @@ class MySql {
     } catch (err: any) {
       this.logger.error(`down() - failed to remove containers: ${err.message}`)
       throw err
-    }
-  }
-
-  public async pause(): Promise<void> {
-    await execAsync(`docker pause ${this.containerName}`)
-  }
-
-  public async resume(): Promise<void> {
-    await execAsync(`docker unpause ${this.containerName}`)
-  }
-
-  public async killConnection(): Promise<void> {
-    // Try killing all connections?
-    const getCmd = `docker exec ${this.containerName} mariadb -u root -ppassword -s -N -e "
-      SELECT id FROM information_schema.processlist WHERE db = 'central_ledger' OR db IS NULL
-    "`
-    const { stdout } = await execAsync(getCmd, { silent: true, force: true })
-
-    const ids = stdout.trim().split('\n').filter(id => id)
-
-    // Kill each one
-    for (const id of ids) {
-      await execAsync(
-        `docker exec ${this.containerName} mariadb -u root -ppassword -e "KILL ${id}"`,
-        { silent: true, force: true }
-      )
-    }
-  }
-
-  public async killQueries(): Promise<void> {
-    const getCmd = `docker exec ${this.containerName} mariadb -u root -ppassword -s -N -e "
-      SELECT id FROM information_schema.processlist WHERE command = 'Query' AND db = 'central_ledger'
-    "`
-    const { stdout } = await execAsync(getCmd, { silent: true, force: true })
-
-    // TODO: I don't think this works, queries happen too fast to be able to kill them reliably.
-    const ids = stdout.trim().split('\n').filter(id => id)
-    for (const id of ids) {
-      const result = await execAsync(
-        `docker exec ${this.containerName} mariadb -u root -ppassword -e "KILL QUERY ${id}"`,
-        { silent: true, force: true }
-      )
-      console.log('result.stdout', result.stdout)
-      console.log('result.stderr', result.stderr)
     }
   }
 

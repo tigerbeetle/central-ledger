@@ -18,6 +18,22 @@ export default class PRNG {
     return array[index]
   }
 
+  public randomElementWeighted<T>(array: Array<T>, weights: Array<number>): T {
+    assert.equal(array.length, weights.length)
+    assert(array.length > 0)
+
+    const weightsSum = weights.reduce((sum, weight) => sum + weight, 0)
+    let random = this.prng() * weightsSum
+    for (let idx = 0; idx < array.length; idx++) {
+      random -= weights[idx]
+      if (random < 0) {
+        return array[idx]
+      }
+    }
+    
+    return array[array.length - 1]
+  }
+
   public headsOrTails(): boolean {
     const index = this.intExclusive(2)
     if (index === 1) {

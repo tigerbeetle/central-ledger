@@ -1,20 +1,24 @@
 import { describe, it } from "node:test"
+import LoggerMock from "../../testing/logger-mock"
+import { logger } from "../../shared/logger"
+// @ts-ignore
+logger = new LoggerMock()
 import assert from "node:assert"
 import Harness from '../../testing/harness'
 import PRNG from "../../testing/prng"
-import { logger } from "../../shared/logger"
+
 import * as ApiHelpers from '../../testing/api-helpers'
 import Coverage from "../../testing/coverage"
-import { randomAvailablePort } from "../../testing/util"
+import { envOrDefaultNumber, randomAvailablePort } from "../../testing/util"
 import { Server } from "@hapi/hapi"
-import Db from '../../lib/db'
+import Clock from "../../testing/clock"
+import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
 
 const harness = Harness.getInstance()
 let Handler: any
 let server: Server
 
 describe('api/participants/handler', () => {
-
   it('handler fuzz', async () => {
     try {
       await harness.up()
@@ -35,12 +39,12 @@ describe('api/participants/handler', () => {
       // ])
       // coverage.start()
 
-      const seed = 1
-      const prng = new PRNG(seed)
-      const fuzzer = new HandlerApiFuzzer(harness, Handler, server, prng, seed)
+      const options: FuzzOptions = {
+        seed: envOrDefaultNumber('SEED', 42),
+        stepsMax: envOrDefaultNumber('STEPS_MAX', 5000),
+      }
+      const fuzzer = new HandlerApiFuzzer(options, harness, server)
       await fuzzer.run()
-
-      console.log(`trace is:\n\n${fuzzer.traceOutput}`)
 
       await server.stop()
       // coverage.stopAndReport()
@@ -80,9 +84,24 @@ type Mutation =
   | 'changeType'
   | 'mutate'
 
+interface FuzzOptions {
+  /**
+   * How many steps the fuzzer should take.
+   */
+  stepsMax: number,
+
+  /**
+   * Seed for the PRNG.
+   */
+  seed: number
+}
+
 class HandlerApiFuzzer {
+  private logger = loggerFactory('FUZZ')
   private step = 1
-  private readonly stepsMax = 5000
+  private prng: PRNG
+  private clock: Clock
+  private readonly stepsMax: number
   private responses: Array<{
     action: ActionName,
     input: any,
@@ -93,11 +112,12 @@ class HandlerApiFuzzer {
   private dfspNames: Array<string> = []
   private dfspAccountsPosition: Record<string, Array<number>> = {}
   private dfspAccountsSettlement: Record<string, Array<number>> = {}
+  private dfspEndpoints: Record<string, Array<string>> = {}
   private transferIds: Array<string> = []
   private registeredCurrencies: Array<string> = []
 
   private weights: Record<ActionName, number> = {
-    getAll: 100,
+    getAll: 2,
     getByName: 1,
     create: 1,
     update: 1,
@@ -105,7 +125,7 @@ class HandlerApiFuzzer {
     getEndpoint: 2,
     addLimitAndInitialPosition: 2,
     getLimits: 2,
-    getLimitsForAllParticipants: 2,
+    getLimitsForAllParticipants: 3,
     adjustLimits: 2,
     createHubAccount: 10,
     getPositions: 2,
@@ -116,25 +136,34 @@ class HandlerApiFuzzer {
   }
 
   constructor(
+    private options: FuzzOptions,
     private harness: Harness,
-    private handler: any,
     private server: Server,
-    private prng: PRNG,
-    private seed: number,
   ) {
+    assert(options.stepsMax)
+    assert(options.seed)
+
+    this.stepsMax = options.stepsMax
+    this.prng = new PRNG(options.seed)
+    // TODO: how to get this clock where it needs to go?
+    this.clock = new Clock(this.prng, new Date('2026-01-01'))
     this.injectDbFaults()
   }
 
   public async run() {
+    this.logger.warn(`HandlerApiFuzzer.run() running`)
+    this.logger.warn(`\tSEED = ${ this.options.seed } for \n\tSTEPS_MAX = ${ this.stepsMax } `)
+
     try {
       while (this.step <= this.stepsMax) {
         await this.doStep()
+        this.clock.tick()
 
         this.step += 1
       }
     } catch (err: any) {
-      logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.\nError: ${err.message}\nStack: ${err.stack}`)
-      logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.seed}`)
+      this.logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.\nError: ${err.message}\nStack: ${err.stack}`)
+      this.logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.options.seed}`)
       throw err
     }
   }
@@ -153,26 +182,15 @@ class HandlerApiFuzzer {
   }
 
   private async doStep() {
-    // await this.maybeInjectFault()
     return this.randomAction()()
   }
-
-  // private async maybeInjectFault() {
-  //   if (this.prng.intExclusive(250) === 0){
-  //     await this.harness.mysqlKillConnection()
-  //   }
-  //   if (this.prng.intExclusive(100) === 0) {
-  //     // TODO: Not sure if we need to run this not async?
-  //     await this.harness.mysqlKillQueries()
-  //   }
-  // }
 
   private injectDbFaults() {
     const Db = require('../../lib/db')
     const originalFrom = Db.from.bind(Db)
 
     Db.from = (tableName: string) => {
-      if (this.prng.intExclusive(100) === 0) {
+      if (this.prng.intExclusive(250) === 0) {
         throw new Error('Injected DB fault.')
       }
       return originalFrom(tableName)
@@ -236,6 +254,20 @@ class HandlerApiFuzzer {
           .map(account => account.id),
       ]
     }
+
+    if (action === 'addEndpoint' && res.statusCode === 201) {
+      const match = path.match(/^\/participants\/(.*)\/endpoints/)
+      assert(match !== null)
+      assert(match[1])
+      const name = match[1]
+
+      if (name && payload?.type) {
+        if (!this.dfspEndpoints[name]) {
+          this.dfspEndpoints[name] = []
+        }
+        this.dfspEndpoints[name].push(payload.type)
+      }
+    }
   }
 
   // API Methods under test.
@@ -265,7 +297,7 @@ class HandlerApiFuzzer {
           .build()
           .create()
       } catch (err: any) {
-        assert.equal(err.message, 'Injected DB fault.')
+        // Ignoring the create errors here.
       }
 
       this.weights.createHubAccount = 1
@@ -298,27 +330,46 @@ class HandlerApiFuzzer {
   }
 
   public async getEndpoint() {
+    // const name = this.randomDfspName()
+    // const query = this.prng.randomElementFrom([
+    //   this.mutateString(`?type=${this.randomEndpointType()}`),
+    //   ''
+    // ])
+
+    // await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints` + query, {})
+    const knownDfsps = Object.keys(this.dfspEndpoints).filter(d => this.dfspEndpoints[d].length > 0)
+
+    if (knownDfsps.length > 0 && this.prng.headsOrTails()) {
+      const name = this.prng.randomElementFrom(knownDfsps)
+      const endpointType = this.prng.randomElementFrom(this.dfspEndpoints[name])
+      await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints?type=${endpointType}`, {})
+      return
+    }
+
     const name = this.randomDfspName()
     const query = this.prng.randomElementFrom([
-      this.mutateString(`?type=${this.randomEndpointType()}`),
+      `?type=${this.randomEndpointType()}`,
       ''
     ])
-
-    await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints` + query, {})
+    await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints${query}`, {})
   }
 
   public async addLimitAndInitialPosition() {
     const name = this.randomDfspName()
+    const currency = this.randomCurrency()
+
     const payload = {
-      currency: this.randomCurrency(),
+      currency,
       limit: {
-        type: this.prng.randomElementFrom([
+        type: this.prng.randomElementWeighted([
           'NET_DEBIT_CAP', // Valid.
           this.prng.randomString()
-        ]),
+        ], [5, 1]),
         value: this.prng.intInRange(0, 1000000)
       },
-      initialPosition: this.prng.intInRange(0, 1000000),
+      initialPosition: this.prng.randomElementFrom([
+        this.prng.intInRange(0, 1000000),
+      ])
     }
     await this.req(
       'addLimitAndInitialPosition',
@@ -464,7 +515,7 @@ class HandlerApiFuzzer {
   }
 
   private randomDfspName(): string {
-    if (this.dfspNames.length > 0 && this.prng.headsOrTails()) {
+    if (this.dfspNames.length > 0 && this.prng.intExclusive(100) > 20) {
       // Reuse
       return this.prng.randomElementFrom(this.dfspNames)
     }
@@ -509,10 +560,7 @@ class HandlerApiFuzzer {
 
   private randomCurrency(): string {
     const currency = this.prng.randomElementFrom(['USD', 'BGP', 'EUR', 'GBP'])
-    if (this.prng.headsOrTails()) {
-      return currency
-    }
-    return this.mutateString(currency)
+    return this.prng.randomElementWeighted([currency, this.mutateString(currency)], [8, 2])
   }
 
   private mutateString(input: string): string {

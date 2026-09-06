@@ -338,15 +338,15 @@ export const prettyPrintPosition = (
  */
 export const futureDate = (
   amount: number, 
-  increment: 'ms' | 's' | 'm' | 'h' | 'd' = 'ms', 
+  unit: 'ms' | 's' | 'm' | 'h' | 'd' = 'ms', 
   now: Date = new Date(),
 ): Date => {
-  assert(amount > 0, 'Invalid amount.')
+  assert(amount > 0, `Invalid amount: ${amount}.`)
   if (Number.isNaN(now.getTime())) {
     throw new Error(`now must be a valid date.`)
   }
   let multiplier = 1
-  switch (increment) {
+  switch (unit) {
     case 'ms': 
       multiplier = 1;
       break;
@@ -363,10 +363,28 @@ export const futureDate = (
       multiplier = 1000 * 60 * 60 * 24;
       break;
     default:
-      throw new Error(`increment must be one of: 'ms' | 's' | 'm' | 'h' | 'd'`)
+      throw new Error(`unit must be one of: 'ms' | 's' | 'm' | 'h' | 'd'`)
   }
   const msToJump = Math.floor(amount * multiplier)
   const then = new Date(now.getTime() + msToJump)
 
   return then
+}
+
+export function envOrDefaultNumber(envName: string, backup: number): number {
+  assert(envName)
+  assert(backup)
+  assert(typeof envName === 'string')
+  assert(typeof backup === 'number')
+
+  let envString = process.env[envName]
+  if (Array.isArray(envString)) {
+    envString = envString[0]
+  }
+  
+  if (envString) {
+    return Number.parseInt(envString)
+  }
+
+  return backup
 }

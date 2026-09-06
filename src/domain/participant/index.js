@@ -51,7 +51,8 @@ const Enums = require('../../lib/enumCached')
 const fspiopErrorFactory = require('../../shared/fspiopErrorFactory')
 const { destroyParticipantEndpointByParticipantId } = require('../../models/participant/participant')
 
-const logger = require('../../shared/logger').logger.child({ component: 'domain::participant' })
+const loggerImport = require('../../shared/logger').logger
+const logger = loggerImport.child({ component: 'domain::participant' })
 
 // Alphabetically ordered list of error texts used below
 const AccountInactiveErrorText = 'Account is currently set inactive'

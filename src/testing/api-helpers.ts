@@ -713,7 +713,6 @@ export class Forex {
   public constructor(private options: ForexOptions) { }
 
   public async prepare(): Promise<this> {
-    // const mark = this.options.harness.redpandaMark()
     await this.options.transferHandler.prepare(null, [this.buildMessagePrepare()])
     await this.options.harness.redpandaDrainSmart(this.expectedMessagesPrepare(), this.options.commitRequestId)
 
