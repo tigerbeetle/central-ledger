@@ -1,8 +1,8 @@
 import { describe, it } from "node:test"
 import LoggerMock from "../../testing/logger-mock"
-import { logger } from "../../shared/logger"
-// @ts-ignore
-logger = new LoggerMock()
+import { logger as loggerGlobal } from "../../shared/logger"
+// @ts-ignore  Override the globally exported logger.
+loggerGlobal = new LoggerMock()
 import assert from "node:assert"
 import Harness from '../../testing/harness'
 import PRNG from "../../testing/prng"
@@ -13,6 +13,7 @@ import { envOrDefaultNumber, randomAvailablePort } from "../../testing/util"
 import { Server } from "@hapi/hapi"
 import Clock from "../../testing/clock"
 import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
+const logger = loggerFactory()
 
 const harness = Harness.getInstance()
 let Handler: any
@@ -21,6 +22,13 @@ let server: Server
 describe('api/participants/handler', () => {
   it('handler fuzz', async () => {
     try {
+      const options: FuzzOptions = {
+        seed: envOrDefaultNumber('SEED', 42),
+        stepsMax: envOrDefaultNumber('STEPS_MAX', 5000),
+      }
+      const prng = new PRNG(options.seed)
+      const clock = new Clock(prng, new Date('2026-01-01'))
+
       await harness.up()
       await harness.setupGlobals()
 
@@ -39,12 +47,10 @@ describe('api/participants/handler', () => {
       // ])
       // coverage.start()
 
-      const options: FuzzOptions = {
-        seed: envOrDefaultNumber('SEED', 42),
-        stepsMax: envOrDefaultNumber('STEPS_MAX', 5000),
-      }
-      const fuzzer = new HandlerApiFuzzer(options, harness, server)
+      
+      const fuzzer = new HandlerApiFuzzer(prng, clock, options, harness, server)
       await fuzzer.run()
+      logger.info(`trace:\n${fuzzer.traceOutput}`)
 
       await server.stop()
       // coverage.stopAndReport()
@@ -97,10 +103,9 @@ interface FuzzOptions {
 }
 
 class HandlerApiFuzzer {
-  private logger = loggerFactory('FUZZ')
   private step = 1
-  private prng: PRNG
-  private clock: Clock
+  // private prng: PRNG
+  // private clock: Clock
   private readonly stepsMax: number
   private responses: Array<{
     action: ActionName,
@@ -136,6 +141,8 @@ class HandlerApiFuzzer {
   }
 
   constructor(
+    private prng: PRNG,
+    private clock: Clock,
     private options: FuzzOptions,
     private harness: Harness,
     private server: Server,
@@ -144,15 +151,16 @@ class HandlerApiFuzzer {
     assert(options.seed)
 
     this.stepsMax = options.stepsMax
-    this.prng = new PRNG(options.seed)
+    // this.prng = new PRNG(options.seed)
     // TODO: how to get this clock where it needs to go?
-    this.clock = new Clock(this.prng, new Date('2026-01-01'))
+    // this.clock = new Clock(this.prng, new Date('2026-01-01'))
     this.injectDbFaults()
   }
 
   public async run() {
-    this.logger.warn(`HandlerApiFuzzer.run() running`)
-    this.logger.warn(`\tSEED = ${ this.options.seed } for \n\tSTEPS_MAX = ${ this.stepsMax } `)
+    logger.warn(`HandlerApiFuzzer.run() running:`)
+    logger.warn(`\tSEED = ${ this.options.seed }`)
+    logger.warn(`\tSTEPS_MAX = ${ this.stepsMax } `)
 
     try {
       while (this.step <= this.stepsMax) {
@@ -162,8 +170,8 @@ class HandlerApiFuzzer {
         this.step += 1
       }
     } catch (err: any) {
-      this.logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.\nError: ${err.message}\nStack: ${err.stack}`)
-      this.logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.options.seed}`)
+      logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.\nError: ${err.message}\nStack: ${err.stack}`)
+      logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.options.seed}`)
       throw err
     }
   }

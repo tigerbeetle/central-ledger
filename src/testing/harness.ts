@@ -74,6 +74,8 @@ import { PositionHandlerV2 } from "../handlers/position-v2"
 import Expect from "./expect"
 import { TimeoutHandlerV2 } from "../handlers/timeout-v2"
 import { LedgerSql } from "../domain/ledger/ledger-sql"
+import PRNG from "./prng"
+import Clock from "./clock"
 
 const logger = Logger.child({ scope: 'harness' })
 
@@ -83,7 +85,12 @@ export interface HarnessOptions {
   /**
    * A unique id used in naming and logs to disambiguate between multiple harness runs.
    */
-  id: number
+  id: number,
+
+  /**
+   * Seed for the global PRNG.
+   */
+  seed: number,
 }
 
 /**
@@ -118,6 +125,8 @@ export interface HarnessOptions {
 export default class Harness {
   private static instance: Harness | null = null;
   private options: HarnessOptions
+  private prng: PRNG
+  private clock: Clock
   private dependencyRedpanda: Redpanda
   private dependencyMySql: MySql
   private dependencyRedis: Redis
@@ -146,12 +155,16 @@ export default class Harness {
   public constructor(options: HarnessOptions) {
     this.options = options
 
+    this.prng = new PRNG(options.seed)
+    this.clock = new Clock(this.prng, new Date('2026-01-01'))
+
     this.dependencyRedpanda = new Redpanda({
       harnessId: this.options.id
     })
 
     this.dependencyMySql = new MySql({
       harnessId: this.options.id,
+      clock: this.clock,
       databaseName: 'central_ledger',
       migration: {
         type: 'sql',
@@ -300,7 +313,7 @@ export default class Harness {
     this.applicationConfig = deepMerge(defaultConfig, override)
 
     this.omniConsumer = new Consumer('omniconsumer', kafkaBroker)
-    await this.omniConsumer?.subscribe([
+    await this.omniConsumer.subscribe([
       'topic-transfer-prepare',
       'topic-transfer-fulfil',
       'topic-transfer-position',
@@ -653,13 +666,6 @@ environment!\n ${err.message}`)
   }
 
   /**
-   * Hide all Mojaloop logs. Useful when fuzzing to keep the terminal output down.
-   */
-  public logsHide() {
-
-  }
-
-  /**
    * @description Look for messages related to a correlation id.
    */
   public async redpandaDrainSmart(numMessages: number, id: string, attempts: number = 20):
@@ -1007,7 +1013,8 @@ class Redpanda {
 
 interface DependencyOptionsMySql extends DependencyOptions {
   databaseName: string,
-  migration: MigrationOptions
+  migration: MigrationOptions,
+  clock: Clock
 }
 
 interface MigrationOptionsKnex {
@@ -1036,6 +1043,7 @@ class MySql {
   private options: DependencyOptionsMySql
   private containerName: string
   private _connectionOptions: MySqlConnectionOptions | null
+  private clock: Clock
 
   constructor(options: DependencyOptionsMySql) {
     assert(options)
@@ -1044,6 +1052,7 @@ class MySql {
     this.options = options;
     this.containerName = `int_${this.options.harnessId}_mysql`
     this._connectionOptions = null
+    this.clock = options.clock
   }
 
   public async up(): Promise<void> {
@@ -1219,6 +1228,10 @@ class MySql {
       },
       seeds: {
         directory: './src/seeds'
+      },
+      // @ts-ignore
+      userParams: {
+        clock: this.clock
       }
     })
   }
@@ -1306,6 +1319,9 @@ class MySql {
 
   private async seed(): Promise<void> {
     const knexClient = this.getKnexClient();
+    // knexClient.prototype.context = {
+    //   date: new Date('2026-01-02')
+    // }
     try {
       await knexClient.seed.run()
       logger.debug('seed() - complete.')

@@ -26,6 +26,9 @@
  --------------
  ******/
 
+const assert = require("node:assert")
+const { assertNestedFields } = require("../lib/config/util")
+
 /**
  * @module generateInitialSettlementWindow
  * @description Seed to create the initial SettlementWindow
@@ -47,6 +50,11 @@ const initialSettlementWindowStateChange = {
 }
 
 exports.seed = async function (knex) {
+  assert(knex)
+  assertNestedFields(knex, 'userParams.clock')
+  initialSettlementWindow.createdDate = knex.userParams.clock.now
+  initialSettlementWindowStateChange.createdDate = knex.userParams.clock.now
+
   try {
     const settlementWindowStateChangeList = await knex('settlementWindow AS sw').select('*')
       .leftJoin('settlementWindowStateChange AS swsc', 'swsc.settlementWindowStateChangeId', 'sw.currentStateChangeId')
