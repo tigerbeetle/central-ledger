@@ -50,12 +50,14 @@ const LocalEnum = {
 const entityItem = ({ name, createdDate, isActive, currencyList, isProxy }, ledgerAccountIds) => {
   const link = UrlParser.toParticipantUri(name)
   const accounts = currencyList.map((currentValue) => {
+    assert(typeof currentValue.createdDate === 'string')
     return {
       id: currentValue.participantCurrencyId,
       ledgerAccountType: ledgerAccountIds[currentValue.ledgerAccountTypeId],
       currency: currentValue.currencyId,
       isActive: currentValue.isActive,
       createdDate: new Date(currentValue.createdDate),
+      // createdDate: currentValue.createdDate,
       createdBy: currentValue.createdBy
     }
   })

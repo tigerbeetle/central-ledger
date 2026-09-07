@@ -14,10 +14,10 @@ import { envOrDefaultNumber, randomAvailablePort } from "../../testing/util"
 import { Server } from "@hapi/hapi"
 import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
 import fs from "node:fs"
-import { Snapshot } from "../../testing/snapshot"
 const logger = loggerFactory()
 
 // We need to patch the date globally before starting the harness.
+// This is quite annoying since it means we can't change easily change the seed in between runs.
 const prng = new PRNG(envOrDefaultNumber('SEED', 123124))
 Harness.patchDateGlobal(prng)
 const harness = Harness.getInstance()
@@ -25,14 +25,14 @@ let Handler: any
 let server: Server
 
 describe('api/participants/handler', () => {
-  it.only('is fully deterministic', async () => {
-    const stepsMax = 100
+  it.only('is fully deterministic', async (context) => {
+    const stepsMax = 7500
     const traceA = await run(stepsMax)
     const traceB = await run(stepsMax)
 
     const filename = path.basename(__filename)
     assert(filename)
-    const pathBase = `.fuzz_output/${filename}`
+    const pathBase = `.fuzz_output/${filename}/${context.name.replaceAll(' ', '_')}`
     fs.mkdirSync(pathBase, { recursive: true });
     const pathA = `${pathBase}/traceA.txt`
     const pathB = `${pathBase}/traceB.txt`
@@ -43,8 +43,7 @@ describe('api/participants/handler', () => {
     console.log(`Fuzz trace written to ${pathBase}.`)
     console.log(`Compare the two files with:\n\tgit diff --no-index ${pathA} ${pathB}`)
 
-    assert.deepStrictEqual(traceA, traceB, `Traces donn't match!`)
-    // Snapshot.from(traceA).checkStringUnwrap(traceB)
+    assert.ok(traceA === traceB, `Traces don't match!`)
   })
 
   const run = async (stepsMax: number): Promise<string> => {
@@ -82,7 +81,6 @@ describe('api/participants/handler', () => {
       await harness.down()
     }
   }
-
 
   it('handler fuzz', async () => {
     try {
@@ -177,22 +175,22 @@ class HandlerApiFuzzer {
   private registeredCurrencies: Array<string> = []
 
   private weights: Record<ActionName, number> = {
-    getAll: 0,
-    getByName: 0,
+    getAll: 1,
+    getByName: 1,
     create: 1,
-    update: 0,
-    addEndpoint: 0,
-    getEndpoint: 0,
-    addLimitAndInitialPosition: 0,
-    getLimits: 0,
-    getLimitsForAllParticipants: 0,
-    adjustLimits: 0,
+    update: 1,
+    addEndpoint: 1,
+    getEndpoint: 1,
+    addLimitAndInitialPosition: 1,
+    getLimits: 1,
+    getLimitsForAllParticipants: 1,
+    adjustLimits: 1,
     createHubAccount: 10,
-    getPositions: 0,
+    getPositions: 1,
     getAccounts: 1,
-    updateAccount: 0,
-    recordFundsCreate: 0,
-    recordFundsUpdate: 0,
+    updateAccount: 1,
+    recordFundsCreate: 1,
+    recordFundsUpdate: 1,
   }
 
   private _dbCalls = 0
@@ -267,6 +265,7 @@ class HandlerApiFuzzer {
     Db.from = (tableName: string) => {
       this._dbCalls += 1
       if (this.harness.prng.intExclusive(250) === 0) {
+      // if (this.harness.prng.intExclusive(5) === 0) {
         throw new Error('Injected DB fault.')
       }
       return this._dbOriginal(tableName)
