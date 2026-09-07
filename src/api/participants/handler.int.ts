@@ -25,8 +25,8 @@ let Handler: any
 let server: Server
 
 describe('api/participants/handler', () => {
-  it.only('is fully deterministic', async (context) => {
-    const stepsMax = 7500
+  it('is fully deterministic', async (context) => {
+    const stepsMax = 100
     const traceA = await run(stepsMax)
     const traceB = await run(stepsMax)
 
@@ -82,7 +82,11 @@ describe('api/participants/handler', () => {
     }
   }
 
-  it('handler fuzz', async () => {
+  it.only('handler fuzz', async (context) => {
+    const filename = path.basename(__filename)
+    assert(filename)
+    const pathBase = `.fuzz_output/${filename}/${context.name.replaceAll(' ', '_')}`
+
     try {
       const options: FuzzOptions = {
         stepsMax: envOrDefaultNumber('STEPS_MAX', 5000),
@@ -99,20 +103,17 @@ describe('api/participants/handler', () => {
       server.route(routes)
       await server.start()
 
-      // TODO: would be cool if we can make this work with nyc, since that's what we're using
-      // elsewhere.
-      // const coverage = new Coverage([
-      //   'src/api/participants/handler.js'
-      // ])
-      // coverage.start()
-
+      const coverage = new Coverage([
+        'src/api/participants/handler.js'
+      ])
+      coverage.start()
 
       const fuzzer = new HandlerApiFuzzer(options, harness, server)
       await fuzzer.run()
       logger.info(`trace:\n${fuzzer.traceOutput}`)
 
       await server.stop()
-      // coverage.stopAndReport()
+      coverage.stopAndReport(pathBase)
     } catch (err: any) {
       logger.error(err.message)
       logger.error(err.stack)

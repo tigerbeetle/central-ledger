@@ -4,12 +4,15 @@ import assert from "node:assert";
 import fs from "node:fs";
 
 import v8toIstanbul from 'v8-to-istanbul';
-import convertSourceMap from 'convert-source-map';
 
 const libCoverage = require('istanbul-lib-coverage')
 const libReport = require('istanbul-lib-report')
 const reports = require('istanbul-reports')
+const convertSourceMap = require('convert-source-map')
 
+/**
+ * An inline code coverage checker which uses v8toIstanbul to produce html code coverage reports.
+ */
 export default class Coverage {
   private session = new Session()
 
@@ -31,34 +34,62 @@ export default class Coverage {
 
     const { result } = await this.session.post('Profiler.takePreciseCoverage')
     await this.session.post('Profiler.stopPreciseCoverage')
-    this.session.disconnect()
-
 
     const filtered = result.filter(entry =>
       this.filePatterns.some(pattern => entry.url.includes(pattern))
     )
 
+    // Get the source maps for any transpiled ts.
+    const scriptSources = new Map<string, { source: string; sourceMap?: any }>()
+    for (const entry of filtered) {
+      if (entry.scriptId) {
+        try {
+          const scriptSource = await this.session.post('Debugger.getScriptSource', {
+            scriptId: entry.scriptId
+          })
+          const transpiledSource = (scriptSource as any).scriptSource
+
+          // Extract inline source map if present
+          const sourceMap = convertSourceMap.fromSource(transpiledSource)
+
+          scriptSources.set(entry.scriptId, {
+            source: transpiledSource,
+            sourceMap: sourceMap || undefined
+          })
+        } catch (err) {
+          console.warn('Could not get script source for', entry.url, ':', err)
+        }
+      }
+    }
+
+    this.session.disconnect()
+
     for (const entry of filtered) {
       const pathIn = entry.url.replace('file://', '')
 
-      // Debug: Log the raw V8 coverage data
-      console.log('=== Raw URL:', entry.url)
-      console.log('=== pathIn:', pathIn)
-      console.log('Number of functions:', entry.functions.length)
-      for (const fn of entry.functions) {
-        console.log(`  Function: ${fn.functionName || '(anonymous)'}, ranges: ${fn.ranges.length}`)
-        for (const range of fn.ranges) {
-          console.log(`    Range: ${range.startOffset}-${range.endOffset}, count=${range.count}`)
-        }
-      }
+      // Get the actual transpiled source from V8 using scriptId
+      // This is critical for TypeScript - V8 has the transpiled JS, not the TS source
+      const scriptData = entry.scriptId ? scriptSources.get(entry.scriptId) : undefined
+      const transpiledSource = scriptData?.source
+      const sourceMapData = scriptData?.sourceMap
 
-      const converter = v8toIstanbul(pathIn)
+      // Pass the transpiled source and source map to v8-to-istanbul
+      // This is critical for TypeScript - the byte offsets from V8 are for the
+      // transpiled JS, not the original TS source
+      const originalSource = fs.readFileSync(pathIn, 'utf-8')
+      const sources = (transpiledSource && sourceMapData) ? {
+        source: transpiledSource,
+        originalSource,
+        sourceMap: sourceMapData
+      } : transpiledSource ? {
+        source: transpiledSource
+      } : undefined
+
+      const converter = v8toIstanbul(pathIn, 0, sources)
       await converter.load()
       converter.applyCoverage(entry.functions)
 
       const istanbul = converter.toIstanbul()
-      console.log('=== Istanbul output ===')
-      console.log(JSON.stringify(istanbul, null, 2))
       const coverageMap = libCoverage.createCoverageMap(istanbul)
       const context = libReport.createContext({
         dir,
@@ -69,7 +100,6 @@ export default class Coverage {
       reportHtml.execute(context)
       const reportHtmlPath = path.join(dir, path.basename(pathIn) + '.html')
       console.log(`Open the coverage report at:\n\t${reportHtmlPath}`)
-
 
       // Assert thresholds.
       const summary = coverageMap.getCoverageSummary()
@@ -85,106 +115,10 @@ export default class Coverage {
         summary.lines.pct < 100
       ) {
         console.log(`Coverage check failed:\n${coverageReport}`)
-        throw new Error(``)
+        throw new Error(`Coverage check failed.\n${coverageReport}`)
       } else {
         console.log(`Coverage check passed:\n${coverageReport}`)
       }
-    }
-  }
-
-  async stopAndReportOld(dir: string) {
-    fs.mkdirSync(dir, { recursive: true });
-    // const pathA = `${dir}/traceA.txt`
-
-    const { result } = await this.session.post('Profiler.takePreciseCoverage')
-    await this.session.post('Profiler.stopPreciseCoverage')
-    this.session.disconnect()
-
-    const filtered = result.filter(entry =>
-      this.filePatterns.some(pattern => entry.url.includes(pattern))
-    )
-
-    // const offsetToLineColumn = (lines: Array<string>, offset: number): {line: number, column:number} => {
-    //   const lineLength = lines.length
-    //   const column = lines[lines.length]
-    // }
-
-    // Look up the start of each line.
-    const lineStarts = (source: string) => {
-      const starts = [0]
-      for (let idx = 0; idx < source.length; idx++) {
-        if (source[idx] === '\n') {
-          starts.push(idx + 1)
-        }
-      }
-      return starts
-    }
-
-    const offsetToLine = (starts: Array<number>, offset: number) => {
-      let lower = 0
-      let upper = starts.length - 1
-
-      // Binary search for offset.
-      while (lower < upper) {
-        const middle = Math.ceil((lower + upper) / 2)
-        if (starts[middle] <= offset) {
-          lower = middle
-        } else {
-          upper = middle - 1
-        }
-      }
-      return lower + 1
-    }
-
-    for (const entry of filtered) {
-      const pathIn = entry.url.replace('file://', '')
-      const source = fs.readFileSync(pathIn, 'utf-8')
-      const totalBytes = source.length
-
-      const starts = lineStarts(source)
-
-      let coveredBytes = 0
-      const uncoveredRanges: Array<string> = []
-
-      for (const fn of entry.functions) {
-        for (const range of fn.ranges) {
-          const start = offsetToLine(starts, range.startOffset)
-          const end = offsetToLine(starts, range.endOffset)
-          console.log(`${fn.functionName || '<anonymous>'}: lines ${start}-${end}, count=${range.count}`)
-        }
-        // We should convert to a range to lines.
-        // for (const range of fn.ranges) {
-        //   if (range.count > 0) {
-        //     coveredBytes += range.endOffset - range.startOffset
-        //   } else {
-        //     const snippet = source.slice(range.startOffset, range.startOffset + 50)
-        //     uncoveredRanges.push(snippet.split('\n')[0])
-        //   }
-        // }
-      }
-
-      // Append a prefix to each line.
-      let modified = ''
-      // Each line can be fully covered, partially covered, or not covered
-      source.split('\n').forEach(line => {
-        modified += '  |  '
-        modified += line
-        modified += '\n'
-      })
-
-      const fileName = path.basename(pathIn) + 'coverage'
-      const pathOut = path.join(dir, fileName)
-      fs.writeFileSync(pathOut, modified)
-
-      console.log(`Open the coverage report at:\n\t${pathOut}`)
-
-      // console.log(`--- ${path} ---`)
-      // console.log(`Coverage: ${Math.round(coveredBytes/totalBytes * 100)}%`)
-      // // TODO: make this better at picking up functions
-      // if (uncoveredRanges.length > 0) {
-      //   console.log('Uncovered:')
-      //   uncoveredRanges.slice(0, 10).forEach(r => console.log(`    - ${r.trim()}`))
-      // }
     }
   }
 }
