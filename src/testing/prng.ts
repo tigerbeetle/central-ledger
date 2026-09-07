@@ -6,16 +6,39 @@ import assert from 'node:assert'
  *   Reference: https://stackoverflow.com/questions/521295/seeding-the-random-number-generator-in-javascript
  */
 export default class PRNG {
+  private a: number
   private _seed: number
+  private _counterCalls: number
   prng: () => number
 
   constructor(seed: number) {
+    this._counterCalls = 0
     this._seed = seed
-    this.prng = splitmix32(seed)
+
+    this.a = seed
+    this.prng = () => {
+      this._counterCalls += 1
+      this.a = Math.trunc(this.a)
+      this.a = Math.trunc(this.a + 0x9e3779b9)
+      let t = this.a ^ this.a >>> 16
+      t = Math.imul(t, 0x21f0aaad)
+      t = t ^ t >>> 15
+      t = Math.imul(t, 0x735a2d97)
+      const num = ((t = t ^ t >>> 15) >>> 0) / 4294967296
+      return num
+    }
   }
 
   public reset() {
-    this.prng = splitmix32(this._seed)
+    this._counterCalls = 0
+    this.a = this._seed
+  }
+
+  /**
+   * The number of times the PRNG has been called.
+   */
+  get callCount() {
+    return this._counterCalls
   }
 
   public randomElementFrom<T>(array: Array<T>): T {
@@ -36,7 +59,7 @@ export default class PRNG {
         return array[idx]
       }
     }
-    
+
     return array[array.length - 1]
   }
 
@@ -58,7 +81,7 @@ export default class PRNG {
   public intExclusive(bound: number): number {
     assert(typeof bound === 'number')
     assert(bound > 0)
-    
+
     const max = 0xFFFFFFFF
     const threshold = max - (max % bound)
 
@@ -136,7 +159,7 @@ export default class PRNG {
   }
 
   public static generateWeightedChoiceTable<T extends string | number | symbol>
-  (weights: any): Array<T> {
+    (weights: any): Array<T> {
     const weightedChoiceTable: Array<T> = []
     Object.keys(weights).forEach(action => {
       const weight = weights[action]
@@ -161,7 +184,7 @@ function splitmix32(a: number) {
     t = t ^ t >>> 15
     t = Math.imul(t, 0x735a2d97)
     const num = ((t = t ^ t >>> 15) >>> 0) / 4294967296
-    // console.log('prng state: ', num)
+    console.log('prng state: ', num)
     return num
   }
 }

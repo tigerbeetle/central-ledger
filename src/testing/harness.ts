@@ -81,6 +81,7 @@ import MockClock from "./mock-clock"
 const logger = Logger.child({ scope: 'harness' })
 
 let ProxyCache: any
+let SettlementModelCached: any
 
 export interface HarnessOptions {
   /**
@@ -544,7 +545,7 @@ export default class Harness {
     ProxyCache = require('../lib/proxyCache')
     await ProxyCache.connect()
 
-    const SettlementModelCached = require('../models/settlement/settlementModelCached')
+    SettlementModelCached = require('../models/settlement/settlementModelCached')
     await SettlementModelCached.initialize()
 
     await Db.connect(this.config.DATABASE)
@@ -596,6 +597,16 @@ export default class Harness {
       logger.info('teardownGlobals()')
       assert(this.messageBus)
       await this.messageBus?.deinit()
+
+      // Reset the caches.
+      await ParticipantCached.invalidateParticipantsCache()
+      await ParticipantCurrencyCached.invalidateParticipantCurrencyCache()
+      await ParticipantLimitCached.invalidateParticipantLimitCache()
+      await ExternalParticipantCached.invalidateCache()
+      await SettlementModelCached.invalidateSettlementModelsCache()
+      await Enums.invalidateEnumCache()
+    
+      // await SettlementModelCached.disconnect()
       await ProxyCache.disconnect()
       await Cache.destroyCache()
       await Db.disconnect()

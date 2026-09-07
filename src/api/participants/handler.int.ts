@@ -1,4 +1,5 @@
 import { describe, it } from "node:test"
+import path from 'path'
 import LoggerMock from "../../testing/logger-mock"
 import { logger as loggerGlobal } from "../../shared/logger"
 // @ts-ignore  Override the globally exported logger.
@@ -11,8 +12,10 @@ import * as ApiHelpers from '../../testing/api-helpers'
 import Coverage from "../../testing/coverage"
 import { envOrDefaultNumber, randomAvailablePort } from "../../testing/util"
 import { Server } from "@hapi/hapi"
-import Clock from "../../testing/mock-clock"
 import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
+import fs from "node:fs"
+import { Snapshot } from "../../testing/snapshot"
+import { trace } from "joi"
 const logger = loggerFactory()
 
 // We need to patch the date globally before starting the harness.
@@ -24,16 +27,25 @@ let server: Server
 
 describe('api/participants/handler', () => {
   it.only('is fully deterministic', async () => {
-    // const traces: Array<string> = []
-    
-    const stepsMax = 5
+    const stepsMax = 100
     const traceA = await run(stepsMax)
     const traceB = await run(stepsMax)
 
-    console.log(`traceA:\n${traceA}\n`)
-    console.log(`traceB:\n${traceB}\n`)
+    const filename = path.basename(__filename)
+    assert(filename)
+    const pathBase = `.fuzz_output/${filename}`
+    fs.mkdirSync(pathBase, { recursive: true });
+    const pathA = `${pathBase}/traceA.txt`
+    const pathB = `${pathBase}/traceB.txt`
 
-    // assert.deepStrictEqual(traceA, traceB)
+    fs.writeFileSync(pathA, traceA)
+    fs.writeFileSync(pathB, traceB)
+
+    console.log(`Fuzz trace written to ${pathBase}.`)
+    console.log(`Compare the two files with:\n\tgit diff --no-index ${pathA} ${pathB}`)
+
+    assert.deepStrictEqual(traceA, traceB, `Traces donn't match!`)
+    // Snapshot.from(traceA).checkStringUnwrap(traceB)
   })
 
   const run = async (stepsMax: number): Promise<string> => {
@@ -154,7 +166,8 @@ class HandlerApiFuzzer {
     action: ActionName,
     input: any,
     body: any,
-    code: any
+    code: any,
+    prngCalls: number
   }> = []
 
   private dfspNames: Array<string> = []
@@ -165,7 +178,7 @@ class HandlerApiFuzzer {
   private registeredCurrencies: Array<string> = []
 
   private weights: Record<ActionName, number> = {
-    getAll: 2,
+    getAll: 1,
     getByName: 1,
     create: 1,
     update: 1,
@@ -182,6 +195,9 @@ class HandlerApiFuzzer {
     recordFundsCreate: 2,
     recordFundsUpdate: 2
   }
+
+  private _dbCalls = 0
+  private _dbOriginal: any
 
   constructor(
     private options: FuzzOptions,
@@ -210,36 +226,57 @@ class HandlerApiFuzzer {
       logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.\nError: ${err.message}\nStack: ${err.stack}`)
       logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.harness.seed}`)
       throw err
+    } finally {
+      this.resetDbFaults()
     }
   }
 
   get traceOutput(): string {
-    const width = 150
     return this.responses
       .map(response => {
         return [
           `${response.action.padEnd(12)}:`,
-          // `\t${JSON.stringify(response.input).padEnd(width).slice(0, width)}`,
-          // `\t${JSON.stringify(response.body).padEnd(width).slice(0, width)}`
+          `\tinput=${JSON.stringify(response.input)}`,
+          `\tbody=${JSON.stringify(response.body, null, 2)}`,
+          `\tprngCalls=${response.prngCalls}`,
         ].join('\n')
       })
       .join('\n')
   }
 
   private async doStep() {
+    this.responses.push({
+      // @ts-ignore
+      action: 'doStep',
+      input: {},
+      code: "",
+      body: "",
+      prngCalls: this.harness.prng.callCount
+    })
+
     return this.randomAction()()
   }
 
+  /**
+   * Override the global DB to sometimes fail.
+   */
   private injectDbFaults() {
     const Db = require('../../lib/db')
-    const originalFrom = Db.from.bind(Db)
+    // const originalFrom = Db.from.bind(Db)
+    this._dbOriginal = Db.from.bind(Db)
 
     Db.from = (tableName: string) => {
+      this._dbCalls += 1
       if (this.harness.prng.intExclusive(250) === 0) {
         throw new Error('Injected DB fault.')
       }
-      return originalFrom(tableName)
+      return this._dbOriginal(tableName)
     }
+  }
+
+  private resetDbFaults() {
+    const Db = require('../../lib/db')
+    Db.from = this._dbOriginal
   }
 
   private actions: Record<ActionName, () => Promise<void>> = {
@@ -267,7 +304,7 @@ class HandlerApiFuzzer {
     return this.actions[action]
   }
 
-  private async req(action: ActionName, method: string, path: string, payload?: any) {
+  private async request(action: ActionName, method: string, path: string, payload?: any) {
     const res = await this.server.inject({
       method,
       url: path,
@@ -279,7 +316,8 @@ class HandlerApiFuzzer {
       action,
       input: payload,
       code: res.statusCode,
-      body: res.result
+      body: res.result,
+      prngCalls: this.harness.prng.callCount
     })
 
     if (action === 'getAccounts' && res.statusCode === 200) {
@@ -320,12 +358,12 @@ class HandlerApiFuzzer {
     const query = this.harness.prng.randomElementFrom([
       this.mutateString(`?isProxy=${this.harness.prng.headsOrTails()}`), ''
     ])
-    await this.req('getAll', 'GET', '/participants' + query, {})
+    await this.request('getAll', 'GET', '/participants' + query, {})
   }
 
   public async getByName() {
     const name = this.randomDfspName()
-    await this.req('getByName', 'GET', `/participants/${name}`, {})
+    await this.request('getByName', 'GET', `/participants/${name}`, {})
   }
 
   public async create() {
@@ -354,7 +392,7 @@ class HandlerApiFuzzer {
       currency: this.randomCurrency(),
       isProxy: this.harness.prng.headsOrTails()
     })
-    await this.req('create', 'POST', `/participants`, payload)
+    await this.request('create', 'POST', `/participants`, payload)
   }
 
   public async update() {
@@ -362,7 +400,7 @@ class HandlerApiFuzzer {
     const payload = this.mutateObject({
       isActive: this.harness.prng.headsOrTails()
     })
-    await this.req('update', 'PUT', `/participants/${name}`, payload)
+    await this.request('update', 'PUT', `/participants/${name}`, payload)
   }
 
   public async addEndpoint() {
@@ -371,23 +409,16 @@ class HandlerApiFuzzer {
       type: this.randomEndpointType(),
       value: `http://` + this.harness.prng.randomString()
     })
-    await this.req('addEndpoint', 'POST', `/participants/${name}/endpoints`, payload)
+    await this.request('addEndpoint', 'POST', `/participants/${name}/endpoints`, payload)
   }
 
   public async getEndpoint() {
-    // const name = this.randomDfspName()
-    // const query = this.harness.prng.randomElementFrom([
-    //   this.mutateString(`?type=${this.randomEndpointType()}`),
-    //   ''
-    // ])
-
-    // await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints` + query, {})
     const knownDfsps = Object.keys(this.dfspEndpoints).filter(d => this.dfspEndpoints[d].length > 0)
 
     if (knownDfsps.length > 0 && this.harness.prng.headsOrTails()) {
       const name = this.harness.prng.randomElementFrom(knownDfsps)
       const endpointType = this.harness.prng.randomElementFrom(this.dfspEndpoints[name])
-      await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints?type=${endpointType}`, {})
+      await this.request('getEndpoint', 'GET', `/participants/${name}/endpoints?type=${endpointType}`, {})
       return
     }
 
@@ -396,7 +427,7 @@ class HandlerApiFuzzer {
       `?type=${this.randomEndpointType()}`,
       ''
     ])
-    await this.req('getEndpoint', 'GET', `/participants/${name}/endpoints${query}`, {})
+    await this.request('getEndpoint', 'GET', `/participants/${name}/endpoints${query}`, {})
   }
 
   public async addLimitAndInitialPosition() {
@@ -416,7 +447,7 @@ class HandlerApiFuzzer {
         this.harness.prng.intInRange(0, 1000000),
       ])
     }
-    await this.req(
+    await this.request(
       'addLimitAndInitialPosition',
       'POST',
       `/participants/${name}/initialPositionAndLimits`,
@@ -428,13 +459,13 @@ class HandlerApiFuzzer {
     const name = this.randomDfspName()
     const url = `/participants/${name}/limits`
     const query = this.mutateString(`?currency=${this.randomCurrency()}&type=NET_DEBIT_CAP`)
-    await this.req('getLimits', 'GET', url + query, {})
+    await this.request('getLimits', 'GET', url + query, {})
   }
 
   public async getLimitsForAllParticipants() {
     const url = `/participants/limits`
     const query = this.mutateString(`?currency=${this.randomCurrency()}&type=NET_DEBIT_CAP`)
-    await this.req('getLimitsForAllParticipants', 'GET', url + query, {})
+    await this.request('getLimitsForAllParticipants', 'GET', url + query, {})
   }
 
   public async adjustLimits() {
@@ -451,7 +482,7 @@ class HandlerApiFuzzer {
         alarmPercentage: this.harness.prng.intInRange(-1, 101),
       },
     })
-    await this.req('adjustLimits', 'PUT', url, payload)
+    await this.request('adjustLimits', 'PUT', url, payload)
   }
 
   public async createHubAccount() {
@@ -493,14 +524,14 @@ class HandlerApiFuzzer {
         this.harness.prng.randomString(),
       ])
     })
-    await this.req('createHubAccount', 'POST', url, payload)
+    await this.request('createHubAccount', 'POST', url, payload)
   }
 
   public async getPositions() {
     const name = this.randomDfspName()
     const url = `/participants/${name}/positions`
     const query = this.mutateString(`?currency=${this.randomCurrency()}`)
-    await this.req('getPositions', 'GET', url + query, {})
+    await this.request('getPositions', 'GET', url + query, {})
   }
 
   public async getAccounts() {
@@ -509,7 +540,7 @@ class HandlerApiFuzzer {
     const query = this.harness.prng.randomElementFrom([
       '', `?currency${this.randomCurrency}`
     ])
-    await this.req('getAccounts', 'GET', url + query, {})
+    await this.request('getAccounts', 'GET', url + query, {})
   }
 
   public async updateAccount() {
@@ -519,7 +550,7 @@ class HandlerApiFuzzer {
     const payload = {
       isActive: this.harness.prng.headsOrTails(),
     }
-    await this.req('updateAccount', 'PUT', url, payload)
+    await this.request('updateAccount', 'PUT', url, payload)
   }
 
   public async recordFundsCreate() {
@@ -540,7 +571,7 @@ class HandlerApiFuzzer {
         currency: this.randomCurrency()
       }
     })
-    await this.req('recordFundsCreate', 'POST', url, payload)
+    await this.request('recordFundsCreate', 'POST', url, payload)
   }
 
   public async recordFundsUpdate() {
@@ -556,7 +587,7 @@ class HandlerApiFuzzer {
       ]),
       reason: this.harness.prng.randomString(),
     })
-    await this.req('recordFundsUpdate', 'PUT', url, payload)
+    await this.request('recordFundsUpdate', 'PUT', url, payload)
   }
 
   private randomDfspName(): string {
