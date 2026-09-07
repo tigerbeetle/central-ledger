@@ -496,14 +496,16 @@ const addLimitAndInitialPosition = async (participantCurrencyId, settlementAccou
           const participantPosition = {
             participantCurrencyId: positionAccount.participantCurrencyId,
             value: (settlementModel.ledgerAccountTypeId === Enum.Accounts.LedgerAccountType.POSITION ? limitPositionObj.initialPosition : 0),
-            reservedValue: 0
+            reservedValue: 0,
+            changedDate: new Date(),
           }
           await knex('participantPosition').transacting(trx).insert(participantPosition)
 
           const settlementPosition = {
             participantCurrencyId: settlementAccount.participantCurrencyId,
             value: 0,
-            reservedValue: 0
+            reservedValue: 0,
+            changedDate: new Date(),
           }
           await knex('participantPosition').transacting(trx).insert(settlementPosition)
           if (setCurrencyActive) { // if the flag is true then set the isActive flag for corresponding participantCurrency record to true
@@ -517,14 +519,17 @@ const addLimitAndInitialPosition = async (participantCurrencyId, settlementAccou
         const participantPosition = {
           participantCurrencyId,
           value: limitPositionObj.initialPosition,
-          reservedValue: 0
+          reservedValue: 0,
+          changedDate: new Date(),
+
         }
         const participantPositionResult = await knex('participantPosition').transacting(trx).insert(participantPosition)
         participantPosition.participantPositionId = participantPositionResult[0]
         const settlementPosition = {
           participantCurrencyId: settlementAccountId,
           value: 0,
-          reservedValue: 0
+          reservedValue: 0,
+          changedDate: new Date(),
         }
         await knex('participantPosition').transacting(trx).insert(settlementPosition)
         if (setCurrencyActive) { // if the flag is true then set the isActive flag for corresponding participantCurrency record to true
@@ -779,7 +784,8 @@ const addHubAccountAndInitPosition = async (participantId, currencyId, ledgerAcc
       const participantPosition = {
         participantCurrencyId: participantCurrency.participantCurrencyId,
         value: 0,
-        reservedValue: 0
+        reservedValue: 0,
+        changedDate: new Date()
       }
       result = await knex('participantPosition').transacting(trx).insert(participantPosition)
       participantPosition.participantPositionId = result[0]

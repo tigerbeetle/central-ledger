@@ -38,7 +38,11 @@ const log = logger.child(`DB#${TABLE}`)
 
 const create = async ({ name, proxyId }) => {
   try {
-    const result = await Db.from(TABLE).insert({ name, proxyId })
+    const result = await Db.from(TABLE).insert({
+      name, 
+      proxyId,
+      createdDate: new Date(),
+    })
     log.debug('create result:', { result })
     return result
   } catch (err) {

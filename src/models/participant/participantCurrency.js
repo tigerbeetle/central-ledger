@@ -37,7 +37,8 @@ exports.create = async (participantId, currencyId, ledgerAccountTypeId, isActive
       currencyId,
       ledgerAccountTypeId,
       isActive,
-      createdBy: 'unknown'
+      createdBy: 'unknown',
+      createdDate: new Date(),
     })
   } catch (err) {
     rethrow.rethrowDatabaseError(err)

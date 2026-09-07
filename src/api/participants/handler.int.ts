@@ -15,7 +15,6 @@ import { Server } from "@hapi/hapi"
 import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
 import fs from "node:fs"
 import { Snapshot } from "../../testing/snapshot"
-import { trace } from "joi"
 const logger = loggerFactory()
 
 // We need to patch the date globally before starting the harness.
@@ -178,22 +177,22 @@ class HandlerApiFuzzer {
   private registeredCurrencies: Array<string> = []
 
   private weights: Record<ActionName, number> = {
-    getAll: 1,
-    getByName: 1,
+    getAll: 0,
+    getByName: 0,
     create: 1,
-    update: 1,
-    addEndpoint: 2,
-    getEndpoint: 2,
-    addLimitAndInitialPosition: 2,
-    getLimits: 2,
-    getLimitsForAllParticipants: 3,
-    adjustLimits: 2,
+    update: 0,
+    addEndpoint: 0,
+    getEndpoint: 0,
+    addLimitAndInitialPosition: 0,
+    getLimits: 0,
+    getLimitsForAllParticipants: 0,
+    adjustLimits: 0,
     createHubAccount: 10,
-    getPositions: 2,
-    getAccounts: 2,
-    updateAccount: 2,
-    recordFundsCreate: 2,
-    recordFundsUpdate: 2
+    getPositions: 0,
+    getAccounts: 1,
+    updateAccount: 0,
+    recordFundsCreate: 0,
+    recordFundsUpdate: 0,
   }
 
   private _dbCalls = 0
@@ -223,7 +222,8 @@ class HandlerApiFuzzer {
         this.step += 1
       }
     } catch (err: any) {
-      logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.\nError: ${err.message}\nStack: ${err.stack}`)
+      logger.error(`HandlerApiFuzzer.run() died on step: ${this.step}.`)
+      logger.error(`Error: ${err.message}\nStack: ${err.stack}`)
       logger.error(`HandlerApiFuzzer.run() rerun with SEED=${this.harness.seed}`)
       throw err
     } finally {
@@ -245,14 +245,14 @@ class HandlerApiFuzzer {
   }
 
   private async doStep() {
-    this.responses.push({
-      // @ts-ignore
-      action: 'doStep',
-      input: {},
-      code: "",
-      body: "",
-      prngCalls: this.harness.prng.callCount
-    })
+    // this.responses.push({
+    //   // @ts-ignore
+    //   action: 'doStep',
+    //   input: {},
+    //   code: "",
+    //   body: "",
+    //   prngCalls: this.harness.prng.callCount
+    // })
 
     return this.randomAction()()
   }
@@ -262,7 +262,6 @@ class HandlerApiFuzzer {
    */
   private injectDbFaults() {
     const Db = require('../../lib/db')
-    // const originalFrom = Db.from.bind(Db)
     this._dbOriginal = Db.from.bind(Db)
 
     Db.from = (tableName: string) => {
@@ -295,7 +294,7 @@ class HandlerApiFuzzer {
     getAccounts: () => this.getAccounts(),
     updateAccount: () => this.updateAccount(),
     recordFundsCreate: () => this.recordFundsCreate(),
-    recordFundsUpdate: () => this.recordFundsUpdate()
+    recordFundsUpdate: () => this.recordFundsUpdate(),
   }
 
   private randomAction(): () => Promise<void> {
@@ -418,7 +417,9 @@ class HandlerApiFuzzer {
     if (knownDfsps.length > 0 && this.harness.prng.headsOrTails()) {
       const name = this.harness.prng.randomElementFrom(knownDfsps)
       const endpointType = this.harness.prng.randomElementFrom(this.dfspEndpoints[name])
-      await this.request('getEndpoint', 'GET', `/participants/${name}/endpoints?type=${endpointType}`, {})
+      await this.request(
+        'getEndpoint', 'GET', `/participants/${name}/endpoints?type=${endpointType}`, {}
+      )
       return
     }
 

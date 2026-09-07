@@ -353,7 +353,8 @@ export class LedgerSql extends LedgerScaffold implements Ledger {
         await knex('participantPosition').insert({
           participantCurrencyId: settlementAccount.participantCurrencyId,
           value: 0,
-          reservedValue: 0
+          reservedValue: 0,
+          changedDate: new Date(),
         });
 
         // Activate the settlement account so validation passes
@@ -371,7 +372,8 @@ export class LedgerSql extends LedgerScaffold implements Ledger {
         await knex('participantPosition').insert({
           participantCurrencyId: positionAccount.participantCurrencyId,
           value: 0,
-          reservedValue: 0
+          reservedValue: 0,
+          changedDate: new Date(),
         });
 
         // Activate the position account.
