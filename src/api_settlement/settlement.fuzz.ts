@@ -41,7 +41,7 @@ describe('Settlement API Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it('is identical with/without LEDGER', async (context) => {
+  it.only('is identical with/without LEDGER', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 100)
     const traceA = await run(stepsMax, { API_MODE_SETTLEMENT: 'NONE' })
     const traceB = await run(stepsMax, { API_MODE_SETTLEMENT: 'LEDGER' })
@@ -60,8 +60,8 @@ describe('Settlement API Fuzz', () => {
     traceA.compare(traceB, { nameLeft: 'REFACTOR=false', nameRight: 'REFACTOR=true' })
   })
 
-  it.only('is fully deterministic', async (context) => {
-    const stepsMax = 2500
+  it('is fully deterministic', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 2500)
     const traceA = await run(stepsMax, {})
     const traceB = await run(stepsMax, {})
 

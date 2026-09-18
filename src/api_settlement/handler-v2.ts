@@ -18,6 +18,7 @@ import Settlements from '../domain/settlement/index';
 import settlementWindows from '../domain/settlementWindow/index';
 
 import { logger } from "../shared/logger";
+import { GetSettlementQuery } from "../domain/ledger/types";
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Utility = require('@mojaloop/central-services-shared').Util
@@ -66,6 +67,14 @@ export default class HandlerSettlementV2 {
       }, EventSdk.AuditEventAction.start)
 
       const Enums = await request.server.methods.enums('settlementState')
+      if (this.deps.config.API_MODE_SETTLEMENT === 'LEDGER') {
+        const query: GetSettlementQuery = {
+
+        }
+        const result = await this.deps.ledger.getSettlements(query)
+
+
+      }
       const settlementResult = await Settlements.getSettlementsByParams({ query: request.query }, Enums)
       return h.response(settlementResult)
     } catch (err: any) {
@@ -73,7 +82,6 @@ export default class HandlerSettlementV2 {
       return ErrorHandler.Factory.reformatFSPIOPError(err)
     }
   }
-
 
   /**
    * summary: Trigger the creation of a settlement event, that does the calculation of the net
