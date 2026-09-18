@@ -53,6 +53,7 @@ import {
   GetSettlementQueryResponse,
   GetSettlementsQuery,
   GetSettlementsQueryResponse,
+  GetSettlementWindowQuery,
   GetSettlementWindowsQuery,
   GetSettlementWindowsQueryResponse,
   HubAccountResponse,
@@ -2428,7 +2429,7 @@ export class LedgerSql implements Ledger {
     }
   }
 
-  public async closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>> {
+  public async closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<any>> {
     assert(cmd.id)
     assert(cmd.reason)
 
@@ -2437,10 +2438,10 @@ export class LedgerSql implements Ledger {
         { settlementWindowId: cmd.id, reason: cmd.reason },
         this.deps.enums.settlementWindowStates
       )
-      await SettlementWindowModel.close(cmd.id, cmd.reason)
-
+      const result = await SettlementWindowModel.close(cmd.id, cmd.reason)
       return {
-        type: 'SUCCESS'
+        type: 'SUCCESS',
+        result,
       }
     } catch (err: any) {
       return {
@@ -2541,7 +2542,7 @@ export class LedgerSql implements Ledger {
     return { type: 'SUCCESS' }
   }
 
-  public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<void>> {
+  public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<SettlementUpdateResult>> {
     assert(cmd)
     assert(cmd.id)
     assert(cmd.updates)
@@ -2649,31 +2650,7 @@ export class LedgerSql implements Ledger {
       )
 
       // Map legacy format to SettlementWindow format
-      const settlementWindows: SettlementWindow[] = legacyWindows.map((w: any) => {
-        let state: SettlementWindowState
-        switch (w.state) {
-          case 'OPEN':
-          case 'CLOSED':
-          case 'PENDING_SETTLEMENT':
-          case 'SETTLED':
-          case 'ABORTED':
-          case 'PROCESSING':
-          case 'FAILED':
-            state = w.state
-            break
-          default:
-            throw new Error(`Invalid settlement window state: ${w.state}`)
-        }
-
-        return {
-          id: w.settlementWindowId,
-          state,
-          reason: w.reason ?? '',
-          createdDate: w.createdDate,
-          changedDate: w.changedDate,
-          content: w.content || []
-        }
-      })
+      const settlementWindows: SettlementWindow[] = legacyWindows.map(mapLegacySettlementWindowToLedger)
 
       return {
         type: 'SUCCESS',
@@ -2687,23 +2664,58 @@ export class LedgerSql implements Ledger {
     }
   }
 
-  public async getSettlement(query: GetSettlementQuery): Promise<GetSettlementQueryResponse> {
+  public async getSettlementWindow(query: GetSettlementWindowQuery):
+    Promise<QueryResultWithNotFound<SettlementWindow>> {
+    assert(query)
+    logger.info(`getSettlementWindow() with query: ${JSON.stringify(query)}`)
+
+    try {
+      const legacyWindow = await SettlementWindowDomain.getById(
+        { settlementWindowId: query.id }, this.deps.enums
+      )
+      if (!legacyWindow) {
+        return {
+          type: 'NOT_FOUND',
+          error: new Error(`Settlement window not found for id: ${query.id}.`)
+        }
+      }
+      const result = mapLegacySettlementWindowToLedger(legacyWindow)
+      return {
+        type: 'SUCCESS',
+        result
+      }
+    } catch (err: any) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  public async getSettlement(query: GetSettlementQuery): 
+    Promise<QueryResultWithNotFound<Settlement>> {
     assert(query)
     assert(query.id)
 
     try {
       const settlement = await SettlementDomain.getById({ settlementId: query.id }, this.deps.enums)
-      // TODO: type me!
-      // @ts-ignore
+      assert(settlement, 'getById should throw on not found.')
       return {
-        type: 'FOUND',
-        ...settlement
+        type: 'SUCCESS',
+        // TODO: fix up these types.
+        // @ts-ignore
+        result: settlement
       }
     } catch (err: any) {
-      // getById throws if not found
-      // TODO(LD): catch the specific not found error!
+      if (err && err.apiErrorCode && err.apiErrorCode.httpStatusCode === 400 ) {
+        return {
+          type: 'NOT_FOUND',
+          error: err
+        }
+      }
+    
       return {
-        type: 'FAILED',
+        type: 'FAILURE',
         error: err
       }
     }
@@ -2740,5 +2752,31 @@ export class LedgerSql implements Ledger {
     } catch (err: any) {
       return { type: 'FAILURE', error: err }
     }
+  }
+}
+
+const mapLegacySettlementWindowToLedger = (window: any) => {
+  let state: SettlementWindowState
+  switch (window.state) {
+    case 'OPEN':
+    case 'CLOSED':
+    case 'PENDING_SETTLEMENT':
+    case 'SETTLED':
+    case 'ABORTED':
+    case 'PROCESSING':
+    case 'FAILED':
+      state = window.state
+      break
+    default:
+      throw new Error(`mapLegacySettlementWindowToLedger() settlement window state: ${window.state}`)
+  }
+
+  return {
+    id: window.settlementWindowId,
+    state,
+    reason: window.reason ?? '',
+    createdDate: window.createdDate,
+    changedDate: window.changedDate,
+    content: window.content || []
   }
 }
