@@ -15,26 +15,26 @@ const buildRoutes = (handler: HandlerSettlementV2) => {
         settlementWindows: {
           get: handler.getSettlementWindowsByParams.bind(handler),
           '{id}': {
-            get: notImplemented('GET /settlementWindows/{id}'),
-            post: notImplemented('POST /settlementWindows/{id}')
+            get: handler.getSettlementWindowById.bind(handler),
+            post: handler.closeSettlementWindow.bind(handler),
           }
         },
         settlements: {
           get: handler.getSettlementByParams.bind(handler),
           post: handler.createSettlementEvent.bind(handler),
           '{id}': {
-            get: notImplemented('GET /settlements/{id}'),
-            put: notImplemented('PUT /settlements/{id}')
+            get: handler.getSettlementById.bind(handler),
+            put: handler.updateSettlementById.bind(handler),
           },
           '{sid}': {
             participants: {
               '{pid}': {
-                get: notImplemented('GET /settlements/{sid}/participants/{pid}'),
-                put: notImplemented('PUT /settlements/{sid}/participants/{pid}'),
+                get: handler.getSettlementBySettlementParticipant.bind(handler),
+                put: handler.updateSettlementByParticipant.bind(handler),
                 accounts: {
                   '{aid}': {
-                    get: notImplemented('GET /settlements/{sid}/participants/{pid}/accounts/{aid}'),
-                    put: notImplemented('PUT /settlements/{sid}/participants/{pid}/accounts/{aid}')
+                    get: handler.getSettlementBySettlementParticipantAccount.bind(handler),
+                    put: handler.updateSettlementByIdParticipantAccount.bind(handler),
                   }
                 }
               }

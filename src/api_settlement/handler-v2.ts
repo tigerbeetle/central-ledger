@@ -1,14 +1,25 @@
 import { LedgerSql } from "../domain/ledger/ledger-sql"
 import { ApplicationConfig } from "../lib/config"
 import { ResponseToolkit } from '@hapi/hapi';
-import { RequestCloseSettlementWindow, RequestCreateSettlementEvent, RequestGetSettlementById, RequestGetSettlementByParticipant, RequestGetSettlementByParticipantAccount, RequestGetSettlementsByParams, RequestGetSettlementWindowById, RequestGetSettlementWindowsByParams, RequestUpdateSettlementById, RequestUpdateSettlementByParticipant, RequestUpdateSettlementByParticipantAccount } from "./types";
+import { 
+  RequestCloseSettlementWindow, 
+  RequestCreateSettlementEvent, 
+  RequestGetSettlementById, 
+  RequestGetSettlementByParticipant, 
+  RequestGetSettlementByParticipantAccount, 
+  RequestGetSettlementsByParams, 
+  RequestGetSettlementWindowById, 
+  RequestGetSettlementWindowsByParams, 
+  RequestUpdateSettlementById, 
+  RequestUpdateSettlementByParticipant, 
+  RequestUpdateSettlementByParticipantAccount 
+} from "./types";
 import Settlements from '../domain/settlement/index';
 import settlementWindows from '../domain/settlementWindow/index';
 
 import { logger } from "../shared/logger";
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
-// const Settlements = require('../domain/settlement/index')
 const Utility = require('@mojaloop/central-services-shared').Util
 const Enum = require('@mojaloop/central-services-shared').Enum
 const EventSdk = require('@mojaloop/event-sdk')
@@ -19,6 +30,10 @@ interface Dependencies {
   ledger: LedgerSql,
 }
 
+/**
+ * Refactored version of the Settlement API handlers. These were previously split across different
+ * files, but it's much simpler to combine them into one ~500 line file.
+ */
 export default class HandlerSettlementV2 {
   constructor(private deps: Dependencies) {
     logger.warn(`HandlerSettlementV2.constructor() - API_MODE_SETTLEMENT=TODO`)
@@ -93,7 +108,9 @@ export default class HandlerSettlementV2 {
         settlementInterchange: await request.server.methods.enums('settlementInterchange'),
         settlementState: await request.server.methods.enums('settlementState'),
         settlementWindowState: await request.server.methods.enums('settlementWindowState'),
-        transferParticipantRoleType: await request.server.methods.enums('transferParticipantRoleType'),
+        transferParticipantRoleType: await request.server.methods.enums(
+          'transferParticipantRoleType'
+        ),
         transferState: await request.server.methods.enums('transferState')
       }
       const settlementResult = await Settlements.settlementEventTrigger(request.payload, Enums)
@@ -385,7 +402,9 @@ export default class HandlerSettlementV2 {
         participantLimitType: await request.server.methods.enums('participantLimitType'),
         settlementState: await request.server.methods.enums('settlementState'),
         settlementWindowState: await request.server.methods.enums('settlementWindowState'),
-        transferParticipantRoleType: await request.server.methods.enums('transferParticipantRoleType'),
+        transferParticipantRoleType: await request.server.methods.enums(
+          'transferParticipantRoleType'
+        ),
         transferState: await request.server.methods.enums('transferState')
       }
       return await Settlements.putById(settlementId, universalPayload, Enums)
@@ -432,7 +451,7 @@ export default class HandlerSettlementV2 {
       request.server.log('error', err)
       return ErrorHandler.Factory.reformatFSPIOPError(err)
     }
-  },
+  }
 
   /**
    * summary: Acknowledgement of settlement by updating with Settlements Id.

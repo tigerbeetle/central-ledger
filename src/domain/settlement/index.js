@@ -453,6 +453,16 @@ const settlementEventTrigger = async (params, enums) => {
   }
 }
 
+/**
+ * 
+ * @param {{
+ *   settlementId: number, 
+ *   participantId: number,
+ *   accountId?: number
+ * }} param0 
+ * @param {*} enums 
+ * @returns 
+ */
 const getByIdParticipantAccount = async (
   { settlementId, participantId, accountId },
   enums
