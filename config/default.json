@@ -112,7 +112,7 @@
       ]
     }
   },
-  "API_DOC_ENDPOINTS_ENABLED": false,
+  "API_DOC_ENDPOINTS_ENABLED": true,
   "WINDOW_AGGREGATION": {
     "RETRY_COUNT": 3,
     "RETRY_INTERVAL": 3000
