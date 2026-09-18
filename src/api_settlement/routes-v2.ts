@@ -10,8 +10,9 @@ const buildRoutes = (
   assert(handlerSettlement)
 
   return {
+    plugin: HapiOpenAPI,
     options: {
-      api: Path.join(__dirname, '../interface/swagger.json'),
+      api: Path.join(__dirname, '../settlement/interface/swagger.json'),
       handlers: handlerSettlement
     }
   }

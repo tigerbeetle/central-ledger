@@ -791,6 +791,4 @@ describe('settlement api handlers', () => {
       'SETTLED'
     )
   })
-
-  it.todo('gets settlement by payment status')
 })

@@ -64,10 +64,11 @@ const { MessageBus } = require('../messaging/message-bus')
 const { PositionHandlerV2 } = require('../handlers/position-v2')
 const { LedgerSql } = require('../domain/ledger/ledger-sql')
 const { TimeoutHandlerV2 } = require('../handlers/timeout-v2')
+const { default: HandlerSettlementV2 } = require('../api_settlement/handler-v2')
 const HandlerParticipantsV2 = require('../api_admin/participants/handler-v2').default
 const HandlerTransactionsV2 = require('../api_admin/transactions/handler-v2').default
 const routesAdminBuilder = require('../api_admin/routes-v2').default
-const routesSettlement = require('../api_settlement/routes')
+const routesSettlementBuilder = require('../api_settlement/routes-v2').default
 
 const migrate = (runMigrations) => {
   return runMigrations ? Migrator.migrate() : true
@@ -245,6 +246,9 @@ const initialize = async function ({ service, port, modules = [], runMigrations 
     const handlerParticipant = new HandlerParticipantsV2({ config: Config, ledger })
     const handlerTransactions = new HandlerTransactionsV2({ config: Config, ledger })
     const routesAdmin = routesAdminBuilder(handlerParticipant, handlerTransactions)
+
+    const handlerSettlement = new HandlerSettlementV2({config: Config, ledger })
+    const routesSettlement = routesSettlementBuilder(handlerSettlement)
 
     let server
     switch (service) {

@@ -121,6 +121,3 @@ export type RequestUpdateSettlementByParticipantAccount = SettlementRequest<{
 }>;
 
 export type RequestGetHealth = SettlementRequest;
-
-/** @deprecated Use RequestGetSettlementsByParams instead */
-export type RequestGetSettlementByParams = RequestGetSettlementsByParams;
