@@ -454,7 +454,7 @@ const settlementEventTrigger = async (params, enums) => {
 }
 
 const getByIdParticipantAccount = async (
-  { settlementId, participantId, accountId = null },
+  { settlementId, participantId, accountId },
   enums
 ) => {
   let participantFoundInSettlement = false
