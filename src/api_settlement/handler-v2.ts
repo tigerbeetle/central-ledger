@@ -270,7 +270,7 @@ export default class HandlerSettlementV2 {
    * produces: application/json
    * responses: 200, 400, 401, 404, 415, default
    */
-  public async updateSettlementById(request: RequestUpdateSettlementById) {
+  public async updateSettlementById(request: RequestUpdateSettlementById, h: ResponseToolkit) {
     const settlementId = request.params.id
     try {
       const { span, headers } = request
@@ -338,6 +338,7 @@ export default class HandlerSettlementV2 {
 
   public async getSettlementBySettlementParticipant(
     request: RequestGetSettlementByParticipant,
+    h: ResponseToolkit,
   ): Promise<any> {
     try {
       const settlementId = request.params.sid
@@ -373,7 +374,10 @@ export default class HandlerSettlementV2 {
    * produces: application/json
    * responses: 200, 400, 401, 404, 415, default
    */
-  public async updateSettlementByParticipant(request: RequestUpdateSettlementByParticipant) {
+  public async updateSettlementByParticipant(
+    request: RequestUpdateSettlementByParticipant,
+    h: ResponseToolkit
+  ) {
     const settlementId = request.params.sid
     const participantId = request.params.pid
     try {
@@ -423,7 +427,8 @@ export default class HandlerSettlementV2 {
      */
 
   public async getSettlementBySettlementParticipantAccount(
-    request: RequestGetSettlementByParticipantAccount
+    request: RequestGetSettlementByParticipantAccount,
+    h: ResponseToolkit
   ) {
     try {
       const settlementId = request.params.sid
@@ -461,7 +466,8 @@ export default class HandlerSettlementV2 {
    * responses: 200, 400, 401, 404, 415, default
    */
   public async updateSettlementByIdParticipantAccount(
-    request: RequestUpdateSettlementByParticipantAccount
+    request: RequestUpdateSettlementByParticipantAccount,
+    h: ResponseToolkit
   ) {
     const settlementId = request.params.sid
     const participantId = request.params.pid
