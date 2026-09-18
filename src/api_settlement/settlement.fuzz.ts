@@ -1,4 +1,5 @@
 import { describe, it } from "node:test"
+import fs from "node:fs"
 import path from 'path'
 import LoggerMock from "../testing/logger-mock"
 import { logger as loggerGlobal } from "../shared/logger"
@@ -9,12 +10,13 @@ import Harness from "../testing/harness"
 import { loggerFactory } from "@mojaloop/central-services-logger/src/contextLogger"
 import * as ApiHelpers from '../testing/api-helpers'
 import { envOrDefaultNumber, randomAvailablePort, sanitizeTestName } from "../testing/util"
-import { ReqRefDefaults, Server, ServerRoute } from "@hapi/hapi"
+import { Server } from "@hapi/hapi"
 import Trace from "../testing/fuzz/trace"
 import assert from "node:assert"
 import PRNG from "../testing/prng"
 import { ApplicationConfig } from "../lib/config"
 import { Settlement } from "../domain/ledger/types"
+import HandlerSettlementV2 from "./handler-v2"
 const logger = loggerFactory()
 
 // We need to patch the date globally before starting the harness.
@@ -28,9 +30,15 @@ const filename = path.basename(__filename)
 assert(filename)
 
 describe('Settlement API Fuzz', () => {
-  it('runs the fuzzer', async () => {
+  it('runs the fuzzer', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 100)
-    await run(stepsMax, {})
+    const trace = await run(stepsMax, {})
+
+    const dirTrace = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
+    const pathTrace = `${dirTrace}/trace.txt`
+    fs.mkdirSync(dirTrace, { recursive: true });
+    fs.writeFileSync(pathTrace, trace.toString())
+    console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 })
 
@@ -45,7 +53,11 @@ const run = async (stepsMax: number, config: Partial<ApplicationConfig>): Promis
     harness.configOverride(config)
 
     const port = await randomAvailablePort()
-    const routes = await import('./routes')
+    const buildRoutes = (await import('./routes-v2')).default
+    const handler = new HandlerSettlementV2({
+      config: harness.config, ledger: harness.ledger
+    })
+    const routes = buildRoutes(handler)
     const Setup = await import('../shared/setup')
     server = await Setup.createServer(port, routes)
 
