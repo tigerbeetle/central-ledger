@@ -91,8 +91,8 @@ const mapUpdates = (items: Array<any>): Array<SettlementUpdate> => {
     assert(item.accounts[0])
     const account = item.accounts[0]
     assert(account.state)
-    assert(account.reason)
-    assert(account.externalReference)
+    assert(typeof account.reason === 'string')
+    assert(typeof account.externalReference === 'string')
 
     return {
       participantId: item.id,
@@ -759,6 +759,10 @@ export default class HandlerSettlementV2 {
       )
       span.setTags(spanTags)
       await span.audit(request.payload, EventSdk.AuditEventAction.start)
+      // Set a default, makes API more consistent.
+      if (!request.payload.externalReference) {
+        request.payload.externalReference = ''
+      }
       const accounts = [Object.assign({}, request.payload, { id: accountId })]
       const universalPayload = {
         participants: [

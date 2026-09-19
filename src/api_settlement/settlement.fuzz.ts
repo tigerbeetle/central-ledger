@@ -30,7 +30,7 @@ const filename = path.basename(__filename)
 assert(filename)
 
 describe('Settlement API Fuzz', () => {
-  it.only('runs the fuzzer', async (context) => {
+  it('runs the fuzzer', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 100)
     const trace = await run(stepsMax, {API_MODE_SETTLEMENT: 'LEDGER'})
 
@@ -41,7 +41,7 @@ describe('Settlement API Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it('is identical with/without LEDGER', async (context) => {
+  it.only('is identical with/without LEDGER', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 100)
     const traceA = await run(stepsMax, { API_MODE_SETTLEMENT: 'NONE' })
     const traceB = await run(stepsMax, { API_MODE_SETTLEMENT: 'LEDGER' })
