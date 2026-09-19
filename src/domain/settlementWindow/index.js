@@ -115,6 +115,15 @@ module.exports = {
     }
   },
 
+  /**
+   * @returns {Promise<{
+   *   changedDate: Date,
+   *   createdDate: Date,
+   *   reason: string,
+   *   settlementWindowId: number,
+   *   state: string, 
+   * }>}
+   */
   process: async function (params, enums) {
     const nextId = await SettlementWindowModel.process(params, enums)
     await SettlementWindowModel.close(params.settlementWindowId, params.reason)

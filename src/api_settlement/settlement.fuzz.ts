@@ -394,7 +394,6 @@ class SettlementApiFuzzer {
       return
     }
 
-
     let settlementId = this.harness.prng.intExclusive(1000)
     let participantId = this.harness.prng.intExclusive(1000)
     if (this.settlements.length > 0 && this.harness.prng.intExclusive(100) < 98) {

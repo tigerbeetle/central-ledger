@@ -651,6 +651,24 @@ export type SettlementCommitCommand = {
 
 }
 
+
+export type SettlementUpdate = {
+  participantId: number
+
+  /**
+   * TODO(LD):
+   * Not sure if we need this, but it's on the API.
+   * I suspect it shouldn't be, since accountId is internal and shouldn't be exposed
+   */
+  accountId: number
+  participantState: 'PS_TRANSFERS_RECORDED'
+  | 'PS_TRANSFERS_RESERVED'
+  | 'PS_TRANSFERS_COMMITTED'
+  | 'SETTLED'
+  reason: string
+  externalReference: string
+}
+
 export type SettlementUpdateCommand = {
   /**
    * The settlement id
@@ -660,30 +678,32 @@ export type SettlementUpdateCommand = {
   /**
    * A list of updates to apply to the settlement
    */
-  updates: Array<{
-    participantId: number
+  updates: Array<SettlementUpdate>
+}
 
-    /**
-     * TODO(LD):
-     * Not sure if we need this, but it's on the API.
-     * I suspect it shouldn't be, since accountId is internal and shouldn't be exposed
-     */
-    accountId: number
-    participantState: 'RECORDED' | 'RESERVED' | 'COMMITTED' | 'SETTLED',
-    reason: string
-    externalReference: string
-  }>
+export type CloseSettlementWindowResult = {
+  changedDate: Date,
+  createdDate: Date,
+  reason: string,
+  settlementWindowId: number,
+  state: SettlementWindowState,
 }
 
 export type SettlementUpdateResult = {
-  // TODO: add me
-
+  createdDate: Date,
+  id: number,
+  participants: Array<{
+    accounts: Array<SettlementAccount>
+    id: number
+  }>
+  settlementWindows: Array<SettlementWindow>
+  state: LegacySettlementState  
 }
 
 export type SettlementWindowState = 'OPEN' | 'CLOSED' | 'PENDING_SETTLEMENT' | 'SETTLED'
   | 'ABORTED' | 'PROCESSING' | 'FAILED'
 
-export type InternalSettlementState = 
+export type InternalSettlementState =
   | 'PENDING_SETTLEMENT'
   | 'PS_TRANSFERS_RECORDED'
   | 'PS_TRANSFERS_RESERVED'
@@ -733,7 +753,7 @@ export type GetSettlementsQuery = {
 }
 
 export type SettlementWindow = {
-  id: number,
+  settlementWindowId: number,
   state: SettlementWindowState,
   reason: string,
   createdDate: Date,

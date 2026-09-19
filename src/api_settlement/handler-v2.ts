@@ -18,7 +18,8 @@ import Settlements from '../domain/settlement/index';
 import settlementWindows from '../domain/settlementWindow/index';
 
 import { logger } from "../shared/logger";
-import { GetSettlementQuery, GetSettlementsQuery, GetSettlementWindowQuery, GetSettlementWindowsQuery, InternalSettlementState, SettlementCloseWindowCommand, SettlementPrepareCommand, SettlementUpdateCommand } from "../domain/ledger/types";
+import { GetSettlementQuery, GetSettlementsQuery, GetSettlementWindowQuery, GetSettlementWindowsQuery, InternalSettlementState, SettlementAbortCommand, SettlementCloseWindowCommand, SettlementPrepareCommand, SettlementUpdate, SettlementUpdateCommand } from "../domain/ledger/types";
+import assert from "node:assert";
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Utility = require('@mojaloop/central-services-shared').Util
@@ -72,12 +73,45 @@ const trimUndefined = (input: Record<string, any>) => Object.entries(input)
   }, {} as Record<string, any>)
 
 /**
+ * @function mapUpdates
+ * @description Map from a updateSettlementById DTO representation to a Ledger representation.
+ */
+const mapUpdates = (items: Array<any>): Array<SettlementUpdate> => {
+  return items.map(item => {
+    assert(item.id)
+    
+    if (item.accounts.length === 0) {
+      throw new Error(`mapUpdates() found no accounts for participant`
+        + `${item.id}. Expected only 1.`)
+    }
+    if (item.accounts.length > 1) {
+      throw new Error(`mapUpdates() found more than 1 account for participant`
+        + `${item.id}. Expected only 1.`)
+    }
+    assert(item.accounts[0])
+    const account = item.accounts[0]
+    assert(account.state)
+    assert(account.reason)
+    assert(account.externalReference)
+
+    return {
+      participantId: item.id,
+      accountId: account.id,
+      participantState: account.state,
+      reason: account.reason,
+      externalReference: account.externalReference
+    }
+  })
+}
+
+/**
  * Refactored version of the Settlement API handlers. These were previously split across different
  * files, but it's much simpler to combine them into one ~500 line file.
  */
 export default class HandlerSettlementV2 {
   constructor(private deps: Dependencies) {
-    logger.warn(`HandlerSettlementV2.constructor() - API_MODE_SETTLEMENT=TODO`)
+    logger.warn(`HandlerSettlementV2.constructor() - `
+      + `API_MODE_SETTLEMENT=${this.deps.config.API_MODE_SETTLEMENT}`)
   }
 
   /**
@@ -436,10 +470,11 @@ export default class HandlerSettlementV2 {
       }
       if (this.deps.config.API_MODE_SETTLEMENT === 'LEDGER') {
         if (p.participants) {
-          // Update
+
+          // Update.
           const cmd: SettlementUpdateCommand = {
             id: settlementId,
-            updates: []
+            updates: mapUpdates(p.participants)
           }
           const result = await this.deps.ledger.settlementUpdate(cmd)
           if (result.type === 'FAILURE') {
@@ -448,7 +483,19 @@ export default class HandlerSettlementV2 {
 
           return result.result
         } else if (p.state && p.state === Enums.settlementState.ABORTED) {
+          // Abort.
+          const reason = request.payload.reason
+          assert(reason,)
+          const cmd: SettlementAbortCommand = {
+            id: settlementId,
+            reason,
+          }
+          const result = await this.deps.ledger.settlementAbort(cmd)
+          if (result.type === 'FAILURE') {
+            throw result.error
+          }
 
+          return result.result
         }
         const error = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
@@ -471,18 +518,18 @@ export default class HandlerSettlementV2 {
       throw error
     } catch (err: any) {
       request.server.log('error', err)
+      request.server.log('error', err.stack)
       return ErrorHandler.Factory.reformatFSPIOPError(err)
     }
   }
 
   /**
-   * summary: Acknowledgement of settlement by updating with Settlements Id and Participant Id.
+   * summary: 
    * description:
-   * parameters: settlementId, participantId, settlementParticipantUpdatePayload
+   * parameters: 
    * produces: application/json
    * responses: 200, 400, 401, 404, 415, default
    */
-
   public async getSettlementBySettlementParticipant(
     request: RequestGetSettlementByParticipant,
     h: ResponseToolkit,
@@ -508,8 +555,30 @@ export default class HandlerSettlementV2 {
         ledgerAccountType: await request.server.methods.enums('ledgerAccountType')
       }
       if (this.deps.config.API_MODE_SETTLEMENT === 'LEDGER') {
+        const query: GetSettlementQuery = {
+          id: settlementId
+        }
+        const resultSettlement = await this.deps.ledger.getSettlement(query)
+        if (resultSettlement.type === 'FAILURE' || resultSettlement.type === 'NOT_FOUND') {
+          throw resultSettlement.error
+        }
 
-        throw new Error('Not implemented.')
+        // Now filter for the participant. Ledger doesn't support lookup by participant.
+        const participants = resultSettlement.result.participants
+          .filter(participant => participant.id === participantId)
+        if (participants.length === 0) {
+          throw new Error(`Participant not found for settlement: ${settlementId} `
+            + `and participantId: ${participantId}`)
+        }
+
+        const formatted = {
+          id: resultSettlement.result.id,
+          state: resultSettlement.result.state,
+          settlementWindows: [], // Backwards compatibility.
+          participants
+        }
+
+        return formatted
       }
 
       return await Settlements.getByIdParticipantAccount({ settlementId, participantId }, Enums)
@@ -564,8 +633,19 @@ export default class HandlerSettlementV2 {
         transferState: await request.server.methods.enums('transferState')
       }
       if (this.deps.config.API_MODE_SETTLEMENT === 'LEDGER') {
+        const cmd: SettlementUpdateCommand = {
+          id: settlementId,
+          updates: mapUpdates([{
+            id: participantId,
+            accounts: p.accounts
+          }])
+        }
+        const result = await this.deps.ledger.settlementUpdate(cmd)
+        if (result.type === 'FAILURE') {
+          throw result.error
+        }
 
-        throw new Error('Not implemented.')
+        return result.result
       }
 
       return await Settlements.putById(settlementId, universalPayload, Enums)
@@ -609,8 +689,42 @@ export default class HandlerSettlementV2 {
         ledgerAccountType: await request.server.methods.enums('ledgerAccountType')
       }
       if (this.deps.config.API_MODE_SETTLEMENT === 'LEDGER') {
+        const query: GetSettlementQuery = {
+          id: settlementId
+        }
+        const resultSettlement = await this.deps.ledger.getSettlement(query)
+        if (resultSettlement.type === 'FAILURE' || resultSettlement.type === 'NOT_FOUND') {
+          throw resultSettlement.error
+        }
 
-        throw new Error('Not implemented.')
+        // Now filter for the participant + account. Ledger doesn't support lookup by participant.
+        const participant = resultSettlement.result.participants
+          .find(participant => participant.id === participantId)
+        if (!participant) {
+          throw new Error(`Participant not found for settlement: ${settlementId} `
+            + `and participantId: ${participantId}`)
+        }
+        const account = participant.accounts.find(account => account.id === accountId)
+        if (!account) {
+          throw new Error(`Account not found for settlement: ${settlementId} `
+            + `and participantId: ${participantId}`
+            + `and accountId: ${accountId}`
+          )
+        }
+
+        const formatted = {
+          id: resultSettlement.result.id,
+          state: resultSettlement.result.state,
+          settlementWindows: [], // Backwards compatibility.
+          participants: [{
+            id: participant.id,
+            accounts: [
+              account
+            ]
+          }]
+        }
+
+        return formatted
       }
 
       return await Settlements.getByIdParticipantAccount({ settlementId, participantId, accountId }, Enums)
@@ -664,8 +778,24 @@ export default class HandlerSettlementV2 {
         transferState: await request.server.methods.enums('transferState')
       }
       if (this.deps.config.API_MODE_SETTLEMENT === 'LEDGER') {
+        const cmd: SettlementUpdateCommand = {
+          id: settlementId,
+          updates: mapUpdates([{
+            id: participantId,
+            accounts: [{
+              id: accountId,
+              state: request.payload.state,
+              reason: request.payload.reason,
+              externalReference: request.payload.externalReference || '',
+            }]
+          }])
+        }
+        const result = await this.deps.ledger.settlementUpdate(cmd)
+        if (result.type === 'FAILURE') {
+          throw result.error
+        }
 
-        throw new Error('Not implemented.')
+        return result.result
       }
       return await Settlements.putById(settlementId, universalPayload, Enums)
     } catch (err: any) {
