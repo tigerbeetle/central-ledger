@@ -37,11 +37,11 @@ const { FSPIOPError } = ErrorHandler
 import { Effect } from "../messaging/message-bus";
 import { PositionHandlerV2 } from "./position-v2";
 import { assertNestedFields } from "../lib/config/util";
-import { LedgerSql } from '../domain/ledger/ledger-sql'
+import { Ledger } from '../domain/ledger/types'
 
 interface Dependencies {
   config: ApplicationConfig
-  ledger: LedgerSql
+  ledger: Ledger
   fxService: any
   positionHandler: PositionHandlerV2
 }

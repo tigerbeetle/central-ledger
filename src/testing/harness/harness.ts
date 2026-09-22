@@ -81,6 +81,7 @@ import { Redpanda, RedpandaConnectionOptions } from "./redpanda"
 import { Redis } from "./redis"
 import { MySql, MySqlConnectionOptions } from "./mysql"
 import MessagingHelper from "../../messaging/helper"
+import { Ledger } from "../../domain/ledger/types"
 
 const logger = Logger.child({ scope: 'harness' })
 
@@ -140,7 +141,7 @@ export default class Harness {
   private _messageBus: MessageBus | null = null
   private _expect: Expect | null = null
   private _timeoutHandlerV2: TimeoutHandlerV2 | null = null
-  private _ledger: LedgerSql | null = null
+  private _ledger: Ledger | null = null
 
   /**
    * 
@@ -389,7 +390,7 @@ export default class Harness {
     return this._expect
   }
 
-  get ledger(): LedgerSql {
+  get ledger(): Ledger {
     assert(this._ledger, 'Ledger not initialized. Did you forget to call setupGlobals()?')
     return this._ledger
   }

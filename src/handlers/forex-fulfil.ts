@@ -43,15 +43,15 @@ import FxTransferModel, { saveFxFulfilResponse } from '../models/fxTransfer/fxTr
 import fspiopErrorFactory from '../shared/fspiopErrorFactory';
 import { logger } from '../shared/logger';
 import { TransferHelper } from './transfer-helper';
-import { Effect, MessageBus } from '../messaging/message-bus';
+import { Effect } from '../messaging/message-bus';
 import { PositionHandlerV2, PositionResultType } from './position-v2';
-import { LedgerSql } from '../domain/ledger/ledger-sql';
+import { Ledger } from '../domain/ledger/types';
 
 const { Type, Action } = Enum.Events.Event
 
 interface Dependencies {
   config: ApplicationConfig,
-  ledger: LedgerSql,
+  ledger: Ledger,
   cyril: {
     processFxFulfilMessage: (commitRequestId: string) => Promise<true>
     processFxAbortMessage: (commitRequestId: string) => Promise<{

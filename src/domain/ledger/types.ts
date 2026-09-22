@@ -73,7 +73,7 @@ export interface Ledger {
    */
   closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>>
   settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{ id: number }>>;
-  settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<void>>;
+  settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<SettlementUpdateResult>>;
 
   /**
    * Commit the settlement - this doesn't really match legacy settlement, since it depends

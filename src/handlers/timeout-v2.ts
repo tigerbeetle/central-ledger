@@ -1,7 +1,7 @@
 import { ApplicationConfig } from "../lib/config";
 import { Effect } from "../messaging/message-bus";
-import { LedgerSql } from "../domain/ledger/ledger-sql";
 import { logger } from "../shared/logger";
+import { Ledger } from "../domain/ledger/types";
 
 export type TimeoutResultPayment = {
   context: any,
@@ -40,7 +40,7 @@ export type TimeoutResult = {
  *   but returns a list of effects to be emitted by the Messaging layer.
  */
 export class TimeoutHandlerV2 {
-  constructor(private config: ApplicationConfig, private ledger: LedgerSql) { }
+  constructor(private config: ApplicationConfig, private ledger: Ledger) { }
 
   public async run(now: Date): Promise<TimeoutResult> {
     const resultLedger = await this.ledger.sweepTimedOut(now)

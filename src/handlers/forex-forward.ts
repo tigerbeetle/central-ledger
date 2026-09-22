@@ -35,7 +35,7 @@ import { logger } from '../shared/logger';
 import { Enum } from '@mojaloop/central-services-shared';
 import { assertNestedFields } from '../lib/config/util';
 import { Effect } from '../messaging/message-bus';
-import { LedgerSql } from '../domain/ledger/ledger-sql';
+import { Ledger } from '../domain/ledger/types';
 
 const { Type, Action } = Enum.Events.Event
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
@@ -43,7 +43,7 @@ const { FSPIOPErrorCodes } = ErrorHandler.Enums
 
 interface Dependencies {
   config: ApplicationConfig,
-  ledger: LedgerSql
+  ledger: Ledger
 }
 
 export interface ForexForwardInput {

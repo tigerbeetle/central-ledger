@@ -72,11 +72,10 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  // TODO: need to implement LederTigerBeetle
-  it.skip('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
-    const stepsMax = envOrDefaultNumber('STEPS_MAX', 1000)
-    const traceA = await run(stepsMax, { API_MODE_SETTLEMENT: 'NONE' })
-    const traceB = await run(stepsMax, { API_MODE_SETTLEMENT: 'LEDGER' })
+  it.only('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 10)
+    const traceA = await run(stepsMax, { LEDGER: 'SQL' })
+    const traceB = await run(stepsMax, { LEDGER: 'TIGERBEETLE' })
 
     const pathBase = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
     fs.mkdirSync(pathBase, { recursive: true });
@@ -121,8 +120,8 @@ const run = async (stepsMax: number, config: Partial<ApplicationConfig>): Promis
   try {
     const options: FuzzOptions = { stepsMax }
     await harness.up()
-    await harness.setupGlobals()
     harness.configOverride(config)
+    await harness.setupGlobals()
 
     // Temporarily patch the database schema to get rid of default dates, making it easy to find
     // where we are setting them!

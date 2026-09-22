@@ -1,7 +1,6 @@
-import { LedgerSql } from "../../domain/ledger/ledger-sql";
 import { ApplicationConfig } from "../../lib/config";
 import { ReqRefDefaults, Request, ResponseToolkit } from '@hapi/hapi';
-import { CommandResult, CreateDfspCommand, LegacyLimitItem } from "../../domain/ledger/types";
+import { CommandResult, CreateDfspCommand, Ledger, LegacyLimitItem } from "../../domain/ledger/types";
 import { assertNestedFields, convertBigIntToNumber } from "../../lib/config/util";
 import { FSPIOPError } from "@mojaloop/central-services-error-handling";
 
@@ -21,7 +20,7 @@ const logger = require('../../shared/logger').logger
 
 interface Dependencies {
   config: ApplicationConfig,
-  ledger: LedgerSql,
+  ledger: Ledger,
 }
 
 type EntityItem = {

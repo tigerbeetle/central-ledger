@@ -1,4 +1,4 @@
-import { LedgerSql } from "../../domain/ledger/ledger-sql";
+import { Ledger } from "../../domain/ledger/types";
 import { ApplicationConfig } from "../../lib/config";
 import { ReqRefDefaults, Request, ResponseToolkit } from '@hapi/hapi';
 const Transaction = require('../../domain/transactions')
@@ -8,7 +8,7 @@ const logger = require('../../shared/logger').logger
 
 interface Dependencies {
   config: ApplicationConfig,
-  ledger: LedgerSql,
+  ledger: Ledger,
 }
 
 export type RequestGetById = Request<ReqRefDefaults & {

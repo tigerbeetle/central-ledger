@@ -140,7 +140,7 @@ const resolveConfig = (rawConfig: any): UnsafeApplicationConfig => {
     WINDOW_AGGREGATION_RETRY_INTERVAL: rawConfig.WINDOW_AGGREGATION.RETRY_INTERVAL,
     KAFKA_CONFIG: kafka,
     SERVER_PRINT_ROUTES_ON_STARTUP: defaultTo(rawConfig.SERVER_PRINT_ROUTES_ON_STARTUP, true),
-    LEDGER: defaultTo(rawConfig.LEDGER, 'LEGACY'),
+    LEDGER: defaultTo(rawConfig.LEDGER, 'SQL'),
     EXPERIMENTAL: {
       PROVISIONING: {
         enabled: defaultTo(rawConfig.EXPERIMENTAL?.PROVISIONING?.enabled, false),
@@ -209,8 +209,8 @@ const parseAndValidateConfig = (unsafeConfig: UnsafeApplicationConfig): Applicat
   assertProvisioning(unsafeConfig.EXPERIMENTAL.PROVISIONING)
 
   // Now assert config business logic - apply rules.
-  if (unsafeConfig.LEDGER !== 'LEGACY') {
-    throw new Error(`LEDGER must be LEGACY. TIGERBEETLE and LOCKSTEP ledgers are currently unsupported.`)
+  if (unsafeConfig.LEDGER !== 'SQL') {
+    logger.warn(`LEDGER=${unsafeConfig.LEDGER}. Use in test environments only!`)
   }
 
   if (unsafeConfig.EXPERIMENTAL.PROVISIONING.enabled) {

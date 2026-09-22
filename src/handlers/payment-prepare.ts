@@ -42,7 +42,7 @@ import {
 import { Effect, MessageBus } from '../messaging/message-bus';
 import { assertNestedFields } from '../lib/config/util';
 import { PositionHandlerV2, PositionResultType } from './position-v2';
-import { LedgerSql } from '../domain/ledger/ledger-sql';
+import { Ledger } from '../domain/ledger/types';
 const { Comparators } = Util
 const { decodePayload } = Util.StreamingProtocol
 const Participant = require('../domain/participant')
@@ -53,7 +53,7 @@ const { FSPIOPError } = ErrorHandler
 
 interface Dependencies {
   config: ApplicationConfig,
-  ledger: LedgerSql,
+  ledger: Ledger,
   proxyCache: ProxyCache,
   positionHandler: PositionHandlerV2
   createRemittanceEntity: CreateRemittanceEntityPayment,

@@ -138,14 +138,15 @@ export interface ApplicationConfig {
   SERVER_PRINT_ROUTES_ON_STARTUP: boolean,
   /**
    * Configures the underlying primary ledger.
-   * - `LEGACY` uses the existing MySQL central-ledger implementation.
+   * - `SQL` uses the existing MySQL central-ledger implementation.
    * - `TIGERBEETLE` uses the TigerBeetle OLTP Database.
    * - `LOCKSTEP` uses both the LEGACY and TIGERBEETLE ledgers in parallel, used to verify
    *    the Ledgers to one another.
    * 
-   * At the momeny, only LEGACY is supported, any other value will fail with a validation error.
+   * At the moment, TIGERBEETLE and LOCKSTEP are experimental only, and not recommended for 
+   * production.
    *
-   * @default 'LEGACY'
+   * @default 'SQL'
    */
   LEDGER: LedgerType
 
@@ -243,7 +244,7 @@ export interface DatabaseConfig {
 }
 
 
-export type LedgerType = 'LEGACY' | 'TIGERBEETLE' | 'LOCKSTEP';
+export type LedgerType = 'SQL' | 'TIGERBEETLE' | 'LOCKSTEP';
 
 export interface DistLockRedisConfig {
   type: string,

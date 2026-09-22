@@ -1,4 +1,3 @@
-import { LedgerSql } from "../domain/ledger/ledger-sql"
 import { ApplicationConfig } from "../lib/config"
 import { ResponseToolkit } from '@hapi/hapi'
 import assert from "node:assert"
@@ -25,6 +24,7 @@ import {
   GetSettlementWindowQuery,
   GetSettlementWindowsQuery,
   InternalSettlementState,
+  Ledger,
   SettlementAbortCommand,
   SettlementCloseWindowCommand,
   SettlementPrepareCommand,
@@ -40,7 +40,7 @@ const EventSdk = require('@mojaloop/event-sdk')
 
 interface Dependencies {
   config: ApplicationConfig,
-  ledger: LedgerSql,
+  ledger: Ledger,
 }
 
 // Parsing helpers

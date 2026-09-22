@@ -39,6 +39,7 @@ import { ForexForwardHandler, ForexForwardResult } from './forex-forward'
 import { PositionHandlerV2 } from './position-v2'
 import { LedgerSql } from '../domain/ledger/ledger-sql'
 import MessagingHelper from '../messaging/helper'
+import { Ledger } from '../domain/ledger/types'
 
 const { Util } = require('@mojaloop/central-services-shared')
 const { Kafka } = Util
@@ -62,7 +63,7 @@ export class DispatchTransferHandler {
 
   private mode: 'JOINED' | 'SPLIT'
 
-  constructor(private config: ApplicationConfig, private ledger: LedgerSql) {
+  constructor(private config: ApplicationConfig, private ledger: Ledger) {
     this.mode = this.config.HANDLERS_TRANSFER_DISPATCH_MODE
     assert(this.mode === 'JOINED' || this.mode === 'SPLIT', '`mode` must be LEGACY or SPLIT.')
 

@@ -42,7 +42,7 @@ import {
   FxTransferProxyObligation, 
   ProxyCache 
 } from './transfer-types'
-import { LedgerSql } from '../domain/ledger/ledger-sql'
+import { Ledger } from '../domain/ledger/types'
 const { decodePayload } = Util.StreamingProtocol
 const Participant = require('../domain/participant')
 const { Type, Action } = Enum.Events.Event
@@ -52,7 +52,7 @@ const { FSPIOPError } = ErrorHandler
 
 interface Dependencies {
   config: ApplicationConfig,
-  ledger: LedgerSql,
+  ledger: Ledger,
   proxyCache: ProxyCache,
   createRemittanceEntity: CreateRemittanceEntityForex,
   positionHandler: PositionHandlerV2
