@@ -84,6 +84,7 @@ import {
   SettlementWindow,
   SettlementWindowState,
   SweepResult,
+  TransferCode,
   WithdrawAbortCommand,
   WithdrawAbortResponse,
   WithdrawCommitCommand,
@@ -91,7 +92,7 @@ import {
   WithdrawPrepareCommand,
   WithdrawPrepareResponse
 } from "./types";
-import { Client, CreateAccountStatus, CreateTransferResult, CreateTransferStatus, id, Transfer, TransferFlags } from 'tigerbeetle-node';
+import { AccountFilterFlags, Client, CreateAccountStatus, CreateTransferResult, CreateTransferStatus, id, Transfer, TransferFlags } from 'tigerbeetle-node';
 import { assertBoolean } from '../../lib/config/util';
 import Helper from './helper';
 
@@ -152,6 +153,11 @@ export interface SpecAccount extends DfspAccountIds {
 }
 
 export interface CurrencyAccount {
+  /**
+   * A mocked out id to match the legacy ledger
+   */
+  id: number,
+
   currency: string,
   /**
    * The Legacy account type.
@@ -162,12 +168,31 @@ export interface CurrencyAccount {
    * This isn't really the best place for this, but we need to put it somewhere!
    */
   settlementBalance: bigint,
+
+  /**
+   * When the CurrencyAccount was created.
+   */
+  createdDate: Date,
+
+  /**
+   * When the CurrencyAccount was last updated.
+   */
+  changedDate: Date,
 }
 
 export interface CurrencyLedger {
   currency: string,
+  /**
+   * The TigerBeetle ledger where 'real' funds are tracked. Used for financial reporting.
+   */
   ledgerOperation: number,
-  ledgerControl: number
+
+  /**
+   * A separate 'control' ledger for non-financial operations.
+   */
+  ledgerControl: number,
+
+
 }
 
 interface DepsSpecStore {
@@ -183,6 +208,13 @@ interface DepsSpecStore {
  */
 class SpecStore {
 
+  private hubAccountId = 0
+
+  /**
+   * Backwards compatibility - keep track of the very first date the first currency was created.
+   */
+  private firstCreationDate: Date | null = null
+
   // TODO: make this a 'Table'.
   // We store the account for backwards compatibility, but LedgerTB doesn't really care about it.
   private currencyAccounts: Array<CurrencyAccount> = []
@@ -197,8 +229,30 @@ class SpecStore {
   }> = []
   private dfspSpecs: Array<SpecAccount> = []
 
-  constructor(private deps: DepsSpecStore) { }
+  constructor(private deps: DepsSpecStore) {
+    // This mimicks how the participant gets setup in LedgerSQL.
+    this.getFirstOrImplyCreationDate()
+  }
 
+  /**
+   * Strip the MS off of the date, this mimicks what MySQL does internally.
+   */
+  public static stripMs(date: Date): Date {
+    return new Date(new Date().setMilliseconds(0))
+  }
+
+  public async getFirstOrImplyCreationDate(): Promise<Date> {
+    if (!this.firstCreationDate) {
+      this.firstCreationDate = SpecStore.stripMs(new Date())
+    }
+
+    return this.firstCreationDate
+  }
+
+  private nextHubAccountId(): number {
+    this.hubAccountId += 1
+    return this.hubAccountId
+  }
 
   public async enableHubCurrency(cmd: CmdHubCurrencyEnable): Promise<EnableHubCurrencyResponse> {
     try {
@@ -236,6 +290,10 @@ class SpecStore {
           ledgerOperation,
           ledgerControl,
         })
+
+        if (!this.firstCreationDate) {
+          this.firstCreationDate = SpecStore.stripMs(new Date())
+        }
       }
 
       for (const account of cmd.accounts) {
@@ -246,9 +304,12 @@ class SpecStore {
         // Backwards compatibility. Create one at a time, this means a partial creation could
         // take place.
         this.currencyAccounts.push({
+          id: this.nextHubAccountId(),
           currency: cmd.currency,
           account,
           settlementBalance: this.deps.helperTigerBeetle.idSmall(),
+          createdDate: SpecStore.stripMs(new Date()),
+          changedDate: SpecStore.stripMs(new Date()),
         })
         if (currencyAccounts) {
           return {
@@ -273,6 +334,14 @@ class SpecStore {
     }
 
     return currencyLedger
+  }
+
+  public async getCurrencyLedgers(): Promise<Array<CurrencyLedger>> {
+    return this.currencyLedgers
+  }
+
+  public async getAllCurrencyAccounts(): Promise<Array<CurrencyAccount>> {
+    return this.currencyAccounts
   }
 
   public async getCurrencyAccounts(currency: string): Promise<Array<CurrencyAccount>> {
@@ -310,7 +379,7 @@ class SpecStore {
   /**
    * Create the TigerBeetle master account id for this DFSP.
    */
-  public async getOrCreateDfsp(id: string): Promise<bigint> {
+  public async getOrCreateDfspMasterAccount(id: string): Promise<bigint> {
     const found = this.dfsps.find(dfsp => dfsp.id === id)
     if (found) {
       return found.masterAccountId
@@ -320,6 +389,15 @@ class SpecStore {
     this.dfsps.push({ id, masterAccountId })
 
     return masterAccountId
+  }
+
+  public async getDfspMasterAccount(id: string): Promise<bigint> {
+    const found = this.dfsps.find(dfsp => dfsp.id === id)
+    if (!found) {
+      throw new Error(`No dfsp found for id: ${id}`)
+    }
+
+    return found.masterAccountId
   }
 
   public async getAccountSpec(id: string, currency: string):
@@ -336,6 +414,59 @@ class SpecStore {
       type: 'SUCCESS',
       result: spec
     }
+  }
+
+  public async getAccountSpecs(id: string): Promise<Array<SpecAccount>> {
+    return this.dfspSpecs.filter(spec => spec.dfspId === id)
+  }
+
+  /**
+   * Look up the account within the spec for the dfspid and account id.
+   */
+  public async getCurrencyCodeAndSpec(id: string, accountId: bigint):
+    Promise<{ currency: string, code: AccountCode, spec: SpecAccount }> {
+    const specs = await this.getAccountSpecs(id)
+    if (specs.length === 0) {
+      throw new Error(`getCurrencyAndType() no specs found for id: ${id}.`)
+    }
+
+    const currencyAndCode = specs.reduce<{ currency: string, code: AccountCode, spec: SpecAccount } | null>((acc, curr) => {
+      if (acc) return acc
+      if (curr.clearingCredit === accountId) {
+        return { currency: curr.currency, code: AccountCode.Clearing_Credit, spec: curr }
+      }
+      if (curr.deposit === accountId) {
+        return { currency: curr.currency, code: AccountCode.Deposit, spec: curr }
+      }
+      if (curr.unrestricted === accountId) {
+        return { currency: curr.currency, code: AccountCode.Unrestricted, spec: curr }
+      }
+      if (curr.unrestrictedLock === accountId) {
+        return { currency: curr.currency, code: AccountCode.Unrestricted_Lock, spec: curr }
+      }
+      if (curr.restricted === accountId) {
+        return { currency: curr.currency, code: AccountCode.Restricted, spec: curr }
+      }
+      if (curr.reserved === accountId) {
+        return { currency: curr.currency, code: AccountCode.Reserved, spec: curr }
+      }
+      if (curr.commitedOutgoing === accountId) {
+        return { currency: curr.currency, code: AccountCode.Committed_Outgoing, spec: curr }
+      }
+      if (curr.clearingSetup === accountId) {
+        return { currency: curr.currency, code: AccountCode.Clearing_Setup, spec: curr }
+      }
+      if (curr.clearingLimit === accountId) {
+        return { currency: curr.currency, code: AccountCode.Clearing_Limit, spec: curr }
+      }
+      return acc
+    }, null)
+
+    if (!currencyAndCode) {
+      throw new Error(`getCurrencyAndType() not found for id: ${id}, accountId: ${accountId}.`)
+    }
+
+    return currencyAndCode
   }
 
   public async newAccountSpec(id: string, currency: string): Promise<SpecAccount> {
@@ -475,7 +606,7 @@ export class LedgerTigerBeetle implements Ledger {
       await this.specStore.assertCurrenciesEnabled(cmd.currencies)
 
       // Get or create the specDfsp.
-      const masterAccountId = await this.specStore.getOrCreateDfsp(cmd.dfspId)
+      const masterAccountId = await this.specStore.getOrCreateDfspMasterAccount(cmd.dfspId)
       const accountSpecResult = await this.specStore.getAccountSpec(cmd.dfspId, currency)
 
       if (accountSpecResult.type === 'FAILURE') {
@@ -529,7 +660,7 @@ export class LedgerTigerBeetle implements Ledger {
 
       // First we create the spec.
       const spec = await this.specStore.newAccountSpec(id, currency)
-      const masterAccountId = await this.specStore.getOrCreateDfsp(id)
+      const masterAccountId = await this.specStore.getOrCreateDfspMasterAccount(id)
       const ledger = await this.specStore.getCurrencyLedger(currency)
       const accountIdSettlementBalance = await this.specStore.getAccountIdSettlementBalance(currency)
 
@@ -547,7 +678,7 @@ export class LedgerTigerBeetle implements Ledger {
 
         readableErrors.push(CreateAccountStatus[result.status])
         const failedAccount = accounts[idx]
-        console.error(`Batch account at ${idx} failed to create: ${CreateAccountStatus[result.status]}.\n` 
+        console.error(`Batch account at ${idx} failed to create: ${CreateAccountStatus[result.status]}.\n`
           + `Failed account: ${LedgerTigerBeetleHelper.stringify(failedAccount)}.`
         )
         fatal = true
@@ -576,17 +707,17 @@ export class LedgerTigerBeetle implements Ledger {
     assert(cmd.dfspId)
 
     try {
-      const masterAccountId = await this.specStore.getOrCreateDfsp(cmd.dfspId)
+      const masterAccountId = await this.specStore.getDfspMasterAccount(cmd.dfspId)
       let closeAccountResult = await this.closeDfspMasterAccount(masterAccountId)
-      
+
       if (closeAccountResult.type === DeactivateDfspResponseType.CREATE_ACCOUNT) {
         await this.createAccountDevNull()
         closeAccountResult = await this.closeDfspMasterAccount(masterAccountId)
-        
+
         if (closeAccountResult.type === DeactivateDfspResponseType.CREATE_ACCOUNT) {
           throw new Error(`Failed to closeDfspMasterAccount again with no DevNull account!`)
         }
-      } 
+      }
 
       if (closeAccountResult.type === DeactivateDfspResponseType.FAILED) {
         return Helper.commandResultFailure(closeAccountResult.error)
@@ -676,7 +807,7 @@ export class LedgerTigerBeetle implements Ledger {
 
       return `createAccounts at idx: ${idx} failed with error: ${CreateAccountStatus[result.status]}.`
     }).filter(status => status !== undefined)
-    
+
     if (fatalErrors.length > 0) {
       throw new Error(`createAccountDevNull - failed to create counterparty account with error: ` +
         `[${fatalErrors.join(', ')}]`)
@@ -684,15 +815,228 @@ export class LedgerTigerBeetle implements Ledger {
   }
 
   public async enableDfsp(cmd: { dfspId: string; }): Promise<CommandResult<void>> {
-    throw new Error('Method not implemented.');
+    assert(cmd)
+    assert(cmd.dfspId)
+
+    try {
+      const masterAccountId = await this.specStore.getDfspMasterAccount(cmd.dfspId)
+      const transfers = await this.deps.client.getAccountTransfers({
+        account_id: masterAccountId,
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        code: 0,
+        timestamp_min: 0n,
+        timestamp_max: 0n,
+        limit: 10,
+        flags: AccountFilterFlags.credits |
+          AccountFilterFlags.reversed,
+      })
+
+      if (transfers.length === 0) {
+        // Account isn't closed, return success.
+        return {
+          type: 'SUCCESS'
+        }
+      }
+
+      // Get the the closing transfer and void it.
+      const lastClosingTransferId = transfers[0].id
+      const createTransferResults = await this.deps.client.createTransfers([{
+        ...LedgerTigerBeetleHelper.createTransferTemplate,
+        id: id(),
+        debit_account_id: 0n,
+        credit_account_id: 0n,
+        pending_id: lastClosingTransferId,
+        amount: 0n,
+        ledger: LedgerTigerBeetleHelper.ledgerIds.globalControl,
+        code: 100,
+        flags: TransferFlags.void_pending_transfer
+      }])
+
+      assert.equal(createTransferResults.length, 1, 'expected just 1 transferError result')
+      const result = createTransferResults[0]
+      switch (result.status) {
+        case CreateTransferStatus.created:
+        // Pending closing transfer has already been voided, so the account must be open!
+        case CreateTransferStatus.pending_transfer_not_pending:
+        case CreateTransferStatus.pending_transfer_already_voided:
+          return {
+            type: 'SUCCESS'
+          }
+        default:
+          return {
+            type: 'FAILURE',
+            error: new Error(`enableDfsp failed to void closing transfer with error: `
+              + `${CreateTransferStatus[result.status]}`)
+          }
+      }
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
   }
 
   public async enableDfspAccount(cmd: { dfspId: string; accountId: number; }): Promise<CommandResult<void>> {
-    throw new Error('Method not implemented.');
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(typeof cmd.accountId === 'number')
+    const accountId = BigInt(cmd.accountId)
+
+    try {
+      // Only the Deposit and Unrestricted Accounts can be enabled/disabled
+      const specAccounts = await this.specStore.getAccountSpecs(cmd.dfspId)
+      if (specAccounts.length === 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`enableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
+        }
+      }
+
+      const { currency, code, spec } = await this.specStore.getCurrencyCodeAndSpec(cmd.dfspId, accountId)
+      switch (code) {
+        case AccountCode.Deposit:
+        case AccountCode.Unrestricted:
+          break;
+        default:
+          return {
+            type: 'FAILURE',
+            error: new Error(`enableDfspAccount() - account id not found, or is not Deposit or Unrestricted.`)
+          }
+      }
+
+      const ledgers = await this.specStore.getCurrencyLedger(currency)
+      // Look up the closing transfer to void it.
+      const closingTransfers = (await this.deps.client.getAccountTransfers({
+        account_id: accountId,
+        user_data_128: 0n,
+        user_data_64: 0n,
+        user_data_32: 0,
+        code: TransferCode.Close_Account,
+        timestamp_min: 0n,
+        timestamp_max: 0n,
+        limit: 10,
+        flags: AccountFilterFlags.credits |
+          AccountFilterFlags.reversed,
+      })).filter(transfer => transfer.flags & TransferFlags.closing_credit)
+
+      if (closingTransfers.length === 0) {
+        // no transfers found, therefore this account must not be closed
+        // treat is as successful
+        return {
+          type: 'SUCCESS'
+        }
+      }
+      const lastClosingTransfer = closingTransfers[0]
+      // Void the closing transfer to reopen this account.
+      const voidClosingTransfer: Transfer = {
+        ...LedgerTigerBeetleHelper.createTransferTemplate,
+        id: id(),
+        pending_id: lastClosingTransfer.id,
+        debit_account_id: spec.unrestrictedLock,
+        credit_account_id: code === AccountCode.Deposit ? spec.deposit : spec.unrestricted,
+        amount: 0n,
+        ledger: ledgers.ledgerOperation,
+        code: TransferCode.Close_Account,
+        flags: TransferFlags.void_pending_transfer
+      }
+      const transferResults = await this.deps.client.createTransfers([voidClosingTransfer])
+      const fatalErrors: Array<TransferFailureResult<EnableDfspAccountFailureType>> = []
+
+      transferResults.forEach((result, idx) => {
+        if (idx === 0) {
+          switch (result.status) {
+            case CreateTransferStatus.created:
+            case CreateTransferStatus.pending_transfer_already_voided:
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...result })
+              return
+          }
+        }
+
+        throw new Error(`Unhandled transfer error: ${idx}, ${CreateTransferStatus[result.status]}.`)
+      })
+
+      return {
+        type: 'SUCCESS'
+      }
+    } catch (err: any) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
   public async disableDfspAccount(cmd: { dfspId: string; accountId: number; }): Promise<CommandResult<void>> {
-    throw new Error('Method not implemented.');
+    assert(cmd)
+    assert(cmd.dfspId)
+    assert(cmd.accountId)
+    const accountId = BigInt(cmd.accountId)
+
+    try {
+      // Only the Deposit and Unrestricted Accounts can be enabled/disabled
+      const specAccounts = await this.specStore.getAccountSpecs(cmd.dfspId)
+      if (specAccounts.length === 0) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`enableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
+        }
+      }
+
+      const { currency, code, spec } = await this.specStore.getCurrencyCodeAndSpec(cmd.dfspId, accountId)
+      switch (code) {
+        case AccountCode.Deposit:
+        case AccountCode.Unrestricted:
+          break;
+        default:
+          return {
+            type: 'FAILURE',
+            error: new Error(`disableDfspAccount() - account is not Deposit or Unrestricted.`)
+          }
+      }
+
+      const ledgers = await this.specStore.getCurrencyLedger(spec.currency)
+
+      // Create a closing transfer to mark this Account as deactivated
+      const closingTransfer: Transfer = {
+        ...LedgerTigerBeetleHelper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.unrestrictedLock,
+        credit_account_id: spec.unrestricted,
+        amount: 0n,
+        ledger: ledgers.ledgerOperation,
+        code: TransferCode.Close_Account,
+        flags: TransferFlags.closing_credit | TransferFlags.pending,
+      }
+      const transferResults = await this.deps.client.createTransfers([closingTransfer])
+      const fatalErrors: Array<TransferFailureResult<DisableDfspAccountFailureType>> = []
+
+      transferResults.forEach((result, idx) => {
+        if (idx) {
+          switch (result.status) {
+            case CreateTransferStatus.created:
+            case CreateTransferStatus.credit_account_already_closed:
+              return
+            default:
+              fatalErrors.push({ type: 'UNKNOWN', ...result })
+              return
+          }
+        }
+
+        throw new Error(`unhandled transfer error: ${idx}, ${CreateTransferStatus[result.status]}`)
+      })
+
+      return {
+        type: 'SUCCESS'
+      }
+
+    } catch (err: any) {
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
   }
 
   public async deposit(cmd: DepositCommand): Promise<DepositResponse> {
@@ -715,8 +1059,66 @@ export class LedgerTigerBeetle implements Ledger {
     throw new Error('Method not implemented.');
   }
 
+  /**
+   * @method getHubAccounts
+   * 
+   * @description There is no concept of a 'Hub Account' in the TigerBeetle implementation, but to 
+   * keep backwards compatbility, we return mock Hub accounts.
+   */
   public async getHubAccounts(query: AnyQuery): Promise<HubAccountResponse> {
-    throw new Error('Method not implemented.');
+    try {
+      const createdDate = await this.specStore.getFirstOrImplyCreationDate()
+      const currencyLedgers = await this.specStore.getCurrencyLedgers()
+      const currencyAccounts = await this.specStore.getAllCurrencyAccounts()
+
+      const accounts: Array<LegacyLedgerAccount> = []
+      currencyAccounts.forEach(acc => {
+        accounts.push({
+          // id: BigInt(acc.id),
+          id: BigInt(0),
+          ledgerAccountType: acc.account,
+          currency: acc.currency,
+          isActive: true,
+          changedDate: acc.changedDate,
+          createdDate: acc.createdDate,
+          value: 0,
+          reservedValue: 0,
+        })
+      })
+      // currencyLedgers.forEach(currencyLedger => {
+      //   accounts.push({
+      //     id: BigInt(currencyLedger.id),
+      //     ledgerAccountType: 'HUB_MULTILATERAL_SETTLEMENT',
+      //     currency: currencyLedger.currency,
+      //     isActive: true,
+      //     changedDate: currencyLedger.changedDate,
+      //     createdDate: currencyLedger.createdDate,
+      //     value: 0,
+      //     reservedValue: 0,
+      //   })
+      //   accounts.push({
+      //     id: BigInt(currencyLedger.id),
+      //     ledgerAccountType: 'HUB_RECONCILIATION',
+      //     currency: currencyLedger.currency,
+      //     isActive: true,
+      //     changedDate: currencyLedger.changedDate,
+      //     createdDate: currencyLedger.createdDate,
+      //     value: 0,
+      //     reservedValue: 0,
+      //   })
+      // })
+
+      return {
+        type: 'SUCCESS',
+        createdDate,
+        accounts: accounts
+      }
+    } catch (error: any) {
+      return {
+        type: 'FAILURE',
+        error
+      }
+    }
   }
 
   public async getDfsp(query: { dfspId: string; }): Promise<QueryResultWithNotFound<LegacyLedgerDfsp>> {

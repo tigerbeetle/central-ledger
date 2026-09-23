@@ -229,14 +229,19 @@ class LedgerFuzzer {
   private weights: Record<string, number> = {
     createHubAccount: 1,
     createDfsp: 1,
-    disableDfsp: 1,
+    disableDfsp: 2,
+    enableDfsp: 5,
+    enableDfspAccount: 1,
+    disableDfspAccount: 1,
+    getHubAccounts: 1,
 
     // createHubAccount: 5,
     // createDfsp: 5,
     // disableDfsp: 2,
     // enableDfsp: 5,
     // enableDfspAccount: 5,
-    // disableDfspAccount: 2,
+    // enableDfspAccount: 2,
+
     // deposit: 4,
     // withdrawPrepare: 5,
     // withdrawCommit: 5,
@@ -442,6 +447,7 @@ class LedgerFuzzer {
 
   private async enableDfspAccount(): Promise<void> {
     const name = this.randomDfspName()
+    // TODO: we need to populate the dfsp accountIds.
     const accountId = this.randomDfspAccount()
 
     const cmd: EnableDfspAccountCommand = {
