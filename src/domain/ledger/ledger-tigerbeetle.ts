@@ -44,6 +44,8 @@ import {
   DepositCommand,
   DepositResponse,
   DfspAccountResponse,
+  EnableDfspAccountCommand,
+  Enums,
   GetAllDfspAccountsQuery,
   GetAllDfspsResponse,
   GetDfspAccountsQuery,
@@ -87,6 +89,10 @@ import {
   WithdrawPrepareResponse
 } from "./types";
 import { Client } from 'tigerbeetle-node';
+import { assertBoolean } from '../../lib/config/util';
+import Helper from './helper';
+
+import SettlementDomain from '../../domain/settlement'
 
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
@@ -96,21 +102,168 @@ const { Type, Action } = Enum.Events.Event
 
 interface Dependencies {
   config: ApplicationConfig
-  client: Client
+  client: Client,
+  helper: Helper,
+  enums: Enums,
+
+
+}
+
+
+type CmdHubCurrencyEnable = {
+  currency: string,
+  accounts: Array<string>
+}
+
+type EnableHubCurrencyResponse = {
+  type: 'OK'
+} | {
+  type: 'EXISTS'
+} | {
+  type: 'FAILURE',
+  error: any
+}
+
+interface DepsSpecStore {
+  config: ApplicationConfig,
+  enums: Enums
+}
+
+/**
+ * Metadata-sidecar store for TigerBeetle Account, Transfer and Hub metadata: 'Specs'.
+ * For now, this is just going to live in memory, but I'll write a MySQL version for it
+ * once we know the full interface.
+ */
+class SpecStore {
+
+  constructor (private deps: DepsSpecStore) {
+
+  }
+  
+
+  // TODO: make this a 'Table'.
+  // We store the account for backwards compatibility, but LedgerTB doesn't really care about it.
+  private currencyAccounts: Array<{ currency: string, account: string }> = []
+
+
+  public async enableHubCurrency(cmd: CmdHubCurrencyEnable): Promise<EnableHubCurrencyResponse> {
+    try {
+      assert(cmd.currency)
+      assert(Array.isArray(cmd.accounts))
+
+      // If accounts is empty, we just assume it's these two.
+      if (cmd.accounts.length === 0) {
+        cmd.accounts.push('HUB_MULTILATERAL_SETTLEMENT', 'HUB_RECONCILIATION')
+      }
+
+      // Validate the account types.
+      cmd.accounts.forEach(account => {
+        const ledgerAccountTypeId = this.deps.enums.ledgerAccountType[account]
+        if (!ledgerAccountTypeId) {
+          throw new Error('Ledger account type was not found.')
+          // throw ErrorHandler.Factory.createFSPIOPError(
+          //   ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
+          //   'Ledger account type was not found.'
+          // )
+        }
+      })
+
+      for (const account of cmd.accounts) {
+        const currencyAccounts = this.currencyAccounts
+          .find(currencyAccounts => currencyAccounts.currency === cmd.currency
+            && currencyAccounts.account === account)
+
+        // Backwards compatibility. Create one at a time, this means a partial creation could
+        // take place.
+        this.currencyAccounts.push({ currency: cmd.currency, account })
+        if (currencyAccounts) {
+          return {
+            type: 'EXISTS'
+          }
+        }
+      }
+
+      return { type: 'OK' }
+    } catch (error) {
+      return {
+        type: 'FAILURE', error
+      }
+    }
+  }
 }
 
 export class LedgerTigerBeetle implements Ledger {
   private readonly config: ApplicationConfig
   private readonly client: Client
+  private readonly helper: Helper
+  private specStore: SpecStore
 
   constructor(private deps: Dependencies) {
     this.config = deps.config
     this.client = deps.client
+    this.helper = deps.helper
+
+    // TODO: move to dependencies.
+    this.specStore = new SpecStore({
+      config: deps.config,
+      enums: deps.enums,
+    })
   }
 
+  /**
+   * In the TigerBeetle Representation of the Ledger, there are no 'Hub' Accounts, since the Hub is
+   * implied. Previous handled the Hub as another participant. We _do_ however need to keep track of
+   * the settlement models that have been created, and the currencies enabled by the switch.
+   */
   public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
-    throw new Error('Method not implemented.');
+    assert(cmd.currency)
+    assert(cmd.settlementModel)
+    assert(cmd.settlementModel.name)
+    assert(cmd.settlementModel.settlementGranularity)
+    assert(cmd.settlementModel.settlementInterchange)
+    assert(cmd.settlementModel.settlementDelay)
+    assert.equal(cmd.settlementModel.currency, cmd.currency)
+    assert(
+      cmd.settlementModel.requireLiquidityCheck === true,
+      'createHubAccount - currently only allows settlements with liquidity checks enabled'
+    )
+    assert(cmd.settlementModel.ledgerAccountType)
+    assert(cmd.settlementModel.settlementAccountType)
+    assertBoolean(cmd.settlementModel.autoPositionReset)
+
+    try {
+      // Validate the currency is valid.
+      await this.helper.validateCurrency(cmd.currency)
+
+      const cmdEnableHubCurrency: CmdHubCurrencyEnable = {
+        currency: cmd.currency,
+        accounts: cmd.accountType ? [cmd.accountType] : []
+      }
+      const enableHubCurrencyResponse = await this.specStore.enableHubCurrency(cmdEnableHubCurrency)
+      
+      if (enableHubCurrencyResponse.type === 'FAILURE') {
+        throw enableHubCurrencyResponse.error
+      }
+
+      if (enableHubCurrencyResponse.type === 'EXISTS') {
+        return {
+          type: 'ALREADY_EXISTS_HUB_ACCOUNT'
+        }
+      }
+
+      await SettlementDomain.createSettlementModel(cmd.settlementModel)
+      return Helper.emptyCommandResultSuccess()
+    } catch (err: any) {
+      if (err.message === 'Settlement Model already exists') {
+        return {
+          type: 'ALREADY_EXISTS_SETTLEMENT_MODEL'
+        }
+      }
+
+      return Helper.commandResultFailure(err)
+    }
   }
+
 
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
     throw new Error('Method not implemented.');

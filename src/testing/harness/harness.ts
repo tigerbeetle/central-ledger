@@ -79,9 +79,14 @@ import {Clock} from "../mock-clock"
 import MockClock from "../mock-clock"
 import { Redpanda, RedpandaConnectionOptions } from "./redpanda"
 import { Redis } from "./redis"
-import { MySql, MySqlConnectionOptions } from "./mysql"
+import { ConnectionOptionsMySql, MySql } from "./mysql"
 import MessagingHelper from "../../messaging/helper"
 import { Ledger } from "../../domain/ledger/types"
+import { LedgerTigerBeetle } from "../../domain/ledger/ledger-tigerbeetle"
+import { Client, createClient } from "tigerbeetle-node"
+import { ConnectionOptionsTigerBeetle, TigerBeetle } from "./tigerbeetle"
+import { ClientApi } from "@hapi/catbox"
+import Helper from "../../domain/ledger/helper"
 
 const logger = Logger.child({ scope: 'harness' })
 
@@ -132,6 +137,7 @@ export default class Harness {
   private dependencyMySql: MySql
   private dependencyRedis: Redis
   private dependencyRedpanda: Redpanda
+  private dependencyTigerBeetle: TigerBeetle
   private applicationConfig: ApplicationConfig | null = null;
   private applicationConfigOriginal: ApplicationConfig | null = null;
   private omniConsumer: Consumer | null = null;
@@ -142,6 +148,7 @@ export default class Harness {
   private _expect: Expect | null = null
   private _timeoutHandlerV2: TimeoutHandlerV2 | null = null
   private _ledger: Ledger | null = null
+  private _clientTigerBeetle: Client | null = null
 
   /**
    * 
@@ -189,6 +196,13 @@ export default class Harness {
       harnessId: this.options.id
     })
 
+    this.dependencyTigerBeetle = new TigerBeetle({
+      harnessId: this.options.id,
+      pathToBinary: `.tigerbeetle/tigerbeetle`,
+      // TODO: configure some fallback locations.
+      dataDir: `/Volumes/RAMDisk/`,
+      version: '0.17.9'
+    })
   }
 
   public static randomRunId(): number {
@@ -213,6 +227,7 @@ export default class Harness {
       this.dependencyRedpanda.up(),
       this.dependencyMySql.up(),
       this.dependencyRedis.up(),
+      this.dependencyTigerBeetle.up(),
     ])
 
     let failed = false
@@ -341,8 +356,12 @@ export default class Harness {
     logger.warn(`Harness.up() took: ${(timerEnd - timerStart).toFixed(0)} ms.`)
   }
 
-  get mySqlConnectionOptions(): MySqlConnectionOptions {
+  get connectionOptionsMySql(): ConnectionOptionsMySql {
     return this.dependencyMySql.connectionOptions
+  }
+
+  get connectionOptionsTigerBeetle(): ConnectionOptionsTigerBeetle {
+    return this.dependencyTigerBeetle.connectionOptions
   }
 
   get redpandaConnectionOptions(): RedpandaConnectionOptions {
@@ -589,15 +608,42 @@ export default class Harness {
       randomUUID: () => this.prng.uuidv4()
     })
     const positionHandlerV2 = new PositionHandlerV2(this.config)
-    this._ledger = new LedgerSql({
-      config: this.config,
-      enums: this._enums,
-      proxyCache: ProxyCache,
-      positionHandler: positionHandlerV2,
-      createRemittanceEntity: createRemittanceEntityPayment,
-      definePositionParticipant,
-      effectToKafkaMessage: helper.effectToKafkaMessage.bind(helper)
-    })
+
+    const ledgerHelper = new Helper(Db._knex)
+
+    switch (this.config.LEDGER) {
+      case "SQL": {
+        this._ledger = new LedgerSql({
+          config: this.config,
+          enums: this._enums,
+          proxyCache: ProxyCache,
+          positionHandler: positionHandlerV2,
+          createRemittanceEntity: createRemittanceEntityPayment,
+          definePositionParticipant,
+          effectToKafkaMessage: helper.effectToKafkaMessage.bind(helper),
+          helper: ledgerHelper,
+        })
+        break;
+      }
+      case "TIGERBEETLE": {
+        this._clientTigerBeetle = createClient({
+          // TODO: add clusterId to config.
+          cluster_id: 0n,
+          replica_addresses: [this.connectionOptionsTigerBeetle.port],
+        })
+        this._ledger = new LedgerTigerBeetle({
+          config: this.config, 
+          client: this._clientTigerBeetle,
+          enums: this._enums,
+          helper: ledgerHelper,
+        })
+        break;
+      }
+      case "LOCKSTEP":
+        throw new Error(`Lockstep ledger not implemented.`)
+    }
+    assert(this._ledger)
+
     this._dispatchHandler = new DispatchTransferHandler(this.config, this._ledger)
     this._timeoutHandlerV2 = new TimeoutHandlerV2(this.config, this._ledger)
     this._messageBus = new MessageBus({
@@ -634,6 +680,10 @@ export default class Harness {
         logger.info(`teardownGlobals() - skipping messageBus.deinit().`)
       } else {
         await this.messageBus?.deinit()
+      }
+
+      if (this._clientTigerBeetle) {
+        this._clientTigerBeetle.destroy()
       }
       
       // Reset the caches.
@@ -692,6 +742,7 @@ environment!\n ${err.message}`)
       this.dependencyRedpanda.down(),
       this.dependencyMySql.down(),
       this.dependencyRedis.down(),
+      this.dependencyTigerBeetle.down(),
     ])
 
     let failed = false

@@ -45,8 +45,6 @@ import {
 } from "../ledger/types"
 import { PaymentPrepareResultType, PrepareHandlerInput } from "../../handlers/payment-prepare"
 import { FulfilHandlerInput } from "../../handlers/payment-fulfil"
-import { exist } from "joi"
-import db from "../../lib/db"
 
 const logger = loggerFactory()
 
@@ -61,9 +59,20 @@ const filename = path.basename(__filename)
 assert(filename)
 
 describe('Ledger Fuzz', () => {
-  it('runs the fuzzer', async (context) => {
+  it('runs the fuzzer for LedgerSQL', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 1000)
-    const trace = await run(stepsMax, { API_MODE_SETTLEMENT: 'LEDGER' })
+    const trace = await run(stepsMax, { LEDGER: 'SQL' })
+
+    const dirTrace = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
+    const pathTrace = `${dirTrace}/trace.txt`
+    fs.mkdirSync(dirTrace, { recursive: true });
+    fs.writeFileSync(pathTrace, trace.toString())
+    console.log(`Fuzz trace written to ${pathTrace}.`)
+  })
+
+  it('runs the fuzzer for LedgerTigerBeetle', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 10)
+    const trace = await run(stepsMax, { LEDGER: 'TIGERBEETLE' })
 
     const dirTrace = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
     const pathTrace = `${dirTrace}/trace.txt`
@@ -73,7 +82,7 @@ describe('Ledger Fuzz', () => {
   })
 
   it.only('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
-    const stepsMax = envOrDefaultNumber('STEPS_MAX', 10)
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 100)
     const traceA = await run(stepsMax, { LEDGER: 'SQL' })
     const traceB = await run(stepsMax, { LEDGER: 'TIGERBEETLE' })
 
@@ -88,7 +97,7 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathBase}.`)
     console.log(`Compare the two files with:\n\tgit diff --no-index ${pathA} ${pathB}`)
 
-    traceA.compare(traceB, { nameLeft: 'REFACTOR=false', nameRight: 'REFACTOR=true', seed })
+    traceA.compare(traceB, { nameLeft: 'LEDGER=SQL', nameRight: 'LEDGER=TIGERBEETLE', seed })
   })
 
   it('is fully deterministic', async (context) => {
@@ -217,39 +226,41 @@ class LedgerFuzzer {
   private ledger: Ledger
   private prng: PRNG
 
-  private weights: Record<ActionName, number> = {
-    createHubAccount: 5,
-    createDfsp: 5,
-    disableDfsp: 2,
-    enableDfsp: 5,
-    enableDfspAccount: 5,
-    disableDfspAccount: 2,
-    deposit: 4,
-    withdrawPrepare: 5,
-    withdrawCommit: 5,
-    withdrawAbort: 5,
-    setNetDebitCap: 5,
-    getHubAccounts: 5,
-    getDfsp: 1,
-    getAllDfsps: 1,
-    getDfspAccounts: 1,
-    getAllDfspAccounts: 1,
-    getNetDebitCap: 1,
-    getNetDebitCaps: 1,
-    prepare: 1,
-    fulfil: 1,
-    sweepTimedOut: 1,
-    lookupTransfer: 1,
-    closeSettlementWindow: 2,
-    settlementPrepare: 2,
-    settlementAbort: 2,
-    settlementCommit: 2,
-    settlementUpdate: 2,
-    getSettlementWindows: 1,
-    getSettlementWindow: 1,
-    getSettlement: 1,
-    getSettlements: 1
+  private weights: Record<string, number> = {
+    createHubAccount: 1
+    // createHubAccount: 5,
+    // createDfsp: 5,
+    // disableDfsp: 2,
+    // enableDfsp: 5,
+    // enableDfspAccount: 5,
+    // disableDfspAccount: 2,
+    // deposit: 4,
+    // withdrawPrepare: 5,
+    // withdrawCommit: 5,
+    // withdrawAbort: 5,
+    // setNetDebitCap: 5,
+    // getHubAccounts: 5,
+    // getDfsp: 1,
+    // getAllDfsps: 1,
+    // getDfspAccounts: 1,
+    // getAllDfspAccounts: 1,
+    // getNetDebitCap: 1,
+    // getNetDebitCaps: 1,
+    // prepare: 1,
+    // fulfil: 1,
+    // sweepTimedOut: 1,
+    // lookupTransfer: 1,
+    // closeSettlementWindow: 2,
+    // settlementPrepare: 2,
+    // settlementAbort: 2,
+    // settlementCommit: 2,
+    // settlementUpdate: 2,
+    // getSettlementWindows: 1,
+    // getSettlementWindow: 1,
+    // getSettlement: 1,
+    // getSettlements: 1
   }
+
 
   constructor(
     private options: FuzzOptions,
@@ -330,13 +341,22 @@ class LedgerFuzzer {
   }
 
   private traceResult(action: ActionName, input: any, output: any) {
+
+    // For now, we don't care about the internals of the error if there is one in output.
+    // Really its up to the outer layers to convert the response to something the API/messaging
+    // layer can understand.
+    const outputClone = structuredClone(output)
+    if (outputClone.error) {
+      outputClone.error = {}
+    }
+
     this.trace.push({
       step: this.step,
       action,
       path: '',
       payload: input,
       code: 0,
-      body: output,
+      body: outputClone,
       prngCalls: this.harness.prng.callCount
     })
   }

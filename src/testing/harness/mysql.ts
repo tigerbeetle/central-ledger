@@ -57,7 +57,7 @@ interface MigrationOptionsSql {
 
 type MigrationOptions = MigrationOptionsKnex | MigrationOptionsSql;
 
-export interface MySqlConnectionOptions {
+export interface ConnectionOptionsMySql {
   port: number
 }
 
@@ -65,7 +65,7 @@ export class MySql {
   private logger = logger.child({ scope: 'MySql' })
   private options: DependencyOptionsMySql
   private containerName: string
-  private _connectionOptions: MySqlConnectionOptions | null
+  private _connectionOptions: ConnectionOptionsMySql | null
   private clock: Clock
 
   constructor(options: DependencyOptionsMySql) {
@@ -128,7 +128,7 @@ export class MySql {
     this.logger.info(`up()        - took: ${Math.floor(timerEnd - timerStart)}ms`)
   }
 
-  get connectionOptions(): MySqlConnectionOptions {
+  get connectionOptions(): ConnectionOptionsMySql {
     if (!this._connectionOptions) {
       throw new Error(`this._connectionOptions is null. Did you forget to call up()?`)
     }

@@ -20,7 +20,8 @@ interface DependencyOptionsTigerBeetle extends DependencyOptions {
   version: string
 }
 
-interface ConnectionOptionsTigerBeetle {
+export interface ConnectionOptionsTigerBeetle {
+  clusterId: bigint,
   port: number,
 }
 
@@ -89,7 +90,7 @@ export class TigerBeetle {
       detached: false
     })
 
-    this._connectionOptions = { port }
+    this._connectionOptions = { clusterId: 0n, port }
     const timerEnd = performance.now()
     this.logger.info(`up() - took: ${Math.floor(timerEnd - timerStart)}ms`)
   }

@@ -1,8 +1,14 @@
+import { Knex } from 'knex';
 import { CommandResultSuccess, CommandResultFailure, QueryResultSuccess, QueryResultFailure } from './types';
+import assert from 'node:assert';
 
 
 export default class Helper {
 
+  constructor(private knex: Knex) {
+
+  }
+ 
   public static commandResultSuccess<T>(result: T): CommandResultSuccess<T> {
     return {
       type: 'SUCCESS',
@@ -35,5 +41,13 @@ export default class Helper {
       type: 'FAILURE',
       error: error
     };
+  }
+
+  public async validateCurrency(currency: string): Promise<void> {
+    assert(currency)
+    const result = await this.knex('currency').where('currencyId', currency).first()
+    if (!result) {
+      throw new Error(`Currency: ${currency} not defined.`)
+    }
   }
 }

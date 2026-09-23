@@ -44,6 +44,7 @@ import {
   DepositCommand,
   DepositResponse,
   DfspAccountResponse,
+  Enums,
   GetAllDfspAccountsQuery,
   GetAllDfspsResponse,
   GetDfspAccountsQuery,
@@ -116,24 +117,6 @@ const { FSPIOPError } = ErrorHandler
 const { Comparators, resourceVersions } = Util
 const { Type, Action } = Enum.Events.Event
 
-interface Enums {
-  ledgerAccountType: Record<string, number>
-  ledgerEntryType: Record<string, number>
-  transferParticipantRoleType: Record<string, number>
-  transferState: Record<string, number>
-  participantLimitType: Record<string, number>
-  settlementWindowState: Record<string, number>
-  settlementDelay: Record<string, number>
-  settlementDelayEnums: Record<string, number>
-  settlementGranularity: Record<string, number>
-  settlementGranularityEnums: Record<string, number>
-  settlementInterchangeEnums: Record<string, number>
-  settlementStates: Record<string, number>
-  transferParticipantRoleTypes: Record<string, number>
-  transferStateEnums: Record<string, number>
-  transferStates: Record<string, number>
-  settlementInterchange: Record<string, number>
-}
 
 interface Dependencies {
   config: ApplicationConfig,
@@ -148,14 +131,18 @@ interface Dependencies {
     proxyObligation: TransferProxyObligation
   }) => Promise<{ messageKey: string, cyrilResult: any }>
   effectToKafkaMessage: (effect: Effect) => any
+  helper: Helper
 }
 
 export class LedgerSql implements Ledger {
+  private readonly helper: Helper
   private readonly timeoutError = ErrorHandler.Factory
     .createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED)
     .toApiErrorObject(this.deps.config.ERROR_HANDLING)
 
-  constructor(private deps: Dependencies) { }
+  constructor(private deps: Dependencies) { 
+    this.helper = deps.helper
+  }
 
   public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
     assert(cmd.currency)
@@ -174,6 +161,9 @@ export class LedgerSql implements Ledger {
     assertBoolean(cmd.settlementModel.autoPositionReset)
 
     try {
+      // Validate the currency is valid.
+      await this.helper.validateCurrency(cmd.currency)
+      
       try {
         // Backwards compatibility. Register only the requested account type.
         if (cmd.accountType) {

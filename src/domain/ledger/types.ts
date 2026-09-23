@@ -917,3 +917,27 @@ export type QueryResult<T> = QueryResultSuccess<T> | QueryResultFailure
 
 // TODO: can we just combine this into QueryResult?
 export type QueryResultWithNotFound<T> = QueryResultSuccess<T> | QueryResultNotFound | QueryResultFailure
+
+
+/**
+ * Mojaloop internal enums for things such as Transfer States, account types etc.
+ * We inject these into the ledger so we don't need to keep looking them up from the db.
+ */
+export interface Enums {
+  ledgerAccountType: Record<string, number>
+  ledgerEntryType: Record<string, number>
+  transferParticipantRoleType: Record<string, number>
+  transferState: Record<string, number>
+  participantLimitType: Record<string, number>
+  settlementWindowState: Record<string, number>
+  settlementDelay: Record<string, number>
+  settlementDelayEnums: Record<string, number>
+  settlementGranularity: Record<string, number>
+  settlementGranularityEnums: Record<string, number>
+  settlementInterchangeEnums: Record<string, number>
+  settlementStates: Record<string, number>
+  transferParticipantRoleTypes: Record<string, number>
+  transferStateEnums: Record<string, number>
+  transferStates: Record<string, number>
+  settlementInterchange: Record<string, number>
+}
