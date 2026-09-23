@@ -34,6 +34,7 @@ import TransferService, {
   saveTransferDuplicateCheck
 } from "../transfer";
 import {
+  AccountCode,
   AnyQuery,
   CloseSettlementWindowResult,
   CommandResult,
@@ -41,6 +42,8 @@ import {
   CreateDfspResponse,
   CreateHubAccountCommand,
   CreateHubAccountResponse,
+  DeactivateDfspResponse,
+  DeactivateDfspResponseType,
   DepositCommand,
   DepositResponse,
   DfspAccountResponse,
@@ -88,11 +91,12 @@ import {
   WithdrawPrepareCommand,
   WithdrawPrepareResponse
 } from "./types";
-import { Client } from 'tigerbeetle-node';
+import { Client, CreateAccountStatus, CreateTransferResult, CreateTransferStatus, id, Transfer, TransferFlags } from 'tigerbeetle-node';
 import { assertBoolean } from '../../lib/config/util';
 import Helper from './helper';
 
 import SettlementDomain from '../../domain/settlement'
+import LedgerTigerBeetleHelper from './ledger-tigerbeetle-helper';
 
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
@@ -103,10 +107,10 @@ const { Type, Action } = Enum.Events.Event
 interface Dependencies {
   config: ApplicationConfig
   client: Client,
+  // UGH!
   helper: Helper,
+  helperTigerBeetle: LedgerTigerBeetleHelper,
   enums: Enums,
-
-
 }
 
 
@@ -124,9 +128,52 @@ type EnableHubCurrencyResponse = {
   error: any
 }
 
+export interface DfspAccountIds {
+  deposit: bigint,
+  unrestricted: bigint,
+  unrestrictedLock: bigint,
+  restricted: bigint,
+  reserved: bigint,
+  commitedOutgoing: bigint,
+  clearingCredit: bigint
+  clearingSetup: bigint
+  clearingLimit: bigint
+}
+
+/**
+ * The specification which defines the TigerBeetle Accounts for a dfspId + currency
+ */
+export interface SpecAccount extends DfspAccountIds {
+  dfspId: string,
+  currency: string,
+  // TODO: get from a join
+  participantId: number,
+
+}
+
+export interface CurrencyAccount {
+  currency: string,
+  /**
+   * The Legacy account type.
+   */
+  account: string,
+  /** 
+   * The AccountId for the settlement balance account.
+   * This isn't really the best place for this, but we need to put it somewhere!
+   */
+  settlementBalance: bigint,
+}
+
+export interface CurrencyLedger {
+  currency: string,
+  ledgerOperation: number,
+  ledgerControl: number
+}
+
 interface DepsSpecStore {
   config: ApplicationConfig,
-  enums: Enums
+  enums: Enums,
+  helperTigerBeetle: LedgerTigerBeetleHelper,
 }
 
 /**
@@ -136,14 +183,21 @@ interface DepsSpecStore {
  */
 class SpecStore {
 
-  constructor (private deps: DepsSpecStore) {
-
-  }
-  
-
   // TODO: make this a 'Table'.
   // We store the account for backwards compatibility, but LedgerTB doesn't really care about it.
-  private currencyAccounts: Array<{ currency: string, account: string }> = []
+  private currencyAccounts: Array<CurrencyAccount> = []
+  // A mapping of currency => TigerBeetle Ledger Ids
+  private currencyLedgers: Array<CurrencyLedger> = []
+  private dfsps: Array<{
+    id: string,
+    /**
+     * The master account id of the dfsp.
+     */
+    masterAccountId: bigint
+  }> = []
+  private dfspSpecs: Array<SpecAccount> = []
+
+  constructor(private deps: DepsSpecStore) { }
 
 
   public async enableHubCurrency(cmd: CmdHubCurrencyEnable): Promise<EnableHubCurrencyResponse> {
@@ -161,12 +215,28 @@ class SpecStore {
         const ledgerAccountTypeId = this.deps.enums.ledgerAccountType[account]
         if (!ledgerAccountTypeId) {
           throw new Error('Ledger account type was not found.')
-          // throw ErrorHandler.Factory.createFSPIOPError(
-          //   ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
-          //   'Ledger account type was not found.'
-          // )
+        }
+
+        const permittedHubAccountType = this.deps.config.HUB_ACCOUNTS.find(acc => acc === account)
+        if (!permittedHubAccountType) {
+          throw new Error(`The requested hub operator account type is not allowed.`)
         }
       })
+
+      // Create the currencyLedger if not exists.
+      const currencyLedger = this.currencyLedgers
+        .find(currencyLedger => currencyLedger.currency === cmd.currency)
+      if (!currencyLedger) {
+        const currencyCount = this.currencyLedgers.length
+        const [ledgerOperation, ledgerControl] =
+          LedgerTigerBeetleHelper.generateLedgerIds(currencyCount)
+
+        this.currencyLedgers.push({
+          currency: cmd.currency,
+          ledgerOperation,
+          ledgerControl,
+        })
+      }
 
       for (const account of cmd.accounts) {
         const currencyAccounts = this.currencyAccounts
@@ -175,7 +245,11 @@ class SpecStore {
 
         // Backwards compatibility. Create one at a time, this means a partial creation could
         // take place.
-        this.currencyAccounts.push({ currency: cmd.currency, account })
+        this.currencyAccounts.push({
+          currency: cmd.currency,
+          account,
+          settlementBalance: this.deps.helperTigerBeetle.idSmall(),
+        })
         if (currencyAccounts) {
           return {
             type: 'EXISTS'
@@ -190,7 +264,127 @@ class SpecStore {
       }
     }
   }
+
+  public async getCurrencyLedger(currency: string): Promise<CurrencyLedger> {
+    const currencyLedger = this.currencyLedgers
+      .find(currencyLedger => currencyLedger.currency === currency)
+    if (!currencyLedger) {
+      throw new Error(`getCurrencyLedger() - no ledger found for currency: ${currency}`)
+    }
+
+    return currencyLedger
+  }
+
+  public async getCurrencyAccounts(currency: string): Promise<Array<CurrencyAccount>> {
+    return this.currencyAccounts.filter(acc => acc.currency === currency)
+  }
+
+  public async getAccountIdSettlementBalance(currency: string): Promise<bigint> {
+    const currencyAccount = this.currencyAccounts.find(acc => acc.currency === currency)
+    if (!currencyAccount) {
+      throw new Error(`getAccountIdSettlementBalance() - no currencyAccount found for ` +
+        `currency:${currency}`
+      )
+    }
+
+    return currencyAccount.settlementBalance
+  }
+
+  public async assertCurrenciesEnabled(currencies: Array<string>): Promise<void> {
+    assert(Array.isArray(currencies))
+    assert(currencies.length > 0, 'Expected at least one currency.')
+
+    const errors: Array<string> = []
+    currencies.forEach(currency => {
+      const found = this.currencyAccounts.find(account => account.currency === currency)
+      if (!found) {
+        errors.push(`No currencyAccounts found for: ${currency}.`)
+      }
+    })
+
+    if (errors.length > 0) {
+      throw new Error(`assertCurrenciesFailed with errors: [${errors.join(', ')}]`)
+    }
+  }
+
+  /**
+   * Create the TigerBeetle master account id for this DFSP.
+   */
+  public async getOrCreateDfsp(id: string): Promise<bigint> {
+    const found = this.dfsps.find(dfsp => dfsp.id === id)
+    if (found) {
+      return found.masterAccountId
+    }
+
+    const masterAccountId = this.deps.helperTigerBeetle.idSmall()
+    this.dfsps.push({ id, masterAccountId })
+
+    return masterAccountId
+  }
+
+  public async getAccountSpec(id: string, currency: string):
+    Promise<QueryResultWithNotFound<SpecAccount>> {
+    const spec = this.dfspSpecs.find(spec => spec.dfspId === id && spec.currency === currency)
+    if (!spec) {
+      return {
+        type: 'NOT_FOUND',
+        error: new Error(`getAccountSpec no spec found for id:${id} + currency: ${currency}.`)
+      }
+    }
+
+    return {
+      type: 'SUCCESS',
+      result: spec
+    }
+  }
+
+  public async newAccountSpec(id: string, currency: string): Promise<SpecAccount> {
+    // TODO: do we _need_ this check?
+    const existing = await this.getAccountSpec(id, currency)
+    if (existing.type === 'SUCCESS') {
+      return existing.result
+    }
+
+    const spec: SpecAccount = {
+      dfspId: id,
+      currency,
+      // TODO: how can we get away without this?!
+      participantId: 0,
+      deposit: this.deps.helperTigerBeetle.idSmall(),
+      unrestricted: this.deps.helperTigerBeetle.idSmall(),
+      unrestrictedLock: this.deps.helperTigerBeetle.idSmall(),
+      restricted: this.deps.helperTigerBeetle.idSmall(),
+      reserved: this.deps.helperTigerBeetle.idSmall(),
+      commitedOutgoing: this.deps.helperTigerBeetle.idSmall(),
+      clearingCredit: this.deps.helperTigerBeetle.idSmall(),
+      clearingSetup: this.deps.helperTigerBeetle.idSmall(),
+      clearingLimit: this.deps.helperTigerBeetle.idSmall(),
+    }
+    this.dfspSpecs.push(spec)
+
+    return spec
+  }
 }
+
+type TransferFailureResult<T> = CreateTransferResult & {
+  type: T
+}
+
+type PrepareFailureType = 'FAIL_LIQUIDITY' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'MODIFIED' |
+  'EXISTS' | 'UNKNOWN'
+type AbortFailureType = 'ALREADY_ABORTED' | 'ALREADY_FULFILLED' | 'NOT_FOUND' | 'UNKNOWN'
+type FulfilFailureType = 'ALREADY_ABORTED' | 'PAYER_CLOSED' | 'PAYEE_CLOSED' | 'ALREADY_FULFILLED'
+  | 'NOT_FOUND' | 'PAYER_ACCOUNT_CLOSED' | 'PAYEE_ACCOUNT_CLOSED' | 'METADATA_CORRUPTED' | 'UNKNOWN'
+type WithdrawPrepareFailureType = 'ACCOUNT_CLOSED' | 'TRANSFER_ID_REUSED' | 'INSUFFICIENT_FUNDS' |
+  'UNKNOWN'
+type WithdrawCommitFailureType = 'NOT_FOUND' | 'UNKNOWN'
+type WithdrawAbortFailureType = 'NOT_FOUND' | 'UNKNOWN'
+type DepositFailureType = 'EXISTS' | 'MODIFIED' | 'UNKNOWN'
+type SetNetDebitCapFailureType = 'UNKNOWN'
+type CloseDfspMasterAccountFailureType = 'DEBIT_ACCOUNT_NOT_FOUND' | 'ALREADY_CLOSED' | 'UNKNOWN'
+type EnableDfspAccountFailureType = 'ALREADY_ENABLED' | 'UNKNOWN'
+type DisableDfspAccountFailureType = 'ALREADY_CLOSED' | 'UNKNOWN'
+type SettlementPrepareCreateAccountsFailureType = 'UNKNOWN'
 
 export class LedgerTigerBeetle implements Ledger {
   private readonly config: ApplicationConfig
@@ -207,6 +401,7 @@ export class LedgerTigerBeetle implements Ledger {
     this.specStore = new SpecStore({
       config: deps.config,
       enums: deps.enums,
+      helperTigerBeetle: deps.helperTigerBeetle
     })
   }
 
@@ -240,7 +435,7 @@ export class LedgerTigerBeetle implements Ledger {
         accounts: cmd.accountType ? [cmd.accountType] : []
       }
       const enableHubCurrencyResponse = await this.specStore.enableHubCurrency(cmdEnableHubCurrency)
-      
+
       if (enableHubCurrencyResponse.type === 'FAILURE') {
         throw enableHubCurrencyResponse.error
       }
@@ -264,13 +459,228 @@ export class LedgerTigerBeetle implements Ledger {
     }
   }
 
-
+  /**
+   * @method createDfsp
+   * @description Create the accounts for the (Dfsp, Currency). If the Dfsp hasn't been created before
+   *   sets up the SpecDfsp
+   */
   public async createDfsp(cmd: CreateDfspCommand): Promise<CreateDfspResponse> {
-    throw new Error('Method not implemented.');
+    assert(cmd.dfspId)
+    assert(cmd.currencies)
+    assert(cmd.currencies.length > 0)
+    assert.equal(cmd.currencies.length, 1, 'Currently only 1 currency is supported')
+    const currency = cmd.currencies[0]
+
+    try {
+      await this.specStore.assertCurrenciesEnabled(cmd.currencies)
+
+      // Get or create the specDfsp.
+      const masterAccountId = await this.specStore.getOrCreateDfsp(cmd.dfspId)
+      const accountSpecResult = await this.specStore.getAccountSpec(cmd.dfspId, currency)
+
+      if (accountSpecResult.type === 'FAILURE') {
+        return accountSpecResult
+      }
+
+      // Lookup accounts in TigerBeetle, ensure they exist.
+      if (accountSpecResult.type === 'SUCCESS') {
+        const spec = accountSpecResult.result
+        const accounts = await this.deps.client.lookupAccounts([
+          spec.deposit,
+          spec.unrestricted,
+          spec.unrestrictedLock,
+          spec.restricted,
+          spec.reserved,
+          spec.commitedOutgoing,
+        ])
+        if (accounts.length !== 6) {
+          throw new Error(`Found existing dfsp: ${cmd.dfspId} for currency: ${currency}. `
+            + `But found only ${accounts.length} in TigerBeetle.`)
+        }
+
+        // Already exists.
+        return {
+          type: 'ALREADY_EXISTS'
+        }
+      }
+
+      return this.createDfspAccounts(cmd.dfspId, currency)
+    } catch (err: any) {
+      logger.error(`createDfsp() failed with error: ${err.message}`)
+      return {
+        type: 'FAILURE',
+        error: err
+      }
+    }
+  }
+
+  private async createDfspAccounts(id: string, currency: string): Promise<CreateDfspResponse> {
+    try {
+      // Backwards compatibility, check that the correct legacy accounts have been created.
+      const currencyAccounts = await this.specStore.getCurrencyAccounts(currency)
+      const hubReconcilation = currencyAccounts.find(acc => acc.account === 'HUB_RECONCILIATION')
+      const hubMultilateralSettlement = currencyAccounts.find(acc => acc.account === 'HUB_MULTILATERAL_SETTLEMENT')
+      if (!hubReconcilation) {
+        throw new Error(`Hub reconciliation account for the specified currency does not exist.`)
+      }
+      if (!hubMultilateralSettlement) {
+        throw new Error(`Hub multilateral net settlement account for the specified currency does not exist.`)
+      }
+
+      // First we create the spec.
+      const spec = await this.specStore.newAccountSpec(id, currency)
+      const masterAccountId = await this.specStore.getOrCreateDfsp(id)
+      const ledger = await this.specStore.getCurrencyLedger(currency)
+      const accountIdSettlementBalance = await this.specStore.getAccountIdSettlementBalance(currency)
+
+      const accounts = this.deps.helperTigerBeetle.buildAccountsDsfp(
+        spec, ledger, accountIdSettlementBalance, masterAccountId
+      )
+      const createAccountResults = await this.client.createAccounts(accounts)
+      let fatal = false
+      const readableErrors: Array<any> = []
+      createAccountResults.forEach((result, idx) => {
+        if (result.status === CreateAccountStatus.created) return
+        if (result.status === CreateAccountStatus.exists) return
+        // This is fine, the 'different flags' could be closed.
+        if (result.status === CreateAccountStatus.exists_with_different_flags) return
+
+        readableErrors.push(CreateAccountStatus[result.status])
+        const failedAccount = accounts[idx]
+        console.error(`Batch account at ${idx} failed to create: ${CreateAccountStatus[result.status]}.\n` 
+          + `Failed account: ${LedgerTigerBeetleHelper.stringify(failedAccount)}.`
+        )
+        fatal = true
+      })
+
+      if (fatal) {
+        return {
+          type: 'FAILURE',
+          error: new Error(`LedgerError: ${readableErrors.join(',')}`)
+        }
+      }
+
+      return {
+        type: 'SUCCESS'
+      }
+    } catch (error: any) {
+      return {
+        type: 'FAILURE',
+        error
+      }
+    }
   }
 
   public async disableDfsp(cmd: { dfspId: string; }): Promise<CommandResult<void>> {
-    throw new Error('Method not implemented.');
+    assert(cmd)
+    assert(cmd.dfspId)
+
+    try {
+      const masterAccountId = await this.specStore.getOrCreateDfsp(cmd.dfspId)
+      let closeAccountResult = await this.closeDfspMasterAccount(masterAccountId)
+      
+      if (closeAccountResult.type === DeactivateDfspResponseType.CREATE_ACCOUNT) {
+        await this.createAccountDevNull()
+        closeAccountResult = await this.closeDfspMasterAccount(masterAccountId)
+        
+        if (closeAccountResult.type === DeactivateDfspResponseType.CREATE_ACCOUNT) {
+          throw new Error(`Failed to closeDfspMasterAccount again with no DevNull account!`)
+        }
+      } 
+
+      if (closeAccountResult.type === DeactivateDfspResponseType.FAILED) {
+        return Helper.commandResultFailure(closeAccountResult.error)
+      }
+
+      return Helper.emptyCommandResultSuccess()
+    } catch (err) {
+      return Helper.commandResultFailure(err)
+    }
+  }
+
+  private async closeDfspMasterAccount(masterAccountId: bigint): Promise<DeactivateDfspResponse> {
+    // Create a closing transfer to mark this Dfsp as deactivated
+    const closingTransfer: Transfer = {
+      ...LedgerTigerBeetleHelper.createTransferTemplate,
+      id: id(),
+      debit_account_id: LedgerTigerBeetleHelper.accountIds.devNull,
+      credit_account_id: masterAccountId,
+      amount: 0n,
+      ledger: LedgerTigerBeetleHelper.ledgerIds.globalControl,
+      code: 100,
+      flags: TransferFlags.closing_credit | TransferFlags.pending,
+    }
+    const transferResults = await this.deps.client.createTransfers([closingTransfer])
+    const fatalErrors: Array<TransferFailureResult<CloseDfspMasterAccountFailureType>> = []
+    transferResults.forEach((result, idx) => {
+      if (idx === 0) {
+        switch (result.status) {
+          case CreateTransferStatus.created: return
+          case CreateTransferStatus.debit_account_not_found:
+            // In this case, the devNull account hasn't been created yet.
+            fatalErrors.push({ type: 'DEBIT_ACCOUNT_NOT_FOUND', ...result })
+            return
+          case CreateTransferStatus.credit_account_already_closed:
+            fatalErrors.push({ type: 'ALREADY_CLOSED', ...result })
+            return
+          default:
+            fatalErrors.push({ type: 'UNKNOWN', ...result })
+            return
+        }
+      }
+
+      throw new Error(`Unhandled createTransfers result at ${idx}, ${CreateTransferStatus[result.status]}`)
+    })
+
+    if (fatalErrors.length === 0) {
+      return {
+        type: DeactivateDfspResponseType.SUCCESS
+      }
+    }
+
+    const firstError = fatalErrors[0]
+    switch (firstError.type) {
+      case 'DEBIT_ACCOUNT_NOT_FOUND':
+        return {
+          type: DeactivateDfspResponseType.CREATE_ACCOUNT
+        }
+      case 'ALREADY_CLOSED':
+        return {
+          type: DeactivateDfspResponseType.ALREADY_CLOSED
+        }
+      case 'UNKNOWN':
+        return {
+          type: DeactivateDfspResponseType.FAILED,
+          error: new Error(`closeDfspMasterAccount failed with unexpected error: ${CreateTransferStatus[firstError.status]}`)
+        }
+    }
+  }
+
+  /**
+   * Lazy creation of the devNull account. Used as a counterparty for things such as closing
+   * dfsp master accounts.
+   */
+  private async createAccountDevNull(): Promise<void> {
+    const result = await this.deps.client.createAccounts([
+      {
+        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        id: LedgerTigerBeetleHelper.accountIds.devNull,
+        ledger: LedgerTigerBeetleHelper.ledgerIds.globalControl,
+        code: AccountCode.Dev_Null,
+        flags: 0,
+      }
+    ])
+    const fatalErrors = result.map((result, idx) => {
+      if (result.status === CreateAccountStatus.exists) return
+      if (result.status === CreateAccountStatus.created) return
+
+      return `createAccounts at idx: ${idx} failed with error: ${CreateAccountStatus[result.status]}.`
+    }).filter(status => status !== undefined)
+    
+    if (fatalErrors.length > 0) {
+      throw new Error(`createAccountDevNull - failed to create counterparty account with error: ` +
+        `[${fatalErrors.join(', ')}]`)
+    }
   }
 
   public async enableDfsp(cmd: { dfspId: string; }): Promise<CommandResult<void>> {

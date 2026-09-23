@@ -71,7 +71,7 @@ describe('Ledger Fuzz', () => {
   })
 
   it('runs the fuzzer for LedgerTigerBeetle', async (context) => {
-    const stepsMax = envOrDefaultNumber('STEPS_MAX', 10)
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 15)
     const trace = await run(stepsMax, { LEDGER: 'TIGERBEETLE' })
 
     const dirTrace = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
@@ -227,7 +227,10 @@ class LedgerFuzzer {
   private prng: PRNG
 
   private weights: Record<string, number> = {
-    createHubAccount: 1
+    createHubAccount: 1,
+    createDfsp: 1,
+    disableDfsp: 1,
+
     // createHubAccount: 5,
     // createDfsp: 5,
     // disableDfsp: 2,
@@ -347,7 +350,7 @@ class LedgerFuzzer {
     // layer can understand.
     const outputClone = structuredClone(output)
     if (outputClone.error) {
-      outputClone.error = {}
+      // outputClone.error = {}
     }
 
     this.trace.push({
@@ -394,9 +397,10 @@ class LedgerFuzzer {
         currency
       ]
     }
-    if (this.prng.intExclusive(100) > 80) {
-      cmd.currencies.push(this.randomCurrency())
-    }
+    // Disabled for now, to keep things simpler.
+    // if (this.prng.intExclusive(100) > 80) {
+    //   cmd.currencies.push(this.randomCurrency())
+    // }
     const result = await this.ledger.createDfsp(cmd)
     this.traceResult('createDfsp', cmd, result)
 
@@ -406,10 +410,11 @@ class LedgerFuzzer {
     }
 
     // console.log(`createDfsp`, cmd.dfspId, cmd.currencies)
-    if (this.registeredDfsps.length >= 5) {
-      this.weights.prepare = 15
-      this.weights.fulfil = 15
-    }
+    // TODO: reenable me when the time is right!
+    // if (this.registeredDfsps.length >= 5) {
+    //   this.weights.prepare = 15
+    //   this.weights.fulfil = 15
+    // }
 
     if (this.registeredDfsps.length >= 50) {
       // No more need to more dfsps.

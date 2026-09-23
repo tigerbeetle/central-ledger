@@ -87,6 +87,7 @@ import { Client, createClient } from "tigerbeetle-node"
 import { ConnectionOptionsTigerBeetle, TigerBeetle } from "./tigerbeetle"
 import { ClientApi } from "@hapi/catbox"
 import Helper from "../../domain/ledger/helper"
+import LedgerTigerBeetleHelper from "../../domain/ledger/ledger-tigerbeetle-helper"
 
 const logger = Logger.child({ scope: 'harness' })
 
@@ -610,6 +611,10 @@ export default class Harness {
     const positionHandlerV2 = new PositionHandlerV2(this.config)
 
     const ledgerHelper = new Helper(Db._knex)
+    const prngId = new PRNG(this.seed + 1)
+    const helperTigerBeetle = new LedgerTigerBeetleHelper({
+      randomBytes: prngId.randomBytes.bind(prngId)
+    })
 
     switch (this.config.LEDGER) {
       case "SQL": {
@@ -636,6 +641,7 @@ export default class Harness {
           client: this._clientTigerBeetle,
           enums: this._enums,
           helper: ledgerHelper,
+          helperTigerBeetle,
         })
         break;
       }

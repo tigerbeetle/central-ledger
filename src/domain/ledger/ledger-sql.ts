@@ -280,7 +280,6 @@ export class LedgerSql implements Ledger {
         await this.createParticipantWithCurrency(cmd.dfspId, cmd.isProxy, currency);
       }
 
-      // Set the initial limits
       for (let i = 0; i < cmd.currencies.length; i++) {
         const currency = cmd.currencies[i];
         assert(currency)

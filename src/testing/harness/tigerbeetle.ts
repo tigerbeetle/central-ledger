@@ -91,6 +91,9 @@ export class TigerBeetle {
     })
 
     this._connectionOptions = { clusterId: 0n, port }
+
+    logger.warn(`Connect to the repl with: '.tigerbeetle/tigerbeetle repl --addresses=${port} --cluster=0'`)
+
     const timerEnd = performance.now()
     this.logger.info(`up() - took: ${Math.floor(timerEnd - timerStart)}ms`)
   }
