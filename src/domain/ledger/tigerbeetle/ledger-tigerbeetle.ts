@@ -196,15 +196,15 @@ export class LedgerTigerBeetle implements Ledger {
 
       // Get or create the specDfsp.
       const masterAccountId = await this.specStore.getOrCreateDfspMasterAccount(cmd.dfspId)
-      const accountSpecResult = await this.specStore.getAccountSpec(cmd.dfspId, currency)
+      const resultDfspCurrency = await this.specStore.getDfspCurrency(cmd.dfspId, currency)
 
-      if (accountSpecResult.type === 'FAILURE') {
-        return accountSpecResult
+      if (resultDfspCurrency.type === 'FAILURE') {
+        return resultDfspCurrency
       }
 
       // Lookup accounts in TigerBeetle, ensure they exist.
-      if (accountSpecResult.type === 'SUCCESS') {
-        const spec = accountSpecResult.result
+      if (resultDfspCurrency.type === 'SUCCESS') {
+        const spec = resultDfspCurrency.result
         const accounts = await this.deps.client.lookupAccounts([
           spec.deposit,
           spec.unrestricted,
@@ -238,8 +238,8 @@ export class LedgerTigerBeetle implements Ledger {
     try {
       // Backwards compatibility, check that the correct legacy accounts have been created.
       const currencyAccounts = await this.specStore.getCurrencyAccounts(currency)
-      const hubReconcilation = currencyAccounts.find(acc => acc.account === 'HUB_RECONCILIATION')
-      const hubMultilateralSettlement = currencyAccounts.find(acc => acc.account === 'HUB_MULTILATERAL_SETTLEMENT')
+      const hubReconcilation = currencyAccounts.find(acc => acc.accountType === 'HUB_RECONCILIATION')
+      const hubMultilateralSettlement = currencyAccounts.find(acc => acc.accountType === 'HUB_MULTILATERAL_SETTLEMENT')
       if (!hubReconcilation) {
         throw new Error(`Hub reconciliation account for the specified currency does not exist.`)
       }
@@ -474,8 +474,8 @@ export class LedgerTigerBeetle implements Ledger {
 
     try {
       // Only the Deposit and Unrestricted Accounts can be enabled/disabled
-      const specAccounts = await this.specStore.getAccountSpecs(cmd.dfspId)
-      if (specAccounts.length === 0) {
+      const dfspCurrencies = await this.specStore.getDfspCurrencies(cmd.dfspId)
+      if (dfspCurrencies.length === 0) {
         return {
           type: 'FAILURE',
           error: new Error(`enableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
@@ -566,8 +566,8 @@ export class LedgerTigerBeetle implements Ledger {
 
     try {
       // Only the Deposit and Unrestricted Accounts can be enabled/disabled
-      const specAccounts = await this.specStore.getAccountSpecs(cmd.dfspId)
-      if (specAccounts.length === 0) {
+      const dfspCurrencies = await this.specStore.getDfspCurrencies(cmd.dfspId)
+      if (dfspCurrencies.length === 0) {
         return {
           type: 'FAILURE',
           error: new Error(`enableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
@@ -664,9 +664,8 @@ export class LedgerTigerBeetle implements Ledger {
       const accounts: Array<LegacyLedgerAccount> = []
       currencyAccounts.forEach(acc => {
         accounts.push({
-          // id: BigInt(acc.id),
-          id: BigInt(0),
-          ledgerAccountType: acc.account,
+          id: BigInt(acc.id),
+          ledgerAccountType: acc.accountType,
           currency: acc.currency,
           isActive: true,
           changedDate: acc.changedDate,

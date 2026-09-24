@@ -230,7 +230,7 @@ class LedgerFuzzer {
     createHubAccount: 1,
     createDfsp: 1,
     disableDfsp: 2,
-    enableDfsp: 5,
+    enableDfsp: 1,
     enableDfspAccount: 1,
     disableDfspAccount: 1,
     getHubAccounts: 1,

@@ -46,7 +46,7 @@ export interface CurrencyLedger {
  * The Hub account's representation of each individual accounts. 
  * This is mainly used to maintain backwards compatibility with LedgerSQL.
  */
-export interface CurrencyAccount {
+export type CurrencyAccount = {
   /**
    * A mocked out id to match LedgerSQL.
    */
@@ -56,7 +56,7 @@ export interface CurrencyAccount {
   /**
    * The Legacy account type.
    */
-  account: string,
+  accountType: string,
 
   /**
    * When the CurrencyAccount was created.
@@ -68,6 +68,8 @@ export interface CurrencyAccount {
    */
   changedDate: Date,
 }
+
+type CurrencyAccountSave = Omit<CurrencyAccount, 'id'>
 
 /**
  * The set of TigerBeetle Account ids.
@@ -90,12 +92,7 @@ export interface DfspAccountIds {
 export interface SpecAccount extends DfspAccountIds {
   dfspId: string,
   currency: string,
-  // TODO: get from a join
-  participantId: number,
-
 }
-
-
 
 export interface DepsSpecStore {
   config: ApplicationConfig
@@ -103,6 +100,12 @@ export interface DepsSpecStore {
   db: Knex,
   helper: Helper,
 }
+
+
+const TABLE_CURRENCY_LEDGER = 'specCurrencyLedger'
+const TABLE_CURRENCY_ACCOUNT = 'specCurrencyAccount'
+const TABLE_DFSP = 'specDfsp'
+const TABLE_DFSP_CURRENCY = 'specDfspCurrency'
 
 
 /**
@@ -120,11 +123,6 @@ export default class SpecStore {
    */
   private firstCreationDate: Date | null = null;
 
-  // TODO: make this a 'Table'.
-  // We store the account for backwards compatibility, but LedgerTB doesn't really care about it.
-  private currencyAccounts: Array<CurrencyAccount> = [];
-  // A mapping of currency => TigerBeetle Ledger Ids
-  private currencyLedgers: Array<CurrencyLedger> = [];
   private dfsps: Array<{
     id: string;
     /**
@@ -154,11 +152,6 @@ export default class SpecStore {
     }
 
     return this.firstCreationDate;
-  }
-
-  private nextHubAccountId(): number {
-    this.hubAccountId += 1;
-    return this.hubAccountId;
   }
 
   public async validateCurrency(currency: string): Promise<void> {
@@ -192,46 +185,21 @@ export default class SpecStore {
         }
       });
 
-      // Create the currencyLedger if not exists.
-      const currencyLedger = this.currencyLedgers
-        .find(currencyLedger => currencyLedger.currency === cmd.currency);
-      if (!currencyLedger) {
-        const currencyCount = this.currencyLedgers.length;
-        const [
-          ledgerOperation,
-          ledgerControl
-        ] = LedgerTigerBeetleHelper.generateLedgerIds(currencyCount);
+      await this.insertCurrencyLedger(cmd.currency)
 
-        this.currencyLedgers.push({
+      for (const accountType of cmd.accounts) {
+        // Do only one at a time, to match LedgerSQL implementation.
+        const result = await this.insertCurrencyAccount({
           currency: cmd.currency,
-          ledgerOperation,
-          ledgerControl,
-          settlementBalance: this.helper.idSmall(),
-        });
+          accountType,
+          createdDate: new Date(),
+          changedDate: new Date(),
+        })
 
-        if (!this.firstCreationDate) {
-          this.firstCreationDate = SpecStore.stripMs(new Date());
-        }
-      }
-
-      for (const account of cmd.accounts) {
-        const currencyAccounts = this.currencyAccounts
-          .find(currencyAccounts => currencyAccounts.currency === cmd.currency
-            && currencyAccounts.account === account);
-
-        // Backwards compatibility. Create one at a time, this means a partial creation could
-        // take place.
-        this.currencyAccounts.push({
-          id: this.nextHubAccountId(),
-          currency: cmd.currency,
-          account,
-          createdDate: SpecStore.stripMs(new Date()),
-          changedDate: SpecStore.stripMs(new Date()),
-        });
-        if (currencyAccounts) {
+        if (result.type === 'EXISTS') {
           return {
             type: 'EXISTS'
-          };
+          }
         }
       }
 
@@ -243,37 +211,139 @@ export default class SpecStore {
     }
   }
 
+  private async insertCurrencyLedger(currency: string): Promise<void> {
+    let trx: Knex.Transaction | undefined
+    try {
+      trx = await this.db.transaction()
+
+      // Look up the currency ledger.
+      const existing = await trx(TABLE_CURRENCY_LEDGER)
+        .select('currency')
+        .where({ currency })
+      if (existing.length > 0) {
+        await trx.commit()
+        return
+      }
+
+      // Create a new currency ledger, ids are based on the number of existing currencies.
+      const currencyCountResult = await trx(TABLE_CURRENCY_LEDGER).count('* as count')
+      const currencyCount = Number(currencyCountResult[0].count)
+      const [
+        ledgerOperation,
+        ledgerControl
+      ] = LedgerTigerBeetleHelper.generateLedgerIds(currencyCount);
+
+      await trx(TABLE_CURRENCY_LEDGER).insert({
+        currency,
+        ledgerOperation,
+        ledgerControl,
+        settlementBalance: this.helper.idSmall(),
+      })
+
+      await trx.commit()
+    } catch (err) {
+      if (trx) {
+        await trx.rollback()
+      }
+
+      throw err
+    }
+  }
+
+  private async insertCurrencyAccount(account: CurrencyAccountSave)
+    : Promise<EnableHubCurrencyResponse> {
+    let trx: Knex.Transaction | undefined
+    try {
+      trx = await this.db.transaction()
+
+      // Look up the currency ledger.
+      const existing = await trx(TABLE_CURRENCY_ACCOUNT)
+        .select('currency')
+        .where({ currency: account.currency, accountType: account.accountType })
+      if (existing.length > 0) {
+        await trx.commit()
+        return {
+          type: 'EXISTS'
+        }
+      }
+
+      await trx(TABLE_CURRENCY_ACCOUNT)
+        .insert({
+          currency: account.currency,
+          accountType: account.accountType,
+          createdDate: account.createdDate,
+          changedDate: account.changedDate,
+        })
+
+      await trx.commit()
+
+      return {
+        type: 'OK'
+      }
+    } catch (err) {
+      if (trx) {
+        await trx.rollback()
+      }
+
+      throw err
+    }
+  }
+
   public async getCurrencyLedger(currency: string): Promise<CurrencyLedger> {
-    const currencyLedger = this.currencyLedgers
-      .find(currencyLedger => currencyLedger.currency === currency);
-    if (!currencyLedger) {
+    const rows = await this.db(TABLE_CURRENCY_LEDGER).where(currency).select('*')
+    if (rows.length === 0) {
       throw new Error(`getCurrencyLedger() - no ledger found for currency: ${currency}`);
     }
 
-    return currencyLedger;
+    assert(rows.length === 1, 'Expected only 1 row.')
+    const row = rows[0]
+
+    return {
+      currency: row.currency,
+      ledgerOperation: row.ledgerOperation,
+      ledgerControl: row.ledgerControl,
+      settlementBalance: BigInt(row.settlementBalance)
+    }
   }
 
   public async getCurrencyLedgers(): Promise<Array<CurrencyLedger>> {
-    return this.currencyLedgers;
+    const rows = await this.db(TABLE_CURRENCY_LEDGER).select('*')
+
+    return rows.map(row => ({
+      currency: row.currency,
+      ledgerOperation: row.ledgerOperation,
+      ledgerControl: row.ledgerControl,
+      settlementBalance: BigInt(row.settlementBalance)
+    }))
   }
 
   public async getAllCurrencyAccounts(): Promise<Array<CurrencyAccount>> {
-    return this.currencyAccounts;
+    const rows = await this.db(TABLE_CURRENCY_ACCOUNT).select('*')
+
+    return rows.map(row => ({
+      id: row.id,
+      currency: row.currency,
+      accountType: row.accountType,
+      createdDate: row.createdDate,
+      changedDate: row.changedDate,
+    }))
   }
 
   public async getCurrencyAccounts(currency: string): Promise<Array<CurrencyAccount>> {
-    return this.currencyAccounts.filter(acc => acc.currency === currency);
+    const rows = await this.db(TABLE_CURRENCY_ACCOUNT).where(currency).select('*')
+
+    return rows.map(row => ({
+      id: row.id,
+      currency: row.currency,
+      accountType: row.accountType,
+      createdDate: row.createdDate,
+      changedDate: row.changedDate,
+    }))
   }
 
   public async getAccountIdSettlementBalance(currency: string): Promise<bigint> {
-    const currencyLedger = this.currencyLedgers.find(acc => acc.currency === currency);
-    if (!currencyLedger) {
-      throw new Error(`getAccountIdSettlementBalance() - no currencyLedger found for ` +
-        `currency:${currency}`
-      );
-    }
-
-    return currencyLedger.settlementBalance;
+    const currencyLedger = await this.getCurrencyLedger(currency)
+    return currencyLedger.settlementBalance
   }
 
   public async assertCurrenciesEnabled(currencies: Array<string>): Promise<void> {
@@ -281,10 +351,15 @@ export default class SpecStore {
     assert(currencies.length > 0, 'Expected at least one currency.');
 
     const errors: Array<string> = [];
+    const currencyLedgerSet: Record<string, true> = (await this.getCurrencyLedgers())
+      .reduce((acc, curr) => {
+        acc[curr.currency] = true
+        return acc
+      }, {} as Record<string, true>)
     currencies.forEach(currency => {
-      const found = this.currencyAccounts.find(account => account.currency === currency);
+      const found = currencyLedgerSet[currency]
       if (!found) {
-        errors.push(`No currencyAccounts found for: ${currency}.`);
+        errors.push(`No currencyLedger found for: ${currency}.`);
       }
     });
 
@@ -296,120 +371,179 @@ export default class SpecStore {
   /**
    * Create the TigerBeetle master account id for this DFSP.
    */
-  public async getOrCreateDfspMasterAccount(id: string): Promise<bigint> {
-    const found = this.dfsps.find(dfsp => dfsp.id === id);
-    if (found) {
-      return found.masterAccountId;
+  public async getOrCreateDfspMasterAccount(dfspId: string): Promise<bigint> {
+    let trx: Knex.Transaction | undefined
+    try {
+      trx = await this.db.transaction()
+
+      const row = await trx(TABLE_DFSP).where(dfspId).select('*').first()
+      if (row) {
+        await trx.commit()
+        return row.masterAccountId
+      }
+
+      const masterAccountId = this.helper.idSmall()
+      await trx(TABLE_DFSP).insert({ dfspId, masterAccountId })
+
+
+      await trx.commit()
+      return masterAccountId
+    } catch (err) {
+      if (trx) {
+        await trx.rollback()
+      }
+
+      throw err
     }
-
-    const masterAccountId = this.deps.helper.idSmall();
-    this.dfsps.push({ id, masterAccountId });
-
-    return masterAccountId;
   }
 
-  public async getDfspMasterAccount(id: string): Promise<bigint> {
-    const found = this.dfsps.find(dfsp => dfsp.id === id);
-    if (!found) {
-      throw new Error(`No dfsp found for id: ${id}`);
+  public async getDfspMasterAccount(dfspId: string): Promise<bigint> {
+    const row = await this.db(TABLE_DFSP).where(dfspId).select('*').first()
+    if (!row) {
+      throw new Error(`No dfsp found for id: ${dfspId}`);
     }
 
-    return found.masterAccountId;
+    return row.masterAccountId;
   }
 
-  public async getAccountSpec(id: string, currency: string):
+  public async getDfspCurrency(dfspId: string, currency: string):
     Promise<QueryResultWithNotFound<SpecAccount>> {
-    const spec = this.dfspSpecs.find(spec => spec.dfspId === id && spec.currency === currency);
-    if (!spec) {
+
+    const row = await this.db(TABLE_DFSP_CURRENCY).where(dfspId).select('*').first()
+    if (!row) {
       return {
         type: 'NOT_FOUND',
-        error: new Error(`getAccountSpec no spec found for id:${id} + currency: ${currency}.`)
+        error: new Error(`getDfspCurrency no spec found for id:${dfspId} + currency: ${currency}.`)
       };
     }
 
     return {
       type: 'SUCCESS',
-      result: spec
+      result: SpecStore.hydrateSpecAccount(row)
     };
   }
 
-  public async getAccountSpecs(id: string): Promise<Array<SpecAccount>> {
-    return this.dfspSpecs.filter(spec => spec.dfspId === id);
+  public async getDfspCurrencies(id: string): Promise<Array<SpecAccount>> {
+    const rows = await this.db(TABLE_DFSP_CURRENCY).where({dfspId: id}) .select('*')
+    return rows.map(SpecStore.hydrateSpecAccount)
   }
 
   /**
    * Look up the account within the spec for the dfspid and account id.
    */
-  public async getCurrencyCodeAndSpec(id: string, accountId: bigint):
+  public async getCurrencyCodeAndSpec(dfspId: string, accountId: bigint):
     Promise<{ currency: string; code: AccountCode; spec: SpecAccount; }> {
-    const specs = await this.getAccountSpecs(id);
-    if (specs.length === 0) {
-      throw new Error(`getCurrencyAndType() no specs found for id: ${id}.`);
+
+    const accountIdStr = accountId.toString()
+    const row = await this.db(TABLE_DFSP_CURRENCY)
+      .where({ dfspId })
+      .andWhere(function () {
+        this.where('deposit', accountIdStr)
+          .orWhere('unrestricted', accountIdStr)
+          .orWhere('unrestrictedLock', accountIdStr)
+          .orWhere('restricted', accountIdStr)
+          .orWhere('reserved', accountIdStr)
+          .orWhere('commitedOutgoing', accountIdStr)
+          .orWhere('clearingCredit', accountIdStr)
+          .orWhere('clearingSetup', accountIdStr)
+          .orWhere('clearingLimit', accountIdStr)
+      })
+      .select('*')
+      .first()
+
+    if (!row) {
+      throw new Error(`getCurrencyCodeAndSpec() not found for dfspId: ${dfspId}, ` 
+        + `accountId: ${accountId}.`)
     }
 
-    const currencyAndCode = specs.reduce<{ currency: string; code: AccountCode; spec: SpecAccount; } | null>((acc, curr) => {
-      if (acc) return acc;
-      if (curr.clearingCredit === accountId) {
-        return { currency: curr.currency, code: AccountCode.Clearing_Credit, spec: curr };
-      }
-      if (curr.deposit === accountId) {
-        return { currency: curr.currency, code: AccountCode.Deposit, spec: curr };
-      }
-      if (curr.unrestricted === accountId) {
-        return { currency: curr.currency, code: AccountCode.Unrestricted, spec: curr };
-      }
-      if (curr.unrestrictedLock === accountId) {
-        return { currency: curr.currency, code: AccountCode.Unrestricted_Lock, spec: curr };
-      }
-      if (curr.restricted === accountId) {
-        return { currency: curr.currency, code: AccountCode.Restricted, spec: curr };
-      }
-      if (curr.reserved === accountId) {
-        return { currency: curr.currency, code: AccountCode.Reserved, spec: curr };
-      }
-      if (curr.commitedOutgoing === accountId) {
-        return { currency: curr.currency, code: AccountCode.Committed_Outgoing, spec: curr };
-      }
-      if (curr.clearingSetup === accountId) {
-        return { currency: curr.currency, code: AccountCode.Clearing_Setup, spec: curr };
-      }
-      if (curr.clearingLimit === accountId) {
-        return { currency: curr.currency, code: AccountCode.Clearing_Limit, spec: curr };
-      }
-      return acc;
-    }, null);
+    const spec = SpecStore.hydrateSpecAccount(row)
 
-    if (!currencyAndCode) {
-      throw new Error(`getCurrencyAndType() not found for id: ${id}, accountId: ${accountId}.`);
+    // Check which field matched.
+    let code: AccountCode
+    if (spec.deposit === accountId) {
+      code = AccountCode.Deposit
+    } else if (spec.unrestricted === accountId) {
+      code = AccountCode.Unrestricted
+    } else if (spec.unrestrictedLock === accountId) {
+      code = AccountCode.Unrestricted_Lock
+    } else if (spec.restricted === accountId) {
+      code = AccountCode.Restricted
+    } else if (spec.reserved === accountId) {
+      code = AccountCode.Reserved
+    } else if (spec.commitedOutgoing === accountId) {
+      code = AccountCode.Committed_Outgoing
+    } else if (spec.clearingCredit === accountId) {
+      code = AccountCode.Clearing_Credit
+    } else if (spec.clearingSetup === accountId) {
+      code = AccountCode.Clearing_Setup
+    } else if (spec.clearingLimit === accountId) {
+      code = AccountCode.Clearing_Limit
+    } else {
+      throw new Error(`getCurrencyCodeAndSpec() - matched row ` + 
+        `but no field matched accountId: ${accountId}`
+      )
     }
 
-    return currencyAndCode;
+    return { 
+      currency: spec.currency, 
+      code, 
+      spec 
+    }
   }
 
-  public async newAccountSpec(id: string, currency: string): Promise<SpecAccount> {
-    // TODO: do we _need_ this check?
-    const existing = await this.getAccountSpec(id, currency);
-    if (existing.type === 'SUCCESS') {
-      return existing.result;
+  public async newAccountSpec(dfspId: string, currency: string): Promise<SpecAccount> {
+    let trx: Knex.Transaction | undefined
+    try {
+      trx = await this.db.transaction()
+
+      const row = await trx(TABLE_DFSP_CURRENCY).where(dfspId).select('*').first()
+      if (row) {
+        await trx.commit()
+        return SpecStore.hydrateSpecAccount(row)
+      }
+
+      const spec: SpecAccount = {
+        dfspId,
+        currency,
+        deposit: this.helper.idSmall(),
+        unrestricted: this.helper.idSmall(),
+        unrestrictedLock: this.helper.idSmall(),
+        restricted: this.helper.idSmall(),
+        reserved: this.helper.idSmall(),
+        commitedOutgoing: this.helper.idSmall(),
+        clearingCredit: this.helper.idSmall(),
+        clearingSetup: this.helper.idSmall(),
+        clearingLimit: this.helper.idSmall(),
+      };
+      await trx(TABLE_DFSP_CURRENCY).insert(spec)
+
+      await trx.commit()
+
+      return spec
+    } catch (err) {
+      if (trx) {
+        await trx.rollback()
+      }
+
+      throw err
     }
+  }
 
+  private static hydrateSpecAccount(row: any): SpecAccount {
     const spec: SpecAccount = {
-      dfspId: id,
-      currency,
-      // TODO: how can we get away without this?!
-      participantId: 0,
-      deposit: this.helper.idSmall(),
-      unrestricted: this.helper.idSmall(),
-      unrestrictedLock: this.helper.idSmall(),
-      restricted: this.helper.idSmall(),
-      reserved: this.helper.idSmall(),
-      commitedOutgoing: this.helper.idSmall(),
-      clearingCredit: this.helper.idSmall(),
-      clearingSetup: this.helper.idSmall(),
-      clearingLimit: this.helper.idSmall(),
-    };
-    this.dfspSpecs.push(spec);
-
-    return spec;
+      dfspId: row.dfspId,
+      currency: row.currency,
+      deposit: BigInt(row.deposit),
+      unrestricted: BigInt(row.unrestricted),
+      unrestrictedLock: BigInt(row.unrestrictedLock),
+      restricted: BigInt(row.restricted),
+      reserved: BigInt(row.reserved),
+      commitedOutgoing: BigInt(row.commitedOutgoing),
+      clearingCredit: BigInt(row.clearingCredit),
+      clearingSetup: BigInt(row.clearingSetup),
+      clearingLimit: BigInt(row.clearingLimit),
+    }
+    return spec
   }
 }
+
