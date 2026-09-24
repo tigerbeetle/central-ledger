@@ -42,7 +42,7 @@ import {
   FxTransferProxyObligation, 
   ProxyCache 
 } from './transfer-types'
-import { Ledger } from '../domain/ledger/types'
+import { Ledger } from '../domain/ledger/shared/types';
 const { decodePayload } = Util.StreamingProtocol
 const Participant = require('../domain/participant')
 const { Type, Action } = Enum.Events.Event

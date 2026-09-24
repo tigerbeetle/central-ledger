@@ -45,7 +45,7 @@ import { logger } from '../shared/logger';
 import { TransferHelper } from './transfer-helper';
 import { Effect } from '../messaging/message-bus';
 import { PositionHandlerV2, PositionResultType } from './position-v2';
-import { Ledger } from '../domain/ledger/types';
+import { Ledger } from '../domain/ledger/shared/types';
 
 const { Type, Action } = Enum.Events.Event
 

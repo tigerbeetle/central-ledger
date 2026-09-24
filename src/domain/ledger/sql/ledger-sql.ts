@@ -1,38 +1,38 @@
 import { Enum, Util } from '@mojaloop/central-services-shared';
 const { TransferState } = Enum.Transfers
 import assert from "node:assert"
-import Transaction from '../../domain/transactions'
+import Transaction from '../../../domain/transactions'
 import {
   CommitPaymentDtoAborted,
   FulfilHandlerInput,
   PaymentFulfilResult,
   PaymentFulfilResultType
-} from '../../handlers/payment-fulfil';
+} from '../../../handlers/payment-fulfil';
 import {
   CreatePaymentDto,
   PaymentPrepareResult,
   PaymentPrepareResultType,
   PrepareHandlerInput
-} from "../../handlers/payment-prepare";
-import { PositionHandlerV2, PositionResultType } from "../../handlers/position-v2";
+} from "../../../handlers/payment-prepare";
+import { PositionHandlerV2, PositionResultType } from "../../../handlers/position-v2";
 import {
   CreateRemittanceEntityPayment,
   ProxyCache,
   TransferDeterminingCheckResult,
   TransferProxyObligation
-} from "../../handlers/transfer-types";
-import { ApplicationConfig } from "../../lib/config";
-import { Effect, MessageBus } from "../../messaging/message-bus";
-import ParticipantFacade from '../../models/participant/facade';
-import { getTransferErrorDuplicateCheck } from '../../models/transfer/transferErrorDuplicateCheck';
-import { logger } from "../../shared/logger";
+} from "../../../handlers/transfer-types";
+import { ApplicationConfig } from "../../../lib/config";
+import { Effect, MessageBus } from "../../../messaging/message-bus";
+import ParticipantFacade from '../../../models/participant/facade';
+import { getTransferErrorDuplicateCheck } from '../../../models/transfer/transferErrorDuplicateCheck';
+import { logger } from "../../../shared/logger";
 import TransferService, {
   getTransferFulfilmentDuplicateCheck,
   saveTransferErrorDuplicateCheck,
   saveTransferFulfilmentDuplicateCheck,
   getTransferDuplicateCheck,
   saveTransferDuplicateCheck
-} from "../transfer";
+} from "../../transfer";
 import {
   AnyQuery,
   CloseSettlementWindowResult,
@@ -86,31 +86,30 @@ import {
   WithdrawCommitResponse,
   WithdrawPrepareCommand,
   WithdrawPrepareResponse
-} from "./types";
-const fxService = require('../fx')
-const FxTransferStateChangeModel = require('../../models/fxTransfer/stateChange')
+} from "../shared/types";
+const fxService = require('../../fx')
+const FxTransferStateChangeModel = require('../../../models/fxTransfer/stateChange')
 
 import { Knex } from 'knex';
-import { TimeoutResultPayment, TimeoutResultPaymentForward } from '../../handlers/timeout-v2';
-import { TransferHelper } from '../../handlers/transfer-helper'
-import { assertBoolean, safeStringToNumber } from '../../lib/config/util'
-import db from "../../lib/db";
+import { TimeoutResultPayment, TimeoutResultPaymentForward } from '../../../handlers/timeout-v2';
+import { TransferHelper } from '../../../handlers/transfer-helper'
+import { assertBoolean, safeStringToNumber } from '../../../lib/config/util'
+import db from "../../../lib/db";
 import {
   ForwardedFxTransfer,
   ForwardedTransfer,
   TimedOutFxTransfer,
   TimedOutTransfer
-} from '../../models/transfer/facade';
-import * as Participant from '../participant';
-import TimeoutService from '../timeout';
-import Helper from './helper';
-import TransferObjectTransform from '../transfer/transform'
+} from '../../../models/transfer/facade';
+import * as Participant from '../../participant';
+import TimeoutService from '../../timeout';
+import TransferObjectTransform from '../../transfer/transform'
 import { deserializeIlpPacket } from 'ilp-packet';
 import base64url from 'base64url';
-import SettlementDomain from '../../domain/settlement'
-import SettlementWindowDomain from '../../domain/settlementWindow'
-import SettlementWindowModel from '../../models/settlementWindow'
-import SettlementModel from '../../models/settlement/settlement'
+import SettlementDomain from '../../../domain/settlement'
+import SettlementWindowDomain from '../../../domain/settlementWindow'
+import SettlementModel from '../../../models/settlement/settlement'
+import * as Result from '../shared/results'
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const { FSPIOPError } = ErrorHandler
@@ -131,17 +130,17 @@ interface Dependencies {
     proxyObligation: TransferProxyObligation
   }) => Promise<{ messageKey: string, cyrilResult: any }>
   effectToKafkaMessage: (effect: Effect) => any
-  helper: Helper
+  db: Knex
 }
 
 export class LedgerSql implements Ledger {
-  private readonly helper: Helper
+  private readonly db: Knex
   private readonly timeoutError = ErrorHandler.Factory
     .createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED)
     .toApiErrorObject(this.deps.config.ERROR_HANDLING)
 
-  constructor(private deps: Dependencies) { 
-    this.helper = deps.helper
+  constructor(private deps: Dependencies) {
+    this.db = deps.db
   }
 
   public async createHubAccount(cmd: CreateHubAccountCommand): Promise<CreateHubAccountResponse> {
@@ -162,8 +161,8 @@ export class LedgerSql implements Ledger {
 
     try {
       // Validate the currency is valid.
-      await this.helper.validateCurrency(cmd.currency)
-      
+      await this.validateCurrency(cmd.currency)
+
       try {
         // Backwards compatibility. Register only the requested account type.
         if (cmd.accountType) {
@@ -185,7 +184,7 @@ export class LedgerSql implements Ledger {
       }
 
       await SettlementDomain.createSettlementModel(cmd.settlementModel)
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err: any) {
       if (err.message === 'Settlement Model already exists') {
         return {
@@ -193,7 +192,7 @@ export class LedgerSql implements Ledger {
         }
       }
 
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -299,7 +298,7 @@ export class LedgerSql implements Ledger {
         assert(settlementAccount)
       }
 
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err: any) {
       return {
         type: 'FAILURE',
@@ -383,9 +382,9 @@ export class LedgerSql implements Ledger {
         }
       }
       await Participant.adjustLimitsV2(cmd.dfspId, payload)
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -433,9 +432,9 @@ export class LedgerSql implements Ledger {
         isProxy: participant.isProxy === 1,
       }
 
-      return Helper.queryResultSuccess(dfsp)
+      return Result.queryResultSuccess(dfsp)
     } catch (err) {
-      return Helper.queryResultFailure(err)
+      return Result.queryResultFailure(err)
     }
   }
 
@@ -532,9 +531,9 @@ export class LedgerSql implements Ledger {
         })
       })
 
-      return Helper.queryResultSuccess({ dfsps })
+      return Result.queryResultSuccess({ dfsps })
     } catch (err) {
-      return Helper.queryResultFailure(err)
+      return Result.queryResultFailure(err)
     }
   }
 
@@ -548,9 +547,9 @@ export class LedgerSql implements Ledger {
         dfspId, { isActive: false }
       )
 
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -563,9 +562,9 @@ export class LedgerSql implements Ledger {
       await Participant.update(
         dfspId, { isActive: true }
       )
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -578,7 +577,8 @@ export class LedgerSql implements Ledger {
           type: 'FAILURE',
           error: ErrorHandler.Factory.createFSPIOPError(
             ErrorHandler.Enums.FSPIOPErrorCodes.ID_NOT_FOUND,
-            `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, currency: ${query.currency}, type: 'NET_DEBIT_CAP`
+            `getNetDebitCap() - no limits found for dfspId: ${query.dfspId}, 
+            ` + `currency: ${query.currency}, type: 'NET_DEBIT_CAP`
           )
         }
       }
@@ -611,7 +611,8 @@ export class LedgerSql implements Ledger {
     }
   }
 
-  public async getNetDebitCaps(query: GetNetDebitCapsQuery): Promise<QueryResultWithNotFound<Array<LegacyLimitItem>>> {
+  public async getNetDebitCaps(query: GetNetDebitCapsQuery):
+    Promise<QueryResultWithNotFound<Array<LegacyLimitItem>>> {
     const legacyQuery = { type: 'NET_DEBIT_CAP' }
     try {
       const limitsResult = await Participant.getLimits(query.dfspId, legacyQuery)
@@ -744,9 +745,9 @@ export class LedgerSql implements Ledger {
         this.deps.enums
       )
 
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -762,9 +763,9 @@ export class LedgerSql implements Ledger {
         this.deps.enums
       )
 
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -832,9 +833,9 @@ export class LedgerSql implements Ledger {
       }
       await Participant.createRecordFundsInOut(payload, new Date(), this.deps.enums)
 
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -853,9 +854,9 @@ export class LedgerSql implements Ledger {
         new Date(),
         this.deps.enums
       );
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -874,9 +875,9 @@ export class LedgerSql implements Ledger {
         new Date(),
         this.deps.enums
       );
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -970,7 +971,7 @@ export class LedgerSql implements Ledger {
       await TransferService.saveTransferDuplicateCheck(cmd.transferId, hash);
       await TransferService.recordFundsInV2(fundsInPayload, new Date(), enums);
 
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err: any) {
       // Check for duplicate transferId error.
       if (err.code === 'ER_DUP_ENTRY') {
@@ -978,7 +979,7 @@ export class LedgerSql implements Ledger {
           type: 'ALREADY_EXISTS'
         }
       }
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -1653,7 +1654,7 @@ export class LedgerSql implements Ledger {
       const forexResults = await this.forexEffects(fxTransferTimeoutList)
       const forwardedPaymentsResults = await this.forwardedPaymentEffects(transferForwardedList)
       const forwardedForexesResults = await this.forwardedForexEffects(fxTransferForwardedList)
-      return Helper.commandResultSuccess({
+      return Result.commandResultSuccess({
         intervalPayment: [intervalPaymentMin, intervalPaymentMax],
         intervalForex: [intervalForexMin, intervalForexMax],
         results: [
@@ -1664,7 +1665,7 @@ export class LedgerSql implements Ledger {
         ]
       })
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     } finally {
       await knex.raw(`SELECT RELEASE_LOCK("timeout_handler")`)
     }
@@ -2686,6 +2687,14 @@ export class LedgerSql implements Ledger {
       return { type: 'SUCCESS', result: settlements }
     } catch (err: any) {
       return { type: 'FAILURE', error: err }
+    }
+  }
+
+  private async validateCurrency(currency: string): Promise<void> {
+    assert(currency)
+    const result = await this.db('currency').where('currencyId', currency).first()
+    if (!result) {
+      throw new Error(`Currency: ${currency} not defined.`)
     }
   }
 }

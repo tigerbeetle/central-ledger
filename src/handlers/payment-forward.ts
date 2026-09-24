@@ -35,7 +35,7 @@ import { logger } from '../shared/logger';
 import { Enum } from '@mojaloop/central-services-shared';
 import { assertNestedFields } from '../lib/config/util';
 import { Effect } from '../messaging/message-bus';
-import { Ledger } from '../domain/ledger/types';
+import { Ledger } from '../domain/ledger/shared/types';
 
 const { Type, Action } = Enum.Events.Event
 const ErrorHandler = require('@mojaloop/central-services-error-handling')

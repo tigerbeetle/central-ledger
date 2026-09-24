@@ -37,9 +37,8 @@ import { ForexFulfilHandler, ForexFulfilResult } from './forex-fulfil'
 import { PaymentForwardHandler, PaymentForwardResult } from './payment-forward'
 import { ForexForwardHandler, ForexForwardResult } from './forex-forward'
 import { PositionHandlerV2 } from './position-v2'
-import { LedgerSql } from '../domain/ledger/ledger-sql'
 import MessagingHelper from '../messaging/helper'
-import { Ledger } from '../domain/ledger/types'
+import { Ledger } from '../domain/ledger/shared/types';
 
 const { Util } = require('@mojaloop/central-services-shared')
 const { Kafka } = Util

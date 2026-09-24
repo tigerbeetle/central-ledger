@@ -73,7 +73,6 @@ import { HandlerName, MessageBus } from "../../messaging/message-bus"
 import { PositionHandlerV2 } from "../../handlers/position-v2"
 import Expect from "../expect"
 import { TimeoutHandlerV2 } from "../../handlers/timeout-v2"
-import { LedgerSql } from "../../domain/ledger/ledger-sql"
 import PRNG from "../prng"
 import {Clock} from "../mock-clock"
 import MockClock from "../mock-clock"
@@ -81,13 +80,14 @@ import { Redpanda, RedpandaConnectionOptions } from "./redpanda"
 import { Redis } from "./redis"
 import { ConnectionOptionsMySql, MySql } from "./mysql"
 import MessagingHelper from "../../messaging/helper"
-import { Ledger } from "../../domain/ledger/types"
-import { LedgerTigerBeetle } from "../../domain/ledger/ledger-tigerbeetle"
+import { LedgerTigerBeetle } from "../../domain/ledger/tigerbeetle/ledger-tigerbeetle"
 import { Client, createClient } from "tigerbeetle-node"
 import { ConnectionOptionsTigerBeetle, TigerBeetle } from "./tigerbeetle"
 import { ClientApi } from "@hapi/catbox"
-import Helper from "../../domain/ledger/helper"
-import LedgerTigerBeetleHelper from "../../domain/ledger/ledger-tigerbeetle-helper"
+import LedgerTigerBeetleHelper from "../../domain/ledger/tigerbeetle/helper"
+import SpecStore from "../../domain/ledger/tigerbeetle/spec-store"
+import { LedgerSql } from "../../domain/ledger/sql/ledger-sql"
+import { Ledger } from "../../domain/ledger/shared/types"
 
 const logger = Logger.child({ scope: 'harness' })
 
@@ -610,10 +610,17 @@ export default class Harness {
     })
     const positionHandlerV2 = new PositionHandlerV2(this.config)
 
-    const ledgerHelper = new Helper(Db._knex)
     const prngId = new PRNG(this.seed + 1)
     const helperTigerBeetle = new LedgerTigerBeetleHelper({
       randomBytes: prngId.randomBytes.bind(prngId)
+    })
+
+    // TODO: move to dependencies.
+    const specStore = new SpecStore({
+      config: this.config,
+      enums: this._enums,
+      helper: helperTigerBeetle,
+      db: Db._knex
     })
 
     switch (this.config.LEDGER) {
@@ -626,7 +633,7 @@ export default class Harness {
           createRemittanceEntity: createRemittanceEntityPayment,
           definePositionParticipant,
           effectToKafkaMessage: helper.effectToKafkaMessage.bind(helper),
-          helper: ledgerHelper,
+          db: Db._knex,
         })
         break;
       }
@@ -640,8 +647,8 @@ export default class Harness {
           config: this.config, 
           client: this._clientTigerBeetle,
           enums: this._enums,
-          helper: ledgerHelper,
-          helperTigerBeetle,
+          specStore,
+          helper: helperTigerBeetle
         })
         break;
       }

@@ -1,6 +1,6 @@
 import { ApplicationConfig } from "../../lib/config";
 import { ReqRefDefaults, Request, ResponseToolkit } from '@hapi/hapi';
-import { CommandResult, CreateDfspCommand, Ledger, LegacyLimitItem } from "../../domain/ledger/types";
+import { CommandResult, CreateDfspCommand, Ledger, LegacyLimitItem } from "../../domain/ledger/shared/types";
 import { assertNestedFields, convertBigIntToNumber } from "../../lib/config/util";
 import { FSPIOPError } from "@mojaloop/central-services-error-handling";
 

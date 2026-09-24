@@ -1,9 +1,9 @@
-import { failureWithError, QueryResult } from "../../shared/results"
+import { failureWithError, QueryResult } from "../../../shared/results"
 import { Account, AccountFlags, amount_max, Client, Transfer } from "tigerbeetle-node";
 import crypto from "crypto";
 import assert from "assert";
-import { CurrencyLedger, SpecAccount } from "./ledger-tigerbeetle";
-import { AccountCode } from "./types";
+import { CurrencyLedger, SpecAccount } from "./spec-store";
+import { AccountCode } from "../shared/types";
 
 interface InterledgerValidationPass {
   type: 'PASS'
@@ -22,7 +22,7 @@ interface Dependencies {
   randomBytes: (length: number) => Buffer
 }
 
-export default class LedgerTigerBeetleHelper {
+export default class Helper {
 
   constructor(private deps: Dependencies) {}
 
@@ -172,7 +172,7 @@ export default class LedgerTigerBeetleHelper {
     const accounts: Array<Account> = [
       // Settlement_Balance
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: accountIdSettlementBalance,
         ledger: ledgerOperation,
         code: AccountCode.Settlement_Balance,
@@ -180,23 +180,23 @@ export default class LedgerTigerBeetleHelper {
       },
       // dev/null account
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
-        id: LedgerTigerBeetleHelper.accountIds.devNull,
-        ledger: LedgerTigerBeetleHelper.ledgerIds.globalControl,
+        ...Helper.createAccountTemplate,
+        id: Helper.accountIds.devNull,
+        ledger: Helper.ledgerIds.globalControl,
         code: AccountCode.Dev_Null,
         flags: 0,
       },
       // Dfsp/Participant account. Keeps track of Dfsp active/not active and creation timestamp
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: masterAccountId,
-        ledger: LedgerTigerBeetleHelper.ledgerIds.globalControl,
+        ledger: Helper.ledgerIds.globalControl,
         code: AccountCode.Dfsp,
         flags: 0,
       },
       // Deposit
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.deposit,
         ledger: ledgerOperation,
         code: AccountCode.Deposit,
@@ -204,7 +204,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Unrestricted
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.unrestricted,
         ledger: ledgerOperation,
         code: AccountCode.Unrestricted,
@@ -212,7 +212,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Unrestricted_Lock
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.unrestrictedLock,
         ledger: ledgerOperation,
         code: AccountCode.Unrestricted_Lock,
@@ -220,7 +220,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Restricted
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.restricted,
         ledger: ledgerOperation,
         code: AccountCode.Restricted,
@@ -228,7 +228,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Reserved
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.reserved,
         ledger: ledgerOperation,
         code: AccountCode.Reserved,
@@ -236,7 +236,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Committed_Outgoing
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.commitedOutgoing,
         ledger: ledgerOperation,
         code: AccountCode.Committed_Outgoing,
@@ -244,7 +244,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Clearing_Setup
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.clearingSetup,
         ledger: ledgerOperation,
         code: AccountCode.Clearing_Setup,
@@ -252,7 +252,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Clearing_Limit
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.clearingLimit,
         ledger: ledgerOperation,
         code: AccountCode.Clearing_Limit,
@@ -260,7 +260,7 @@ export default class LedgerTigerBeetleHelper {
       },
       // Clearing_Credit
       {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
+        ...Helper.createAccountTemplate,
         id: spec.clearingCredit,
         ledger: ledgerOperation,
         code: AccountCode.Clearing_Credit,

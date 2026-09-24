@@ -1,42 +1,30 @@
 import { Enum, Util } from '@mojaloop/central-services-shared';
-const { TransferState } = Enum.Transfers
-import assert from "node:assert"
-import Transaction from '../../domain/transactions'
+import assert from "node:assert";
 import {
-  CommitPaymentDtoAborted,
+  AccountFilterFlags,
+  Client,
+  CreateAccountStatus,
+  CreateTransferResult,
+  CreateTransferStatus,
+  id,
+  Transfer,
+  TransferFlags
+} from 'tigerbeetle-node';
+import {
   FulfilHandlerInput,
-  PaymentFulfilResult,
-  PaymentFulfilResultType
-} from '../../handlers/payment-fulfil';
+  PaymentFulfilResult
+} from '../../../handlers/payment-fulfil';
 import {
-  CreatePaymentDto,
   PaymentPrepareResult,
-  PaymentPrepareResultType,
   PrepareHandlerInput
-} from "../../handlers/payment-prepare";
-import { PositionHandlerV2, PositionResultType } from "../../handlers/position-v2";
-import {
-  CreateRemittanceEntityPayment,
-  ProxyCache,
-  TransferDeterminingCheckResult,
-  TransferProxyObligation
-} from "../../handlers/transfer-types";
-import { ApplicationConfig } from "../../lib/config";
-import { Effect, MessageBus } from "../../messaging/message-bus";
-import ParticipantFacade from '../../models/participant/facade';
-import { getTransferErrorDuplicateCheck } from '../../models/transfer/transferErrorDuplicateCheck';
-import { logger } from "../../shared/logger";
-import TransferService, {
-  getTransferFulfilmentDuplicateCheck,
-  saveTransferErrorDuplicateCheck,
-  saveTransferFulfilmentDuplicateCheck,
-  getTransferDuplicateCheck,
-  saveTransferDuplicateCheck
-} from "../transfer";
+} from "../../../handlers/payment-prepare";
+import { ApplicationConfig } from "../../../lib/config";
+import { assertBoolean } from '../../../lib/config/util';
+import { logger } from "../../../shared/logger";
+import * as Result from '../shared/results';
 import {
   AccountCode,
   AnyQuery,
-  CloseSettlementWindowResult,
   CommandResult,
   CreateDfspCommand,
   CreateDfspResponse,
@@ -47,16 +35,13 @@ import {
   DepositCommand,
   DepositResponse,
   DfspAccountResponse,
-  EnableDfspAccountCommand,
   Enums,
   GetAllDfspAccountsQuery,
   GetAllDfspsResponse,
   GetDfspAccountsQuery,
-  GetHubAccountsQuery,
   GetNetDebitCapQuery,
   GetNetDebitCapsQuery,
   GetSettlementQuery,
-  GetSettlementQueryResponse,
   GetSettlementsQuery,
   GetSettlementsQueryResponse,
   GetSettlementWindowQuery,
@@ -70,7 +55,6 @@ import {
   LegacyLimitItem,
   LookupTransferQuery,
   LookupTransferQueryResponse,
-  LookupTransferResultType,
   QueryResult,
   QueryResultWithNotFound,
   SetNetDebitCapCommand,
@@ -82,7 +66,6 @@ import {
   SettlementUpdateCommand,
   SettlementUpdateResult,
   SettlementWindow,
-  SettlementWindowState,
   SweepResult,
   TransferCode,
   WithdrawAbortCommand,
@@ -91,411 +74,23 @@ import {
   WithdrawCommitResponse,
   WithdrawPrepareCommand,
   WithdrawPrepareResponse
-} from "./types";
-import { AccountFilterFlags, Client, CreateAccountStatus, CreateTransferResult, CreateTransferStatus, id, Transfer, TransferFlags } from 'tigerbeetle-node';
-import { assertBoolean } from '../../lib/config/util';
-import Helper from './helper';
+} from "../shared/types";
+const { TransferState } = Enum.Transfers
 
-import SettlementDomain from '../../domain/settlement'
-import LedgerTigerBeetleHelper from './ledger-tigerbeetle-helper';
-
+import SettlementDomain from '../../settlement';
+import { default as Helper, default as LedgerTigerBeetleHelper } from './helper';
+import SpecStore, { CmdHubCurrencyEnable } from './spec-store';
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
-const { FSPIOPError } = ErrorHandler
-const { Comparators, resourceVersions } = Util
-const { Type, Action } = Enum.Events.Event
 
 interface Dependencies {
   config: ApplicationConfig
   client: Client,
-  // UGH!
   helper: Helper,
-  helperTigerBeetle: LedgerTigerBeetleHelper,
   enums: Enums,
+  specStore: SpecStore,
 }
 
-
-type CmdHubCurrencyEnable = {
-  currency: string,
-  accounts: Array<string>
-}
-
-type EnableHubCurrencyResponse = {
-  type: 'OK'
-} | {
-  type: 'EXISTS'
-} | {
-  type: 'FAILURE',
-  error: any
-}
-
-export interface DfspAccountIds {
-  deposit: bigint,
-  unrestricted: bigint,
-  unrestrictedLock: bigint,
-  restricted: bigint,
-  reserved: bigint,
-  commitedOutgoing: bigint,
-  clearingCredit: bigint
-  clearingSetup: bigint
-  clearingLimit: bigint
-}
-
-/**
- * The specification which defines the TigerBeetle Accounts for a dfspId + currency
- */
-export interface SpecAccount extends DfspAccountIds {
-  dfspId: string,
-  currency: string,
-  // TODO: get from a join
-  participantId: number,
-
-}
-
-export interface CurrencyAccount {
-  /**
-   * A mocked out id to match the legacy ledger
-   */
-  id: number,
-
-  currency: string,
-  /**
-   * The Legacy account type.
-   */
-  account: string,
-  /** 
-   * The AccountId for the settlement balance account.
-   * This isn't really the best place for this, but we need to put it somewhere!
-   */
-  settlementBalance: bigint,
-
-  /**
-   * When the CurrencyAccount was created.
-   */
-  createdDate: Date,
-
-  /**
-   * When the CurrencyAccount was last updated.
-   */
-  changedDate: Date,
-}
-
-export interface CurrencyLedger {
-  currency: string,
-  /**
-   * The TigerBeetle ledger where 'real' funds are tracked. Used for financial reporting.
-   */
-  ledgerOperation: number,
-
-  /**
-   * A separate 'control' ledger for non-financial operations.
-   */
-  ledgerControl: number,
-
-
-}
-
-interface DepsSpecStore {
-  config: ApplicationConfig,
-  enums: Enums,
-  helperTigerBeetle: LedgerTigerBeetleHelper,
-}
-
-/**
- * Metadata-sidecar store for TigerBeetle Account, Transfer and Hub metadata: 'Specs'.
- * For now, this is just going to live in memory, but I'll write a MySQL version for it
- * once we know the full interface.
- */
-class SpecStore {
-
-  private hubAccountId = 0
-
-  /**
-   * Backwards compatibility - keep track of the very first date the first currency was created.
-   */
-  private firstCreationDate: Date | null = null
-
-  // TODO: make this a 'Table'.
-  // We store the account for backwards compatibility, but LedgerTB doesn't really care about it.
-  private currencyAccounts: Array<CurrencyAccount> = []
-  // A mapping of currency => TigerBeetle Ledger Ids
-  private currencyLedgers: Array<CurrencyLedger> = []
-  private dfsps: Array<{
-    id: string,
-    /**
-     * The master account id of the dfsp.
-     */
-    masterAccountId: bigint
-  }> = []
-  private dfspSpecs: Array<SpecAccount> = []
-
-  constructor(private deps: DepsSpecStore) {
-    // This mimicks how the participant gets setup in LedgerSQL.
-    this.getFirstOrImplyCreationDate()
-  }
-
-  /**
-   * Strip the MS off of the date, this mimicks what MySQL does internally.
-   */
-  public static stripMs(date: Date): Date {
-    return new Date(new Date().setMilliseconds(0))
-  }
-
-  public async getFirstOrImplyCreationDate(): Promise<Date> {
-    if (!this.firstCreationDate) {
-      this.firstCreationDate = SpecStore.stripMs(new Date())
-    }
-
-    return this.firstCreationDate
-  }
-
-  private nextHubAccountId(): number {
-    this.hubAccountId += 1
-    return this.hubAccountId
-  }
-
-  public async enableHubCurrency(cmd: CmdHubCurrencyEnable): Promise<EnableHubCurrencyResponse> {
-    try {
-      assert(cmd.currency)
-      assert(Array.isArray(cmd.accounts))
-
-      // If accounts is empty, we just assume it's these two.
-      if (cmd.accounts.length === 0) {
-        cmd.accounts.push('HUB_MULTILATERAL_SETTLEMENT', 'HUB_RECONCILIATION')
-      }
-
-      // Validate the account types.
-      cmd.accounts.forEach(account => {
-        const ledgerAccountTypeId = this.deps.enums.ledgerAccountType[account]
-        if (!ledgerAccountTypeId) {
-          throw new Error('Ledger account type was not found.')
-        }
-
-        const permittedHubAccountType = this.deps.config.HUB_ACCOUNTS.find(acc => acc === account)
-        if (!permittedHubAccountType) {
-          throw new Error(`The requested hub operator account type is not allowed.`)
-        }
-      })
-
-      // Create the currencyLedger if not exists.
-      const currencyLedger = this.currencyLedgers
-        .find(currencyLedger => currencyLedger.currency === cmd.currency)
-      if (!currencyLedger) {
-        const currencyCount = this.currencyLedgers.length
-        const [ledgerOperation, ledgerControl] =
-          LedgerTigerBeetleHelper.generateLedgerIds(currencyCount)
-
-        this.currencyLedgers.push({
-          currency: cmd.currency,
-          ledgerOperation,
-          ledgerControl,
-        })
-
-        if (!this.firstCreationDate) {
-          this.firstCreationDate = SpecStore.stripMs(new Date())
-        }
-      }
-
-      for (const account of cmd.accounts) {
-        const currencyAccounts = this.currencyAccounts
-          .find(currencyAccounts => currencyAccounts.currency === cmd.currency
-            && currencyAccounts.account === account)
-
-        // Backwards compatibility. Create one at a time, this means a partial creation could
-        // take place.
-        this.currencyAccounts.push({
-          id: this.nextHubAccountId(),
-          currency: cmd.currency,
-          account,
-          settlementBalance: this.deps.helperTigerBeetle.idSmall(),
-          createdDate: SpecStore.stripMs(new Date()),
-          changedDate: SpecStore.stripMs(new Date()),
-        })
-        if (currencyAccounts) {
-          return {
-            type: 'EXISTS'
-          }
-        }
-      }
-
-      return { type: 'OK' }
-    } catch (error) {
-      return {
-        type: 'FAILURE', error
-      }
-    }
-  }
-
-  public async getCurrencyLedger(currency: string): Promise<CurrencyLedger> {
-    const currencyLedger = this.currencyLedgers
-      .find(currencyLedger => currencyLedger.currency === currency)
-    if (!currencyLedger) {
-      throw new Error(`getCurrencyLedger() - no ledger found for currency: ${currency}`)
-    }
-
-    return currencyLedger
-  }
-
-  public async getCurrencyLedgers(): Promise<Array<CurrencyLedger>> {
-    return this.currencyLedgers
-  }
-
-  public async getAllCurrencyAccounts(): Promise<Array<CurrencyAccount>> {
-    return this.currencyAccounts
-  }
-
-  public async getCurrencyAccounts(currency: string): Promise<Array<CurrencyAccount>> {
-    return this.currencyAccounts.filter(acc => acc.currency === currency)
-  }
-
-  public async getAccountIdSettlementBalance(currency: string): Promise<bigint> {
-    const currencyAccount = this.currencyAccounts.find(acc => acc.currency === currency)
-    if (!currencyAccount) {
-      throw new Error(`getAccountIdSettlementBalance() - no currencyAccount found for ` +
-        `currency:${currency}`
-      )
-    }
-
-    return currencyAccount.settlementBalance
-  }
-
-  public async assertCurrenciesEnabled(currencies: Array<string>): Promise<void> {
-    assert(Array.isArray(currencies))
-    assert(currencies.length > 0, 'Expected at least one currency.')
-
-    const errors: Array<string> = []
-    currencies.forEach(currency => {
-      const found = this.currencyAccounts.find(account => account.currency === currency)
-      if (!found) {
-        errors.push(`No currencyAccounts found for: ${currency}.`)
-      }
-    })
-
-    if (errors.length > 0) {
-      throw new Error(`assertCurrenciesFailed with errors: [${errors.join(', ')}]`)
-    }
-  }
-
-  /**
-   * Create the TigerBeetle master account id for this DFSP.
-   */
-  public async getOrCreateDfspMasterAccount(id: string): Promise<bigint> {
-    const found = this.dfsps.find(dfsp => dfsp.id === id)
-    if (found) {
-      return found.masterAccountId
-    }
-
-    const masterAccountId = this.deps.helperTigerBeetle.idSmall()
-    this.dfsps.push({ id, masterAccountId })
-
-    return masterAccountId
-  }
-
-  public async getDfspMasterAccount(id: string): Promise<bigint> {
-    const found = this.dfsps.find(dfsp => dfsp.id === id)
-    if (!found) {
-      throw new Error(`No dfsp found for id: ${id}`)
-    }
-
-    return found.masterAccountId
-  }
-
-  public async getAccountSpec(id: string, currency: string):
-    Promise<QueryResultWithNotFound<SpecAccount>> {
-    const spec = this.dfspSpecs.find(spec => spec.dfspId === id && spec.currency === currency)
-    if (!spec) {
-      return {
-        type: 'NOT_FOUND',
-        error: new Error(`getAccountSpec no spec found for id:${id} + currency: ${currency}.`)
-      }
-    }
-
-    return {
-      type: 'SUCCESS',
-      result: spec
-    }
-  }
-
-  public async getAccountSpecs(id: string): Promise<Array<SpecAccount>> {
-    return this.dfspSpecs.filter(spec => spec.dfspId === id)
-  }
-
-  /**
-   * Look up the account within the spec for the dfspid and account id.
-   */
-  public async getCurrencyCodeAndSpec(id: string, accountId: bigint):
-    Promise<{ currency: string, code: AccountCode, spec: SpecAccount }> {
-    const specs = await this.getAccountSpecs(id)
-    if (specs.length === 0) {
-      throw new Error(`getCurrencyAndType() no specs found for id: ${id}.`)
-    }
-
-    const currencyAndCode = specs.reduce<{ currency: string, code: AccountCode, spec: SpecAccount } | null>((acc, curr) => {
-      if (acc) return acc
-      if (curr.clearingCredit === accountId) {
-        return { currency: curr.currency, code: AccountCode.Clearing_Credit, spec: curr }
-      }
-      if (curr.deposit === accountId) {
-        return { currency: curr.currency, code: AccountCode.Deposit, spec: curr }
-      }
-      if (curr.unrestricted === accountId) {
-        return { currency: curr.currency, code: AccountCode.Unrestricted, spec: curr }
-      }
-      if (curr.unrestrictedLock === accountId) {
-        return { currency: curr.currency, code: AccountCode.Unrestricted_Lock, spec: curr }
-      }
-      if (curr.restricted === accountId) {
-        return { currency: curr.currency, code: AccountCode.Restricted, spec: curr }
-      }
-      if (curr.reserved === accountId) {
-        return { currency: curr.currency, code: AccountCode.Reserved, spec: curr }
-      }
-      if (curr.commitedOutgoing === accountId) {
-        return { currency: curr.currency, code: AccountCode.Committed_Outgoing, spec: curr }
-      }
-      if (curr.clearingSetup === accountId) {
-        return { currency: curr.currency, code: AccountCode.Clearing_Setup, spec: curr }
-      }
-      if (curr.clearingLimit === accountId) {
-        return { currency: curr.currency, code: AccountCode.Clearing_Limit, spec: curr }
-      }
-      return acc
-    }, null)
-
-    if (!currencyAndCode) {
-      throw new Error(`getCurrencyAndType() not found for id: ${id}, accountId: ${accountId}.`)
-    }
-
-    return currencyAndCode
-  }
-
-  public async newAccountSpec(id: string, currency: string): Promise<SpecAccount> {
-    // TODO: do we _need_ this check?
-    const existing = await this.getAccountSpec(id, currency)
-    if (existing.type === 'SUCCESS') {
-      return existing.result
-    }
-
-    const spec: SpecAccount = {
-      dfspId: id,
-      currency,
-      // TODO: how can we get away without this?!
-      participantId: 0,
-      deposit: this.deps.helperTigerBeetle.idSmall(),
-      unrestricted: this.deps.helperTigerBeetle.idSmall(),
-      unrestrictedLock: this.deps.helperTigerBeetle.idSmall(),
-      restricted: this.deps.helperTigerBeetle.idSmall(),
-      reserved: this.deps.helperTigerBeetle.idSmall(),
-      commitedOutgoing: this.deps.helperTigerBeetle.idSmall(),
-      clearingCredit: this.deps.helperTigerBeetle.idSmall(),
-      clearingSetup: this.deps.helperTigerBeetle.idSmall(),
-      clearingLimit: this.deps.helperTigerBeetle.idSmall(),
-    }
-    this.dfspSpecs.push(spec)
-
-    return spec
-  }
-}
 
 type TransferFailureResult<T> = CreateTransferResult & {
   type: T
@@ -527,13 +122,7 @@ export class LedgerTigerBeetle implements Ledger {
     this.config = deps.config
     this.client = deps.client
     this.helper = deps.helper
-
-    // TODO: move to dependencies.
-    this.specStore = new SpecStore({
-      config: deps.config,
-      enums: deps.enums,
-      helperTigerBeetle: deps.helperTigerBeetle
-    })
+    this.specStore = deps.specStore
   }
 
   /**
@@ -559,7 +148,7 @@ export class LedgerTigerBeetle implements Ledger {
 
     try {
       // Validate the currency is valid.
-      await this.helper.validateCurrency(cmd.currency)
+      await this.specStore.validateCurrency(cmd.currency)
 
       const cmdEnableHubCurrency: CmdHubCurrencyEnable = {
         currency: cmd.currency,
@@ -578,7 +167,7 @@ export class LedgerTigerBeetle implements Ledger {
       }
 
       await SettlementDomain.createSettlementModel(cmd.settlementModel)
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err: any) {
       if (err.message === 'Settlement Model already exists') {
         return {
@@ -586,7 +175,7 @@ export class LedgerTigerBeetle implements Ledger {
         }
       }
 
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
@@ -664,7 +253,7 @@ export class LedgerTigerBeetle implements Ledger {
       const ledger = await this.specStore.getCurrencyLedger(currency)
       const accountIdSettlementBalance = await this.specStore.getAccountIdSettlementBalance(currency)
 
-      const accounts = this.deps.helperTigerBeetle.buildAccountsDsfp(
+      const accounts = this.helper.buildAccountsDsfp(
         spec, ledger, accountIdSettlementBalance, masterAccountId
       )
       const createAccountResults = await this.client.createAccounts(accounts)
@@ -720,24 +309,24 @@ export class LedgerTigerBeetle implements Ledger {
       }
 
       if (closeAccountResult.type === DeactivateDfspResponseType.FAILED) {
-        return Helper.commandResultFailure(closeAccountResult.error)
+        return Result.commandResultFailure(closeAccountResult.error)
       }
 
-      return Helper.emptyCommandResultSuccess()
+      return Result.emptyCommandResultSuccess()
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 
   private async closeDfspMasterAccount(masterAccountId: bigint): Promise<DeactivateDfspResponse> {
     // Create a closing transfer to mark this Dfsp as deactivated
     const closingTransfer: Transfer = {
-      ...LedgerTigerBeetleHelper.createTransferTemplate,
+      ...Helper.createTransferTemplate,
       id: id(),
-      debit_account_id: LedgerTigerBeetleHelper.accountIds.devNull,
+      debit_account_id: Helper.accountIds.devNull,
       credit_account_id: masterAccountId,
       amount: 0n,
-      ledger: LedgerTigerBeetleHelper.ledgerIds.globalControl,
+      ledger: Helper.ledgerIds.globalControl,
       code: 100,
       flags: TransferFlags.closing_credit | TransferFlags.pending,
     }
@@ -782,7 +371,8 @@ export class LedgerTigerBeetle implements Ledger {
       case 'UNKNOWN':
         return {
           type: DeactivateDfspResponseType.FAILED,
-          error: new Error(`closeDfspMasterAccount failed with unexpected error: ${CreateTransferStatus[firstError.status]}`)
+          error: new Error(`closeDfspMasterAccount failed with unexpected error: `
+            + `${CreateTransferStatus[firstError.status]}`)
         }
     }
   }
@@ -872,7 +462,7 @@ export class LedgerTigerBeetle implements Ledger {
           }
       }
     } catch (err) {
-      return Helper.commandResultFailure(err)
+      return Result.commandResultFailure(err)
     }
   }
 

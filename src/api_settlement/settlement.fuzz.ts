@@ -15,7 +15,7 @@ import Trace from "../testing/fuzz/trace"
 import assert from "node:assert"
 import PRNG from "../testing/prng"
 import { ApplicationConfig } from "../lib/config"
-import { Settlement } from "../domain/ledger/types"
+import { Settlement } from "../domain/ledger/shared/types"
 import HandlerSettlementV2 from "./handler-v2"
 const logger = loggerFactory()
 

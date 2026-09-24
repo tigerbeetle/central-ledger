@@ -30,7 +30,7 @@ import {
   SettlementPrepareCommand,
   SettlementUpdate,
   SettlementUpdateCommand
-} from "../domain/ledger/types";
+} from "../domain/ledger/shared/types";
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const Utility = require('@mojaloop/central-services-shared').Util

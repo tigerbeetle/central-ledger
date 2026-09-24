@@ -42,7 +42,7 @@ import {
   WithdrawAbortCommand,
   WithdrawCommitCommand,
   WithdrawPrepareCommand
-} from "../ledger/types"
+} from "../ledger/shared/types"
 import { PaymentPrepareResultType, PrepareHandlerInput } from "../../handlers/payment-prepare"
 import { FulfilHandlerInput } from "../../handlers/payment-fulfil"
 

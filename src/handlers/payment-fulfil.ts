@@ -37,7 +37,7 @@ const { FSPIOPError } = ErrorHandler
 import { Effect } from "../messaging/message-bus";
 import { PositionHandlerV2 } from "./position-v2";
 import { assertNestedFields } from "../lib/config/util";
-import { Ledger } from '../domain/ledger/types'
+import { Ledger } from '../domain/ledger/shared/types';
 
 interface Dependencies {
   config: ApplicationConfig

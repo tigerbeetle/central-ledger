@@ -42,7 +42,7 @@ import {
 import { Effect, MessageBus } from '../messaging/message-bus';
 import { assertNestedFields } from '../lib/config/util';
 import { PositionHandlerV2, PositionResultType } from './position-v2';
-import { Ledger } from '../domain/ledger/types';
+import { Ledger } from '../domain/ledger/shared/types';
 const { Comparators } = Util
 const { decodePayload } = Util.StreamingProtocol
 const Participant = require('../domain/participant')

@@ -1,7 +1,7 @@
 import { ApplicationConfig } from "../lib/config";
 import { Effect } from "../messaging/message-bus";
 import { logger } from "../shared/logger";
-import { Ledger } from "../domain/ledger/types";
+import { Ledger } from "../domain/ledger/shared/types";
 
 export type TimeoutResultPayment = {
   context: any,

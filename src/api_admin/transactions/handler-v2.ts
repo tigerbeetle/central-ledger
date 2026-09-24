@@ -1,4 +1,4 @@
-import { Ledger } from "../../domain/ledger/types";
+import { Ledger } from "../../domain/ledger/shared/types";
 import { ApplicationConfig } from "../../lib/config";
 import { ReqRefDefaults, Request, ResponseToolkit } from '@hapi/hapi';
 const Transaction = require('../../domain/transactions')
