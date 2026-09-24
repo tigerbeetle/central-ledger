@@ -3254,6 +3254,7 @@ CREATE TABLE `specCurrencyLedger` (
   `ledgerOperation` int(10) unsigned NOT NULL,
   `ledgerControl` int(10) unsigned NOT NULL,
   `settlementBalance` bigint(20) unsigned NOT NULL,
+  `assetScale` int(10) unsigned NOT NULL,
   PRIMARY KEY (`currency`),
   CONSTRAINT `speccurrencyledger_currency_foreign` FOREIGN KEY (`currency`) REFERENCES `currency` (`currencyId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
@@ -3267,6 +3268,71 @@ SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
 LOCK TABLES `specCurrencyLedger` WRITE;
 /*!40000 ALTER TABLE `specCurrencyLedger` DISABLE KEYS */;
 /*!40000 ALTER TABLE `specCurrencyLedger` ENABLE KEYS */;
+UNLOCK TABLES;
+COMMIT;
+SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+
+--
+-- Table structure for table `specDfsp`
+--
+
+DROP TABLE IF EXISTS `specDfsp`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `specDfsp` (
+  `dfspId` varchar(255) NOT NULL,
+  `masterAccountId` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`dfspId`),
+  UNIQUE KEY `specdfsp_masteraccountid_unique` (`masterAccountId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `specDfsp`
+--
+
+SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
+LOCK TABLES `specDfsp` WRITE;
+/*!40000 ALTER TABLE `specDfsp` DISABLE KEYS */;
+/*!40000 ALTER TABLE `specDfsp` ENABLE KEYS */;
+UNLOCK TABLES;
+COMMIT;
+SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+
+--
+-- Table structure for table `specDfspCurrency`
+--
+
+DROP TABLE IF EXISTS `specDfspCurrency`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `specDfspCurrency` (
+  `dfspId` varchar(255) NOT NULL,
+  `currency` varchar(3) NOT NULL,
+  `deposit` bigint(20) unsigned NOT NULL,
+  `unrestricted` bigint(20) unsigned NOT NULL,
+  `unrestrictedLock` bigint(20) unsigned NOT NULL,
+  `restricted` bigint(20) unsigned NOT NULL,
+  `reserved` bigint(20) unsigned NOT NULL,
+  `commitedOutgoing` bigint(20) unsigned NOT NULL,
+  `clearingCredit` bigint(20) unsigned NOT NULL,
+  `clearingSetup` bigint(20) unsigned NOT NULL,
+  `clearingLimit` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`dfspId`,`currency`),
+  KEY `specdfspcurrency_currency_foreign` (`currency`),
+  CONSTRAINT `specdfspcurrency_currency_foreign` FOREIGN KEY (`currency`) REFERENCES `currency` (`currencyId`),
+  CONSTRAINT `specdfspcurrency_dfspid_foreign` FOREIGN KEY (`dfspId`) REFERENCES `specDfsp` (`dfspId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `specDfspCurrency`
+--
+
+SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
+LOCK TABLES `specDfspCurrency` WRITE;
+/*!40000 ALTER TABLE `specDfspCurrency` DISABLE KEYS */;
+/*!40000 ALTER TABLE `specDfspCurrency` ENABLE KEYS */;
 UNLOCK TABLES;
 COMMIT;
 SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
@@ -3953,4 +4019,4 @@ SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*M!100616 SET NOTE_VERBOSITY=@OLD_NOTE_VERBOSITY */;
 
--- Dump completed on 2026-09-24  8:27:50
+-- Dump completed on 2026-09-24 14:26:02

@@ -350,10 +350,10 @@ export class LedgerSql implements Ledger {
       // TODO(LD): Ideally these would be created in a transaction - as it stands right now, these are non
       // atomically created.
       const participantCurrencyPosition = await Participant.createParticipantCurrency(
-        participant.participantId, currency, settlementModel.ledgerAccountTypeId, false
+        participant.participantId, currency, settlementModel.ledgerAccountTypeId, true
       )
       const participantCurrencySettlement = await Participant.createParticipantCurrency(
-        participant.participantId, currency, settlementModel.settlementAccountTypeId, false
+        participant.participantId, currency, settlementModel.settlementAccountTypeId, true
       )
       assert(Array.isArray(participant.currencyList))
       participant.currencyList = participant.currencyList.concat([

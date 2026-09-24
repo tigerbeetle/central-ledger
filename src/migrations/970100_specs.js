@@ -32,6 +32,7 @@ exports.up = async (knex) => {
         t.integer('ledgerOperation').unsigned().notNullable()
         t.integer('ledgerControl').unsigned().notNullable()
         t.bigIncrements('settlementBalance').notNullable()
+        t.integer('assetScale').unsigned().notNullable()
 
         t.foreign('currency').references('currencyId').inTable('currency')
       })

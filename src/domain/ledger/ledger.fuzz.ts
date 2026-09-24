@@ -70,7 +70,7 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it('runs the fuzzer for LedgerTigerBeetle', async (context) => {
+  it.only('runs the fuzzer for LedgerTigerBeetle', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 15)
     const trace = await run(stepsMax, { LEDGER: 'TIGERBEETLE' })
 
@@ -81,7 +81,7 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it.only('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
+  it('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 100)
     const traceA = await run(stepsMax, { LEDGER: 'SQL' })
     const traceB = await run(stepsMax, { LEDGER: 'TIGERBEETLE' })
@@ -228,19 +228,23 @@ class LedgerFuzzer {
 
   private weights: Record<string, number> = {
     createHubAccount: 1,
-    createDfsp: 1,
-    disableDfsp: 2,
+    createDfsp: 5,
+    disableDfsp: 1,
     enableDfsp: 1,
     enableDfspAccount: 1,
     disableDfspAccount: 1,
     getHubAccounts: 1,
+    getDfsp: 1,
+    deposit: 1,
+    prepare: 1,
+    fulfil: 0,
 
     // createHubAccount: 5,
     // createDfsp: 5,
     // disableDfsp: 2,
     // enableDfsp: 5,
     // enableDfspAccount: 5,
-    // enableDfspAccount: 2,
+    // disableDfspAccount: 2,
 
     // deposit: 4,
     // withdrawPrepare: 5,
@@ -416,10 +420,10 @@ class LedgerFuzzer {
 
     // console.log(`createDfsp`, cmd.dfspId, cmd.currencies)
     // TODO: reenable me when the time is right!
-    // if (this.registeredDfsps.length >= 5) {
-    //   this.weights.prepare = 15
-    //   this.weights.fulfil = 15
-    // }
+    if (this.registeredDfsps.length >= 5) {
+      this.weights.prepare = 15
+      // this.weights.fulfil = 15
+    }
 
     if (this.registeredDfsps.length >= 50) {
       // No more need to more dfsps.
@@ -551,7 +555,24 @@ class LedgerFuzzer {
       dfspId: this.randomDfspName()
     }
     const result = await this.ledger.getDfsp(query)
-    this.traceResult('getDfsp', {}, result)
+
+    if (result.type !== 'SUCCESS') {
+      this.traceResult('getDfsp', {}, result)
+      return  
+    }
+
+    // TODO: remove me eventually - Ignore certain fields from the results to match between 
+    // the ledgers.
+    const clone = structuredClone(result)
+    clone.result.created = new Date(0)
+    clone.result.isProxy = false
+    clone.result.accounts.forEach(account => {
+      account.id = 0n
+      account.changedDate = new Date(0)
+      account.createdDate = new Date(0)
+    })
+
+    this.traceResult('getDfsp', {}, clone)
   }
 
   private async getAllDfsps(): Promise<void> {

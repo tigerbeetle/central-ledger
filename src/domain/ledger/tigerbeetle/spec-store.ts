@@ -4,6 +4,7 @@ import LedgerTigerBeetleHelper from './helper';
 import { ApplicationConfig } from '../../../lib/config';
 import { AccountCode, Enums, QueryResultWithNotFound } from '../shared/types';
 import Helper from './helper';
+import { Account } from 'tigerbeetle-node';
 
 export type CmdHubCurrencyEnable = {
   currency: string,
@@ -40,6 +41,8 @@ export interface CurrencyLedger {
    * This isn't really the best place for this, but we need to put it somewhere!
    */
   settlementBalance: bigint,
+
+  assetScale: number
 }
 
 /**
@@ -72,6 +75,14 @@ export type CurrencyAccount = {
 type CurrencyAccountSave = Omit<CurrencyAccount, 'id'>
 
 /**
+ * Stores the mapping between the dfspId => MasterAccount Id on TigerBeetle.
+ */
+export interface MasterAccount {
+  dfspId: string,
+  masterAccountId: bigint
+}
+
+/**
  * The set of TigerBeetle Account ids.
  */
 export interface DfspAccountIds {
@@ -94,13 +105,38 @@ export interface SpecAccount extends DfspAccountIds {
   currency: string,
 }
 
+export interface InternalLedgerAccount extends Account {
+  dfspId: string,
+  currency: string,
+  // Technically we don't need this since it lives on the account.code, but as a number,
+  // but explicit typing here makes accessing this property easier.
+  accountCode: AccountCode
+}
+
+/**
+ * Internal representation of the Dfsp/Participant Master account
+ */
+export interface InternalMasterAccount extends Account {
+  dfspId: string,
+}
+
+export type SpecNetDebitCap = {
+  type: 'UNLIMITED',
+  dfspId: string,
+  currency: string,
+} | {
+  type: 'LIMITED',
+  amount: number,
+  dfspId: string,
+  currency: string,
+}
+
 export interface DepsSpecStore {
   config: ApplicationConfig
   enums: Enums,
   db: Knex,
   helper: Helper,
 }
-
 
 const TABLE_CURRENCY_LEDGER = 'specCurrencyLedger'
 const TABLE_CURRENCY_ACCOUNT = 'specCurrencyAccount'
@@ -238,6 +274,8 @@ export default class SpecStore {
         ledgerOperation,
         ledgerControl,
         settlementBalance: this.helper.idSmall(),
+        // TODO: should we just take this from the currency table?
+        assetScale: 4,
       })
 
       await trx.commit()
@@ -290,7 +328,7 @@ export default class SpecStore {
   }
 
   public async getCurrencyLedger(currency: string): Promise<CurrencyLedger> {
-    const rows = await this.db(TABLE_CURRENCY_LEDGER).where(currency).select('*')
+    const rows = await this.db(TABLE_CURRENCY_LEDGER).where({ currency }).select('*')
     if (rows.length === 0) {
       throw new Error(`getCurrencyLedger() - no ledger found for currency: ${currency}`);
     }
@@ -302,7 +340,8 @@ export default class SpecStore {
       currency: row.currency,
       ledgerOperation: row.ledgerOperation,
       ledgerControl: row.ledgerControl,
-      settlementBalance: BigInt(row.settlementBalance)
+      settlementBalance: BigInt(row.settlementBalance),
+      assetScale: row.assetScale
     }
   }
 
@@ -313,7 +352,8 @@ export default class SpecStore {
       currency: row.currency,
       ledgerOperation: row.ledgerOperation,
       ledgerControl: row.ledgerControl,
-      settlementBalance: BigInt(row.settlementBalance)
+      settlementBalance: BigInt(row.settlementBalance),
+      assetScale: row.assetScale
     }))
   }
 
@@ -330,7 +370,7 @@ export default class SpecStore {
   }
 
   public async getCurrencyAccounts(currency: string): Promise<Array<CurrencyAccount>> {
-    const rows = await this.db(TABLE_CURRENCY_ACCOUNT).where(currency).select('*')
+    const rows = await this.db(TABLE_CURRENCY_ACCOUNT).where({ currency }).select('*')
 
     return rows.map(row => ({
       id: row.id,
@@ -376,15 +416,14 @@ export default class SpecStore {
     try {
       trx = await this.db.transaction()
 
-      const row = await trx(TABLE_DFSP).where(dfspId).select('*').first()
+      const row = await trx(TABLE_DFSP).where({ dfspId }).select('*').first()
       if (row) {
         await trx.commit()
-        return row.masterAccountId
+        return BigInt(row.masterAccountId)
       }
 
       const masterAccountId = this.helper.idSmall()
       await trx(TABLE_DFSP).insert({ dfspId, masterAccountId })
-
 
       await trx.commit()
       return masterAccountId
@@ -398,18 +437,27 @@ export default class SpecStore {
   }
 
   public async getDfspMasterAccount(dfspId: string): Promise<bigint> {
-    const row = await this.db(TABLE_DFSP).where(dfspId).select('*').first()
+    const row = await this.db(TABLE_DFSP).where({ dfspId }).select('*').first()
     if (!row) {
-      throw new Error(`No dfsp found for id: ${dfspId}`);
+      throw new Error(`No dfsp found for id: ${dfspId}`)
     }
 
-    return row.masterAccountId;
+    return BigInt(row.masterAccountId)
+  }
+
+  public async getDfspMasterAccounts(dfspIds: Array<string>): Promise<Array<MasterAccount>> {
+    const rows = await this.db(TABLE_DFSP).whereIn('dfspId', dfspIds).select('*')
+
+    return rows.map(row => ({
+      dfspId: row.dfspId,
+      masterAccountId: BigInt(row.masterAccountId)
+    }))
   }
 
   public async getDfspCurrency(dfspId: string, currency: string):
     Promise<QueryResultWithNotFound<SpecAccount>> {
 
-    const row = await this.db(TABLE_DFSP_CURRENCY).where(dfspId).select('*').first()
+    const row = await this.db(TABLE_DFSP_CURRENCY).where({ dfspId, currency }).select('*').first()
     if (!row) {
       return {
         type: 'NOT_FOUND',
@@ -425,6 +473,11 @@ export default class SpecStore {
 
   public async getDfspCurrencies(id: string): Promise<Array<SpecAccount>> {
     const rows = await this.db(TABLE_DFSP_CURRENCY).where({dfspId: id}) .select('*')
+    return rows.map(SpecStore.hydrateSpecAccount)
+  }
+
+  public async getAllDfspCurrencies(dfsps: Array<string>): Promise<Array<SpecAccount>> {
+    const rows = await this.db(TABLE_DFSP_CURRENCY).whereIn('dfspId', dfsps).select('*')
     return rows.map(SpecStore.hydrateSpecAccount)
   }
 
@@ -496,7 +549,7 @@ export default class SpecStore {
     try {
       trx = await this.db.transaction()
 
-      const row = await trx(TABLE_DFSP_CURRENCY).where(dfspId).select('*').first()
+      const row = await trx(TABLE_DFSP_CURRENCY).where({ dfspId, currency }).select('*').first()
       if (row) {
         await trx.commit()
         return SpecStore.hydrateSpecAccount(row)
@@ -527,6 +580,19 @@ export default class SpecStore {
 
       throw err
     }
+  }
+
+  public async getNetDebitCap(dfspId: string, currency: string): Promise<SpecNetDebitCap> {
+    // Mock result for now.
+    return {
+      type: 'UNLIMITED',
+      dfspId,
+      currency
+    } 
+  }
+
+  public async saveFundingSpec(funding: any): Promise<void> {
+    return
   }
 
   private static hydrateSpecAccount(row: any): SpecAccount {

@@ -1,9 +1,10 @@
 import { failureWithError, QueryResult } from "../../../shared/results"
-import { Account, AccountFlags, amount_max, Client, Transfer } from "tigerbeetle-node";
+import { Account, AccountFlags, amount_max, Client, id, Transfer, TransferFlags } from "tigerbeetle-node";
 import crypto from "crypto";
 import assert from "assert";
-import { CurrencyLedger, SpecAccount } from "./spec-store";
-import { AccountCode } from "../shared/types";
+import { CurrencyLedger, MasterAccount, SpecAccount } from "./spec-store";
+import { AccountCode, TransferCode } from "../shared/types";
+import { PrepareHandlerInput } from "../../../handlers/payment-prepare";
 
 interface InterledgerValidationPass {
   type: 'PASS'
@@ -24,7 +25,7 @@ interface Dependencies {
 
 export default class Helper {
 
-  constructor(private deps: Dependencies) {}
+  constructor(private deps: Dependencies) { }
 
   /**
    * Global account ids that persist across all Ledgers
@@ -159,11 +160,11 @@ export default class Helper {
    */
   public static generateLedgerIds(currentCount: number): [number, number] {
     const base = (currentCount + 1) * 100
-    return [base, base +1 ]
+    return [base, base + 1]
   }
 
-  public buildAccountsDsfp(
-    spec: SpecAccount, 
+  public buildAccountsDfsp(
+    spec: SpecAccount,
     currencyLedger: CurrencyLedger,
     accountIdSettlementBalance: bigint,
     masterAccountId: bigint
@@ -200,7 +201,7 @@ export default class Helper {
         id: spec.deposit,
         ledger: ledgerOperation,
         code: AccountCode.Deposit,
-        flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits,
+        flags: AccountFlags.linked | AccountFlags.credits_must_not_exceed_debits
       },
       // Unrestricted
       {
@@ -269,6 +270,213 @@ export default class Helper {
     ]
 
     return accounts
+  }
+
+  public buildTransfersDeposit(
+    transferId: string,
+    amount: number,
+    netDebitCapLockAmount: bigint,
+    spec: SpecAccount,
+    ledger: CurrencyLedger
+  ): Array<Transfer> {
+    const idLockTransfer = id()
+    return [
+      // Deposit funds into Unrestricted.
+      {
+        ...Helper.createTransferTemplate,
+        id: Helper.fromMojaloopId(transferId),
+        debit_account_id: spec.deposit,
+        credit_account_id: spec.unrestricted,
+        amount: Helper.toTigerBeetleAmount(amount, ledger.assetScale),
+        ledger: ledger.ledgerOperation,
+        code: TransferCode.Deposit,
+        flags: TransferFlags.linked
+
+      },
+      // Sweep total balance from Restricted to Unrestricted.
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.restricted,
+        credit_account_id: spec.unrestricted,
+        amount: amount_max,
+        ledger: ledger.ledgerOperation,
+        code: TransferCode.Net_Debit_Cap_Sweep_To_Unrestricted,
+        flags: TransferFlags.linked | TransferFlags.balancing_debit
+      },
+      // Temporarily lock up to the net debit cap.
+      {
+        ...Helper.createTransferTemplate,
+        id: idLockTransfer,
+        debit_account_id: spec.unrestricted,
+        credit_account_id: spec.unrestrictedLock,
+        amount: netDebitCapLockAmount,
+        ledger: ledger.ledgerOperation,
+        code: TransferCode.Net_Debit_Cap_Lock,
+        flags: TransferFlags.linked | TransferFlags.pending | TransferFlags.balancing_debit
+      },
+      // Sweep whatever remains in Unrestricted to Restricted.
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: spec.unrestricted,
+        credit_account_id: spec.restricted,
+        amount: amount_max,
+        ledger: ledger.ledgerOperation,
+        code: TransferCode.Net_Debit_Cap_Sweep_To_Restricted,
+        flags: TransferFlags.linked | TransferFlags.balancing_debit
+      },
+      // Reset the pending limit transfer.
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        pending_id: idLockTransfer,
+        debit_account_id: 0n,
+        credit_account_id: 0n,
+        amount: 0n,
+        ledger: ledger.ledgerOperation,
+        code: TransferCode.Net_Debit_Cap_Lock,
+        flags: TransferFlags.void_pending_transfer
+      }
+    ]
+  }
+
+  public buildTransfersPrepares(
+    prepares: Array<PrepareHandlerInput>,
+    currencyLedgers: Record<string, CurrencyLedger>,
+    masterAccounts: Record<string, MasterAccount>,
+    specAccounts: Record<string, SpecAccount>
+  ): Array<Transfer> {
+
+    const transfers: Array<Transfer> = []
+    for (const prepare of prepares) {
+      // Shortcut.
+      const amountStr = prepare.payload.amount.amount
+      const currency = prepare.payload.amount.currency
+      const masterAccountPayer = masterAccounts[prepare.payload.payerFsp]
+      assert(masterAccountPayer)
+      const masterAccountPayee = masterAccounts[prepare.payload.payeeFsp]
+      assert(masterAccountPayee)
+      const specPayer = specAccounts[prepare.payload.payerFsp + '_' + currency]
+      assert(specPayer)
+      const specPayee = specAccounts[prepare.payload.payeeFsp + '_' + currency]
+      assert(specPayee)
+
+      // TODO: come back to this - we need to ensure increasing ids.
+      const prepareId = Helper.fromMojaloopId(prepare.transferId)
+      const ledger = currencyLedgers[currency]
+      assert(ledger)
+      const assetScale = ledger.assetScale
+      const amountTigerBeetle = Helper.fromMojaloopAmount(amountStr, assetScale)
+
+      const nowMs = (new Date()).getTime()
+      /**
+       * In future versions of the FSPIOP API, expiration will be defined in relative seconds,
+       * instead of absolute timestamps. That will make the below timeout calculations less error
+       * prone.
+       */
+      // TODO: validate these before this step.
+      const expirationMs = Date.parse(prepare.payload.expiration)
+      if (isNaN(expirationMs)) {
+        throw new Error(`invalid transfer expiration`)
+      }
+
+      // if (nowMs > expirationMs) {
+      //   throw new Error(`Expiration date already in the past.`)
+      // }
+
+      // Hash key properties of the transfer for idempotency/modification detection
+      const transferHash = Helper.hashTransferProperties({
+        amount: amountStr,
+        currency: currency,
+        expiration: prepare.payload.expiration,
+        payeeFsp: prepare.payload.payeeFsp,
+        payerFsp: prepare.payload.payerFsp,
+        condition: prepare.payload.condition,
+        ilpPacket: prepare.payload.ilpPacket,
+      })
+
+      transfers.push(
+        // Ensure both Participants are active
+        {
+          ...Helper.createTransferTemplate,
+          id: prepareId,
+          debit_account_id: masterAccountPayer.masterAccountId,
+          credit_account_id: masterAccountPayee.masterAccountId,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          user_data_64: BigInt(expirationMs),
+          user_data_32: transferHash,
+          ledger: Helper.ledgerIds.globalControl,
+          code: TransferCode.Clearing_Active_Check,
+          flags: TransferFlags.linked | TransferFlags.pending,
+        },
+        // Setup the limit account for this payment.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: specPayer.clearingSetup,
+          credit_account_id: specPayee.clearingLimit,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledger.ledgerOperation,
+          code: 1,
+          flags: TransferFlags.linked
+        },
+        // Reserve funds for Participant A from Clearing Credit.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: specPayer.clearingCredit,
+          credit_account_id: specPayee.clearingSetup,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledger.ledgerOperation,
+          code: TransferCode.Clearing_Reserve,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
+            | TransferFlags.balancing_credit
+        },
+        // Reserve funds for Participant A from Unrestricted
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: specPayer.unrestricted,
+          credit_account_id: specPayee.clearingSetup,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledger.ledgerOperation,
+          code: TransferCode.Clearing_Reserve,
+          flags: TransferFlags.linked | TransferFlags.balancing_debit
+            | TransferFlags.balancing_credit
+        },
+        // Reserve funds for Participant A from Clearing_Setup
+        {
+          ...Helper.createTransferTemplate,
+          id: prepareId + 3n,
+          debit_account_id: specPayer.clearingSetup,
+          credit_account_id: specPayee.reserved,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: ledger.ledgerOperation,
+          code: TransferCode.Clearing_Reserve,
+          flags: TransferFlags.linked
+        },
+        // ??
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: specPayer.clearingLimit,
+          credit_account_id: specPayee.clearingSetup,
+          amount: amount_max,
+          user_data_128: prepareId,
+          ledger: ledger.ledgerOperation,
+          code: 1,
+          flags: TransferFlags.balancing_credit
+        },
+      )
+    }
+
+    return transfers
   }
 
   public static fromMojaloopId(mojaloopId: string): bigint {
@@ -412,8 +620,7 @@ export default class Helper {
    * @deprecated
    */
   public static toTigerBeetleTimeout(now: Date, expiration: string):
-     'INVALID' | 'ALREADY_EXPIRED' | 'ROUNDED_DOWN_TO_ZERO' | number 
-    {
+    'INVALID' | 'ALREADY_EXPIRED' | 'ROUNDED_DOWN_TO_ZERO' | number {
     const nowMs = (now).getTime()
     const expirationMs = Date.parse(expiration)
     if (isNaN(expirationMs)) {
