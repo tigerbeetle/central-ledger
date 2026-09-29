@@ -201,7 +201,7 @@ export class LedgerSql implements Ledger {
     if (!participant) {
       throw ErrorHandler.Factory.createFSPIOPError(
         ErrorHandler.Enums.FSPIOPErrorCodes.ADD_PARTY_INFO_ERROR,
-        'Participant was not found.'
+        'No participant was not found.'
       )
     }
 
@@ -350,10 +350,10 @@ export class LedgerSql implements Ledger {
       // TODO(LD): Ideally these would be created in a transaction - as it stands right now, these are non
       // atomically created.
       const participantCurrencyPosition = await Participant.createParticipantCurrency(
-        participant.participantId, currency, settlementModel.ledgerAccountTypeId, true
+        participant.participantId, currency, settlementModel.ledgerAccountTypeId, false
       )
       const participantCurrencySettlement = await Participant.createParticipantCurrency(
-        participant.participantId, currency, settlementModel.settlementAccountTypeId, true
+        participant.participantId, currency, settlementModel.settlementAccountTypeId, false
       )
       assert(Array.isArray(participant.currencyList))
       participant.currencyList = participant.currencyList.concat([
@@ -454,10 +454,10 @@ export class LedgerSql implements Ledger {
         const ledgerAccountType = ledgerAccountIdMap[currency.ledgerAccountTypeId]
         assert(ledgerAccountType)
         const formattedAccount: LegacyLedgerAccount = {
-          // id: BigInt(currency.participantCurrencyId),
+          id: BigInt(currency.participantCurrencyId),
           // TODO: disabled this for now, the LedgerSql implementation is quite hard to 
           // match with LedgerTigerBeetle since the database autoincrements the id on failure.
-          id: BigInt(0),
+          // id: BigInt(0),
           ledgerAccountType,
           currency: currency.currencyId,
           isActive: Boolean(currency.isActive),
@@ -626,11 +626,11 @@ export class LedgerSql implements Ledger {
         return {
           currency: item.currencyId,
           limit: {
-            type: 'NET_DEBIT_CAP',
+            type: 'NETDEBITCAP',
             value: safeStringToNumber(item.value),
             alarmPercentage: safeStringToNumber(item.thresholdAlarmPercentage)
           }
-        }
+        } as unknown as LegacyLimitItem
       })
 
       return {

@@ -31,10 +31,10 @@ const filename = path.basename(__filename)
 assert(filename)
 
 describe('api/participants/handler', () => {
-  it('is identical with/without LEDGER', async (context) => {
-    const stepsMax = 1000
+  it.only('is identical with/without LEDGER', async (context) => {
+    const stepsMax = envOrDefaultNumber('STEPS_MAX', 1000)
     const traceA = await run(stepsMax, { API_MODE_ADMIN: 'NONE' })
-    const traceB = await run(stepsMax, { API_MODE_ADMIN: 'LEDGER'})
+    const traceB = await run(stepsMax, { API_MODE_ADMIN: 'LEDGER', LEDGER: 'SQL'})
     
     const pathBase = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
     fs.mkdirSync(pathBase, { recursive: true });
@@ -246,9 +246,6 @@ class HandlerApiFuzzer {
 
     try {
       while (this.step <= this.stepsMax) {
-        // if (this.step === 3037) {
-        //   console.log('break at step!')
-        // }
         await this.doStep()
         this.harness.clock.tick()
 
