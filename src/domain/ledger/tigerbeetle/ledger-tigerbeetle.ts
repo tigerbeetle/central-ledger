@@ -88,7 +88,7 @@ import { CloseDfspMasterAccountFailureType, DepositFailureType, DisableDfspAccou
 import { CmdHubCurrencyEnable, ContextPayments, CurrencyConfig, DfspCurrency, DfspRoot, FulfilMeta, FulfilMetaUpdate, GetPaymentMetaResult, InternalDfspCurrency, InternalDfspRoot, NetDebitCap, ParticipantLocation, PaymentMeta, PrepareMeta } from './meta-store';
 import { Reporter } from '../shared/reporter';
 import MetaStore from './meta-store';
-import { TimeoutResult } from '../../../handlers/timeout-v2';
+import { PaymentTimeout, TimeoutResult } from '../../../handlers/timeout-v2';
 import { TimedOutTransfer } from '../../../models/transfer/facade';
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
@@ -2338,14 +2338,21 @@ export class LedgerTigerBeetle implements Ledger {
     // notification
     await this.moveSweepBookmark(now)
 
-    const payments: Array<TimedOutTransfer> = []
+    const payments: Array<PaymentTimeout> = []
     resultsTimeout.forEach(result => {
+      if (result.result !== 'OK') return
       // TODO: need to change this type to just the minimum of what is needed to create the effects
       // in the message-bus layer.
       // @ts-ignore
       payments.push({
-        transferId: result.id,
-
+        id: result.id,
+        payerId: result.paymentMeta.payerId,
+        payeeId: result.paymentMeta.payeeId,
+        // In LedgerSql, we distinguished between `EXPIRED_PREPARED` and `RESERVED_TIMEOUT`.
+        // `EXPIRED_PREPARED` was an intermediate state for when the prepare expired before the
+        // position was reserved, which is impossible in LedgerTigerBeetle since preparing a payment
+        // _is_ reserving the position.
+        state: 'RESERVED_TIMEOUT', 
       })
     })
 

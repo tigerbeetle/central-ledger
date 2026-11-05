@@ -115,7 +115,8 @@ export type InterledgerValidationResult = InterledgerValidationPass
 
 export type ExpireResult = {
   id: string,
-  result: 'OK' | 'ALREADY_EXPIRED' | 'ALREADY_FULFILED'
+  result: 'OK' | 'ALREADY_EXPIRED' | 'ALREADY_FULFILED',
+  paymentMeta: PaymentMeta
 }
 
 interface Dependencies {
@@ -1549,7 +1550,7 @@ export default class Helper {
 
     const resultsExpire: Array<ExpireResult> = []
     for (let idxPayment = 0; idxPayment < paymentMetas.length; idxPayment++) {
-      const payment = paymentMetas[idxPayment]
+      const paymentMeta = paymentMetas[idxPayment]
       const resultsPayment = resultsCreateTransfers.slice(
         idxPayment * Helper.ampFactorExpire,
         idxPayment + 1 * Helper.ampFactorExpire
@@ -1561,13 +1562,25 @@ export default class Helper {
         if (idx === 0) {
           switch (result.status) {
             case CreateTransferStatus.created:
-              resultsExpire.push({ id: payment.id, result: 'OK' })
+              resultsExpire.push({ 
+                id: paymentMeta.id, 
+                result: 'OK',
+                paymentMeta
+              })
               return
             case CreateTransferStatus.pending_transfer_already_posted:
-              resultsExpire.push({ id: payment.id, result: 'ALREADY_FULFILED' })
+              resultsExpire.push({ 
+                id: paymentMeta.id, 
+                result: 'ALREADY_FULFILED',
+                paymentMeta
+              })
               return
             case CreateTransferStatus.pending_transfer_already_voided:
-              resultsExpire.push({ id: payment.id, result: 'ALREADY_EXPIRED' })
+              resultsExpire.push({ 
+                id: paymentMeta.id, 
+                result: 'ALREADY_EXPIRED',
+                paymentMeta
+              })
             return
           }
         }

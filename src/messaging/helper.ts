@@ -5,7 +5,8 @@ import { PaymentPrepareResult, PrepareHandlerInput } from "../handlers/payment-p
 import { ApplicationConfig } from "../lib/config";
 import { Effect } from "./message-bus";
 import { ForwardedFxTransfer, ForwardedTransfer, TimedOutFxTransfer, TimedOutTransfer } from "../models/transfer/facade";
-import { TimeoutResultPayment, TimeoutResultPaymentForward } from "../handlers/timeout-v2";
+import { PaymentTimeout, TimeoutResultPayment, TimeoutResultPaymentForward } from "../handlers/timeout-v2";
+import { Payment } from "../testing/api-helpers";
 
 const { Enum, Util } = require('@mojaloop/central-services-shared')
 const { StreamingProtocol, resourceVersions } = Util
@@ -431,14 +432,14 @@ export default class MessagingHelper {
     return effect
   }
 
-  public buildEffectsTimedOutPayments(payments: Array<TimedOutTransfer>):
+  public buildEffectsTimedOutPayments(payments: Array<PaymentTimeout>):
     Array<TimeoutResultPayment> {
     return payments.map(payment => {
-      if (payment.bulkTransferId) {
-        throw new Error('TimeoutHandlerV2 - timeouts for bulk transfers not yet supported.')
-      }
+      // if (payment.bulkTransferId) {
+      //   throw new Error('TimeoutHandlerV2 - timeouts for bulk transfers not yet supported.')
+      // }
 
-      switch (payment.transferStateId) {
+      switch (payment.state) {
         // Payment expired _before_ the position was reserved.
         case 'EXPIRED_PREPARED': {
           return {
@@ -453,7 +454,7 @@ export default class MessagingHelper {
             effect: this.buildEffectPaymentPositionTimeout(payment)
           }
         default: {
-          throw new Error(`timeoutPaymentEffects - unhandled transferStateId: ${payment.transferStateId}`)
+          throw new Error(`timeoutPaymentEffects - unhandled transferStateId: ${payment.state}`)
         }
       }
     })
@@ -546,7 +547,7 @@ export default class MessagingHelper {
     }
   }
 
-  public buildEffectPaymentTimeoutNotification(payment: TimedOutTransfer): Effect {
+  public buildEffectPaymentTimeoutNotification(payment: PaymentTimeout): Effect {
     const effect: Effect = {
       functionality: Type.NOTIFICATION,
       action: Action.TIMEOUT_RECEIVED,
@@ -559,21 +560,24 @@ export default class MessagingHelper {
     return effect
   }
 
-  public buildEffectPaymentPositionTimeout(payment: TimedOutTransfer): Effect {
+  public buildEffectPaymentPositionTimeout(payment: PaymentTimeout): Effect {
     return {
       functionality: Type.POSITION,
       action: Action.TIMEOUT_RESERVED,
       message: this.buildTimeoutMessagePayment(payment),
-      messageKey: payment.effectedParticipantCurrencyId.toString(),
+      // TODO: do we need this?
+      // messageKey: payment.effectedParticipantCurrencyId.toString(),
       topicName: 'topic-transfer-position-batch',
       status: 'FAILURE',
       fspiopError: this.timeoutError
     }
   }
 
-  public buildTimeoutMessagePayment(payment: TimedOutTransfer) {
-    const destination = payment.externalPayerName || payment.payerFsp
-    const source = payment.externalPayeeName || payment.payeeFsp
+  public buildTimeoutMessagePayment(payment: PaymentTimeout) {
+    // const destination = payment.externalPayerName || payment.payerFsp
+    // const source = payment.externalPayeeName || payment.payeeFsp
+    const destination = payment.payerId
+    const source = payment.payeeId
     const transfersResource = Enum.Http.HeaderResources.TRANSFERS
     const contentVersion = resourceVersions[transfersResource].contentVersion
 
@@ -583,7 +587,7 @@ export default class MessagingHelper {
       this.timeoutError.errorInformation.errorDescription
     )
     const metadata = Util.StreamingProtocol.createMetadataWithCorrelatedEvent(
-      payment.transferId,
+      payment.id,
       Enum.Kafka.Topics.NOTIFICATION,
       Action.TIMEOUT_RECEIVED,
       state
@@ -592,19 +596,19 @@ export default class MessagingHelper {
       destination, transfersResource, this.deps.config.HUB_NAME, contentVersion
     )
     const message = Util.StreamingProtocol.createMessage(
-      payment.transferId,
+      payment.id,
       destination,
       source,
       metadata,
       headers,
       this.timeoutError,
-      { id: payment.transferId },
+      { id: payment.id },
       `application/vnd.interoperability.${transfersResource}+json;version=${contentVersion}`
     )
     message.from = this.deps.config.HUB_NAME
     message.content.context = {
-      payer: payment.externalPayerName || payment.payerFsp,
-      payee: payment.externalPayeeName || payment.payeeFsp
+      payer: payment.payerId,
+      payee: payment.payeeId
     }
 
     return message

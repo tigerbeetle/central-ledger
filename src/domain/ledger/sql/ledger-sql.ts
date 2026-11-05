@@ -113,7 +113,7 @@ import SettlementModel from '../../../models/settlement/settlement'
 import * as Result from '../shared/results'
 import Helper from './helper';
 import { CurrencyConfig } from '../tigerbeetle/meta-store';
-import { TimeoutResult } from '../../../handlers/timeout-v2';
+import { PaymentTimeout, TimeoutResult } from '../../../handlers/timeout-v2';
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 const { FSPIOPError } = ErrorHandler
@@ -1751,10 +1751,17 @@ export class LedgerSql implements Ledger {
         now
       )
 
+      const payments: Array<PaymentTimeout> = transferTimeoutList.map(transfer => ({
+        id: transfer.transferId,
+        payerId: transfer.payerFsp,
+        payeeId: transfer.payeeFsp,
+        state: transfer.transferStateId as 'EXPIRED_PREPARED' | 'RESERVED_TIMEOUT'
+      }))
+
       return Result.commandResultSuccess({
         intervalPayment: [intervalPaymentMin, intervalPaymentMax],
         intervalForex: [intervalForexMin, intervalForexMax],
-        payments: transferTimeoutList,
+        payments,
         forexes: fxTransferTimeoutList,
         paymentForwards: transferForwardedList,
         forexForwards: fxTransferForwardedList

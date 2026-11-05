@@ -1019,7 +1019,14 @@ class LedgerFuzzer {
   private async sweepTimedOut(): Promise<void> {
     const now = this.harness.clock.now
     const result = await this.ledger.sweepTimedOut(now)
-    this.traceResult('sweepTimedOut', now, result)
+    const cloned = structuredClone(result)
+
+    if (cloned.type === 'SUCCESS') {
+      // Intervals are implemented differently between LedgerSql and LedgerTigerBeetle.
+      cloned.result.intervalPayment = [0, 0]
+    }
+
+    this.traceResult('sweepTimedOut', now, cloned)
   }
 
   private async closeSettlementWindow(): Promise<void> {
