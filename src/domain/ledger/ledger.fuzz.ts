@@ -68,7 +68,7 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it.only('runs the fuzzer for LedgerTigerBeetle', async (context) => {
+  it('runs the fuzzer for LedgerTigerBeetle', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 1000)
     const trace = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'NONE')
 
@@ -79,7 +79,7 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
+  it.only('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 250)
     const traceA = await run(stepsMax, { LEDGER: 'SQL' }, 'LEGACY')
     const traceB = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'LEGACY')
