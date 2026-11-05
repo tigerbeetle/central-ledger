@@ -85,10 +85,11 @@ const { TransferState } = Enum.Transfers
 
 import SettlementDomain from '../../settlement';
 import { CloseDfspMasterAccountFailureType, DepositFailureType, DisableDfspAccountFailureType, EnableDfspAccountFailureType, FulfilFailureType, FulfilInternalStatus, default as Helper, default as LedgerTigerBeetleHelper, PrepareFailureType, PrepareInternalStatus, SetNetDebitCapFailureType, TransferFailureResult, WithdrawAbortFailureType, WithdrawCommitFailureType, WithdrawPrepareFailureType } from './helper';
-import  { CmdHubCurrencyEnable, ContextPayments, CurrencyConfig, DfspCurrency, DfspRoot, FulfilMeta, FulfilMetaUpdate, GetPaymentMetaResult, InternalDfspCurrency, InternalDfspRoot, NetDebitCap, ParticipantLocation, PaymentMeta, PrepareMeta } from './meta-store';
+import { CmdHubCurrencyEnable, ContextPayments, CurrencyConfig, DfspCurrency, DfspRoot, FulfilMeta, FulfilMetaUpdate, GetPaymentMetaResult, InternalDfspCurrency, InternalDfspRoot, NetDebitCap, ParticipantLocation, PaymentMeta, PrepareMeta } from './meta-store';
 import { Reporter } from '../shared/reporter';
 import MetaStore from './meta-store';
 import { TimeoutResult } from '../../../handlers/timeout-v2';
+import { TimedOutTransfer } from '../../../models/transfer/facade';
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
@@ -246,9 +247,7 @@ export class LedgerTigerBeetle implements Ledger {
       const dfspRoot = await this.metaStore.getDfspRoot(id)
       const currencyConfig = await this.metaStore.getCurrencyConfig(currency)
 
-      const accounts = this.helper.buildAccountsDfsp(
-        dfspCurrency, currencyConfig, dfspRoot.id
-      )
+      const accounts = this.helper.buildAccountsDfsp(dfspCurrency, currencyConfig, dfspRoot.id)
       const createAccountResults = await this.client.createAccounts(accounts)
       let fatal = false
       const readableErrors: Array<any> = []
@@ -718,8 +717,6 @@ export class LedgerTigerBeetle implements Ledger {
       amount,
     }
   }
-
-  
 
   /**
    * Returns a map of 'dfspId:currency' => NetDebitCap.
@@ -2317,8 +2314,110 @@ export class LedgerTigerBeetle implements Ledger {
   }
 
   public async sweepTimedOut(now: Date): Promise<CommandResult<TimeoutResult>> {
-    throw new Error('Method not implemented.');
+    const start = await this.findOrCreateSweepStartDate()
+
+    const paymentMetas = await this.metaStore.lookupPaymentsByExpiryBetween(start, now)
+    const ids = paymentMetas.map(payment => payment.id)
+    const context = await this.metaStore.getPaymentContext(ids)
+    const netDebitCaps = Object.values(await this.getInternalNetDebitCaps())
+
+    // Save the abortedAts for the payments?
+    // I'm not 100% sure this is correct to do, but we need some way to record
+    // the abortedAt for duplicate handling.
+    await this.metaStore.attachPrepareMetaAbortedAt(ids, ids.map(_ => new Date()))
+
+    // For each of the payment metas that might have expired, build an expiry linked chain of
+    // payments.
+    const transfers = this.helper.buildTransfersExpire(paymentMetas, context, netDebitCaps)
+    const resultsCreateTransfers = await this.helper.createTransfersInBatches(this.client, transfers)
+    const resultsTimeout = this.helper.mapResultsExpire(resultsCreateTransfers, paymentMetas)
+
+    // Move the sweep bookmark so we don't try and expire these payments again. A payment cannot be
+    // expired twice, so even if this step fails, and we don't record the bookmark, we can't 
+    // accidentally expire a payment more than once. Worst case scenario is we don't send a
+    // notification
+    await this.moveSweepBookmark(now)
+
+    const payments: Array<TimedOutTransfer> = []
+    resultsTimeout.forEach(result => {
+      // TODO: need to change this type to just the minimum of what is needed to create the effects
+      // in the message-bus layer.
+      // @ts-ignore
+      payments.push({
+        transferId: result.id,
+
+      })
+    })
+
+    // If the payment was already ALREADY_EXPIRED or ALREADY_FULFILED, another handler got to it
+    // first, we can safely ignore it.
+
+    // Save the batch of payments, then pull out the results. IF it failed because already posted
+    // or voided, then we can ignore it.
+
+    // TODO: for the payments we just expired, store the aborted at.
+    // TODO: save the next bookmark. Need to think carefully about how we don't break things...
+    // E.g. could there be a chance we save the bookmark but didn't properly expire a payment?
+    // I think having gaps is kinda safe, we could always adjust sweepTimedOut to take a start and end date, 
+    // and if no startDate is provided, use the bookmark. 
+
+    return {
+      type: 'SUCCESS',
+      result: {
+        intervalPayment: [start.getTime(), now.getTime()],
+        intervalForex: [0, 0],
+        payments,
+        forexes: [],
+        paymentForwards: [],
+        forexForwards: [],
+      }
+    }
   }
+
+  /**
+   * Look up the last Sweep_Bookmark transfer, which records the time until we last swept to.
+   * If it doesn't exist, create a new one, and start at unix timestamp 0.
+   */
+  private async findOrCreateSweepStartDate(): Promise<Date> {
+    // Lookup last sweep bookmark.
+    const transfers = await this.client.queryTransfers({
+      user_data_128: 0n,
+      user_data_64: 0n,
+      user_data_32: 0,
+      ledger: 0,
+      code: TransferCode.Sweep_Bookmark,
+      timestamp_min: 0n,
+      timestamp_max: 0n,
+      limit: 8000,
+      flags: QueryFilterFlags.reversed
+    })
+
+    if (transfers.length === 0) {
+      const sweepStart = new Date(0)
+      // No sweep bookmark created yet. Start at zero.
+      const transfers = this.helper.buildTransfersTimeoutBookmark(sweepStart)
+      const results = await this.client.createTransfers(transfers)
+      this.helper.mapResultsTimeoutBookmark(results)
+
+      return sweepStart
+    }
+
+    const sweepStart = new Date(Number(transfers[0].user_data_64))
+    assert(sweepStart)
+
+    return sweepStart
+  }
+
+  /**
+   * Move the swept bookmark to this date by creating a new Transfer in the 
+   * bookmarkCredit/bookmarkDebit accounts.
+   */
+  private async moveSweepBookmark(now: Date): Promise<void> {
+    const transfers = this.helper.buildTransfersTimeoutBookmark(now)
+    const results = await this.client.createTransfers(transfers)
+    this.helper.mapResultsTimeoutBookmark(results)
+  }
+
   public async lookupTransfer(query: LookupTransferQuery): Promise<LookupTransferQueryResponse> {
     throw new Error('Method not implemented.');
   }

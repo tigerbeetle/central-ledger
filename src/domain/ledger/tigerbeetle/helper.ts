@@ -113,12 +113,26 @@ export type InterledgerValidationResult = InterledgerValidationPass
   | InterledgerValidationFail
 
 
+export type ExpireResult = {
+  id: string,
+  result: 'OK' | 'ALREADY_EXPIRED' | 'ALREADY_FULFILED'
+}
+
 interface Dependencies {
   randomBytes: (length: number) => Buffer,
   config: ApplicationConfig
 }
 
 export default class Helper {
+
+  /**
+   * How many TigerBeetle transfers for each Prepare.
+   */
+  public static readonly ampFactorPrepare = 7
+  public static readonly ampFactorFulfilCommit = 2
+  public static readonly ampFactorFulfilAbort = 10
+  public static readonly ampFactorExpire = 10
+
 
   constructor(private deps: Dependencies) {
     assert(deps.randomBytes)
@@ -250,7 +264,6 @@ export default class Helper {
    * to maintain backwards compatibility, we generate our own random accountIds under 
    * Number.MAX_SAFE_INTEGER to be safe.
    */
-  // TODO: we should also namespace this so we can have multiple runs against a single TB instance.
   public idSmall(): bigint {
     const bytes = this.deps.randomBytes(8)
     const value = bytes.readBigUInt64BE();
@@ -415,6 +428,9 @@ export default class Helper {
         code: AccountCode.Net_Debit_Cap_Set_Util,
         flags: 0,
       },
+
+      // Control accounts.
+      ...this.buildAccountsBookmark()
     ]
 
     return accounts
@@ -792,14 +808,6 @@ export default class Helper {
 
     return transfers
   }
-
-
-  /**
-   * How many TigerBeetle transfers for each Prepare.
-   */
-  public static readonly ampFactorPrepare = 7
-  public static readonly ampFactorFulfilCommit = 2
-  public static readonly ampFactorFulfilAbort = 10
 
   /**
    * Given a list of validated prepares, return a list of TigerBeetle transfers to be created.
@@ -1432,6 +1440,194 @@ export default class Helper {
     return transfers
   }
 
+  /**
+   * Control accounts for recording the sweep bookmark transfers.
+   */
+  public buildAccountsBookmark(): Array<Account> {
+    return [
+      {
+        ...Helper.createAccountTemplate,
+        id: Helper.accountIds.bookmarkDebit,
+        ledger: Helper.ledgerIds.globalControl,
+        code: AccountCode.Bookmark_Debit,
+        flags: AccountFlags.linked
+      },
+      {
+        ...Helper.createAccountTemplate,
+        id: Helper.accountIds.bookmarkCredit,
+        ledger: Helper.ledgerIds.globalControl,
+        code: AccountCode.Bookmark_Credit,
+        flags: 0
+      }
+    ]
+  }
+
+  public buildTransfersTimeoutBookmark(when: Date): Array<Transfer> {
+    return [
+      {
+        ...Helper.createTransferTemplate,
+        id: id(),
+        debit_account_id: Helper.accountIds.bookmarkDebit,
+        credit_account_id: Helper.accountIds.bookmarkCredit,
+        amount: 0n,
+        user_data_64: BigInt(when.getTime()),
+        ledger: Helper.ledgerIds.globalControl,
+        code: TransferCode.Sweep_Bookmark,
+        flags: 0
+      }
+    ]
+  }
+
+  public buildTransfersExpire(
+    paymentMetas: Array<PaymentMeta>,
+    context: ContextPayments,
+    netDebitCaps: Array<NetDebitCap>
+  ): Array<Transfer> {
+    const dfspCurrencies = Helper.toMapBy(context.dfspCurrencies, item => `${item.dfspId}:${item.currency}`)
+    const currencyConfigs = Helper.toMapBy(context.currencyConfigs, item => item.currency)
+    const netDebitCapMap = Helper.toMapBy(netDebitCaps, item => `${item.dfspId}:${item.currency}`)
+
+    const transfers: Array<Transfer> = []
+    for (const paymentMeta of paymentMetas) {
+      const currencyConfig = currencyConfigs[paymentMeta.currency]
+      assert(currencyConfig, `No currencyConfig found for paymentMeta.currency: ${paymentMeta.currency}.`)
+      const amountTigerBeetle = Helper.fromMojaloopAmount(paymentMeta.amount, currencyConfig.assetScale)
+      const prepareId = Helper.fromMojaloopId(paymentMeta.id)
+      const dfspCurrencyPayer = dfspCurrencies[`${paymentMeta.payerId}:${paymentMeta.currency}`]
+      assert(dfspCurrencyPayer, `dfspCurrency not found for payerId: ${paymentMeta.payerId} and currency: ${paymentMeta.currency}.`)
+      const dfspCurrencyPayee = dfspCurrencies[`${paymentMeta.payeeId}:${paymentMeta.currency}`]
+      assert(dfspCurrencyPayee, `dfspCurrency not found for payeeId: ${paymentMeta.payeeId} and currency: ${paymentMeta.currency}.`)
+
+      const netDebitCapPayer = netDebitCapMap[`${paymentMeta.payerId}:${paymentMeta.currency}`]
+      assert(netDebitCapPayer, `net debit cap not found for payerId: ${paymentMeta.payerId} and currency: ${paymentMeta.currency}.`)
+      const netDebitCapPayee = netDebitCapMap[`${paymentMeta.payeeId}:${paymentMeta.currency}`]
+      assert(netDebitCapPayee, `net debit cap not found for payeeId: ${paymentMeta.payeeId} and currency: ${paymentMeta.currency}.`)
+
+      transfers.push(
+        // 1. Abort the logical payment.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          pending_id: prepareId,
+          debit_account_id: 0n,
+          credit_account_id: 0n,
+          user_data_128: prepareId,
+          amount: 0n,
+          ledger: 0,
+          code: 0,
+          flags: TransferFlags.linked | TransferFlags.void_pending_transfer,
+        },
+        // 2. Move funds back to unrestricted.
+        {
+          ...Helper.createTransferTemplate,
+          id: id(),
+          debit_account_id: dfspCurrencyPayer.reserved,
+          credit_account_id: dfspCurrencyPayer.unrestricted,
+          amount: amountTigerBeetle,
+          user_data_128: prepareId,
+          ledger: currencyConfig.idOperation,
+          code: TransferCode.Clearing_Credit,
+          flags: TransferFlags.linked
+        },
+        // 3 - 10 Run the NDC template.
+        ...this.transferTemplateNDC(
+          netDebitCapPayer.type === 'LIMITED' ? netDebitCapPayer.amount : amount_max,
+          dfspCurrencyPayer,
+          currencyConfig
+        )
+      )
+    }
+
+    return transfers
+  }
+
+  public mapResultsExpire(
+    resultsCreateTransfers: Array<CreateTransferResult>,
+    paymentMetas: Array<PaymentMeta>
+  ): Array<ExpireResult> {
+    assert(resultsCreateTransfers.length === paymentMetas.length * Helper.ampFactorExpire)
+
+    const resultsExpire: Array<ExpireResult> = []
+    for (let idxPayment = 0; idxPayment < paymentMetas.length; idxPayment++) {
+      const payment = paymentMetas[idxPayment]
+      const resultsPayment = resultsCreateTransfers.slice(
+        idxPayment * Helper.ampFactorExpire,
+        idxPayment + 1 * Helper.ampFactorExpire
+      )
+      assert(resultsPayment.length === Helper.ampFactorExpire)
+
+      resultsPayment.forEach((result, idx) => {
+        if (result.status === CreateTransferStatus.linked_event_failed) return
+        if (idx === 0) {
+          switch (result.status) {
+            case CreateTransferStatus.created:
+              resultsExpire.push({ id: payment.id, result: 'OK' })
+              return
+            case CreateTransferStatus.pending_transfer_already_posted:
+              resultsExpire.push({ id: payment.id, result: 'ALREADY_FULFILED' })
+              return
+            case CreateTransferStatus.pending_transfer_already_voided:
+              resultsExpire.push({ id: payment.id, result: 'ALREADY_EXPIRED' })
+            return
+          }
+        }
+        if (result.status === CreateTransferStatus.created) return
+
+        throw new Error(`Unhandled error at idx: ${idx}, ${CreateTransferStatus[result.status]}`)
+      })
+    }
+    return resultsExpire
+  }
+
+  /**
+   * Batch-safe wrapper around TigerBeetle's createTransfers. If the transfers exceeds the max
+   * batch size, it looks for logical breaks in linked chains to split into separate batches 
+   * and recombines them into a single result array.
+   */
+  public async createTransfersInBatches(
+    client: Client,
+    transfers: Array<Transfer>
+  ): Promise<Array<CreateTransferResult>> {
+    if (transfers.length < Helper.maxBatchSize) {
+      return client.createTransfers(transfers)
+    }
+
+    // Explicit limit, just to be safe! We can change this to be higher if needed.
+    const MAX_BATCHES = 100
+    if (transfers.length > MAX_BATCHES * Helper.maxBatchSize) {
+      throw new Error(`createTransfersInBatches can create at most ${MAX_BATCHES * Helper.maxBatchSize} transfers.`)
+    }
+
+    const results: Array<CreateTransferResult> = []
+    for (let idxBatch = 0; idxBatch <= MAX_BATCHES; idxBatch++) {
+      if (results.length === transfers.length) return results
+      if (results.length > transfers.length) throw new Error('Duplicated result somehow')
+
+      // Go backwards from the last entry that could fit and look for the end of a linked chain.
+      for (let idx = Helper.maxBatchSize - 1; idx > 0; idx--) {
+        const transfer = transfers[idx]
+        // We found a break.
+        if ((transfer.flags & TransferFlags.linked) !== TransferFlags.linked) {
+          // Mutates the original array!
+          const subset = transfers.splice(0, idx)
+          const resultsSubset = await client.createTransfers(subset)
+          results.push(...resultsSubset)
+        }
+
+        throw new Error(`No break in linked chain found for: ${Helper.maxBatchSize} transfers.`)
+      }
+    }
+    throw new Error(`Missing result.`)
+  }
+
+  public mapResultsTimeoutBookmark(results: Array<CreateTransferResult>): void {
+    results.forEach((result, idx) => {
+      if (result.status === CreateTransferStatus.created) return
+
+      throw new Error(`mapResultsTimeoutBookmark unhandled tigerbeetle error at ${idx}, ${CreateTransferStatus[result.status]}`)
+    })
+  }
+
   public static fromMojaloopId(mojaloopId: string): bigint {
     assert(mojaloopId)
     // TODO: assert that this actually is a uuid
@@ -1443,13 +1639,13 @@ export default class Helper {
   public static toMojaloopId(id: bigint): string {
     assert(id !== undefined && id !== null, 'id is required')
 
-    // Convert bigint to hex string (without 0x prefix)
+    // Convert bigint to hex string (without 0x prefix).
     let hex = id.toString(16);
 
-    // Pad to 32 characters (128 bits = 16 bytes = 32 hex chars)
+    // Pad to 32 characters (128 bits = 16 bytes = 32 hex chars).
     hex = hex.padStart(32, '0');
 
-    // Insert dashes to create UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    // Insert dashes to create UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
   }
 

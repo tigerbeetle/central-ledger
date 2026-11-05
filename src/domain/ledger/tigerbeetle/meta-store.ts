@@ -197,7 +197,6 @@ export type NetDebitCap = {
  */
 export type ParticipantLocation = 'LOCAL' | 'PROXY'
 
-
 /**
  * Metadata relating to the payment.
  */
@@ -746,6 +745,19 @@ export default class MetaStore {
   public async savePreparesAndPayments(prepares: Array<PrepareMeta>, payments: Array<PaymentMeta>) {
     await this.savePrepareMetas(prepares)
     await this.savePaymentMetas(payments)
+  }
+
+  /**
+   * Look up the payments that might have expired between the two given dates.
+   */
+  public async lookupPaymentsByExpiryBetween(start: Date, end: Date): Promise<Array<PaymentMeta>> {
+    assert(end.getTime() > start.getTime())
+
+    const rows = await this.db('metaPayment')
+      .whereBetween('expiration', [start, end])
+      .select('*')
+
+    return rows.map(MetaStore.hydratePaymentMeta)
   }
 
   public async queryDfspRootsWithCurrencies(): Promise<{

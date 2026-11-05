@@ -1762,7 +1762,7 @@ export class LedgerSql implements Ledger {
     } catch (err) {
       return Result.commandResultFailure(err)
     } finally {
-      await knex.raw(`SELECT RELEASE_LOCK("timeout_handler")`)
+      await db.getKnex().raw(`SELECT RELEASE_LOCK("timeout_handler")`)
     }
   }
 

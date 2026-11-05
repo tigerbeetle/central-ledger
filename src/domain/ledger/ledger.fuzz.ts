@@ -68,9 +68,9 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it('runs the fuzzer for LedgerTigerBeetle', async (context) => {
+  it.only('runs the fuzzer for LedgerTigerBeetle', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 1000)
-    const trace = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'DETAILED')
+    const trace = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'NONE')
 
     const dirTrace = `.fuzz_output/${filename}/${sanitizeTestName(context.name)}`
     const pathTrace = `${dirTrace}/trace.txt`
@@ -79,7 +79,7 @@ describe('Ledger Fuzz', () => {
     console.log(`Fuzz trace written to ${pathTrace}.`)
   })
 
-  it.only('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
+  it('LedgerSql and LedgerTigerBeetle are identical', async (context) => {
     const stepsMax = envOrDefaultNumber('STEPS_MAX', 250)
     const traceA = await run(stepsMax, { LEDGER: 'SQL' }, 'LEGACY')
     const traceB = await run(stepsMax, { LEDGER: 'TIGERBEETLE' }, 'LEGACY')
@@ -508,7 +508,7 @@ class LedgerFuzzer {
       getNetDebitCaps: 1,
       prepare: 100,
       fulfil: 50,
-      sweepTimedOut: 0,
+      sweepTimedOut: 5,
       lookupTransfer: 0,
       closeSettlementWindow: 0,
       settlementPrepare: 0,
