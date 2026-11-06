@@ -4,8 +4,8 @@ import crypto, { hash } from "crypto";
 import assert from "assert";
 import { ContextPayments, CurrencyConfig, DfspCurrency, DfspRoot, FulfilMeta, InternalDfspCurrency, NetDebitCap, ParticipantLocation, PaymentMeta, PrepareMeta } from "./meta-store";
 import { AccountCode, LedgerAccount, LegacyLedgerAccountNoValue, PayloadFinalizedTransfer, TransferCode } from "../shared/types";
-import { CreatePaymentDto, PaymentPrepareResult, PrepareHandlerInput } from "../../../handlers/payment-prepare";
-import { CommitPaymentDto, FulfilHandlerInput, PaymentFulfilResult } from "../../../handlers/payment-fulfil";
+import { CreatePaymentDto, PaymentPrepareResult, PaymentPrepareResultTag, PrepareHandlerInput } from "../../../handlers/payment-prepare";
+import { CommitPaymentDto, FulfilHandlerInput, PaymentFulfilResult, PaymentFulfilResultTag } from "../../../handlers/payment-fulfil";
 import { Effect } from "../../../messaging/message-bus";
 import { ApplicationConfig } from "../../../lib/config";
 import { Enum, EventActionEnum, Util } from '@mojaloop/central-services-shared';
@@ -76,6 +76,8 @@ export type FulfilInternalStatus = {
   tag: 'PREPARE_EXPIRED'
 } | {
   tag: 'INVALID_FULFILMENT'
+} | {
+  tag: 'PASS_VALIDATION'
 } | {
   tag: 'OK',
   fulfilMeta: FulfilMeta
@@ -988,20 +990,20 @@ export default class Helper {
     switch (status.tag) {
       case "OK": {
         return {
-          tag: 'OK',
+          tag: PaymentPrepareResultTag.OK,
           input: prepare
         }
       }
       case "FAIL_VALIDATION": {
         return {
-          tag: 'FAIL_VALIDATION',
+          tag: PaymentPrepareResultTag.FAIL_VALIDATION,
           failureReasons: status.failureReasons,
           input: prepare,
         }
       }
       case "MODIFIED": {
         return {
-          tag: 'MODIFIED',
+          tag: PaymentPrepareResultTag.MODIFIED,
           input: prepare,
         }
       }
@@ -1010,7 +1012,7 @@ export default class Helper {
         const abortedAt = status.context.prepareMeta.abortedAt || status.context.fulfilMeta.abortedAt
         assert(abortedAt, 'Expected either prepareMeta.abortedAt or fulfilMeta.abortedAt.')
         return {
-          tag: 'DUPLICATE_FINAL',
+          tag: PaymentPrepareResultTag.DUPLICATE_FINAL,
           context: {
             id: status.context.prepareMeta.id,
             abortedAt
@@ -1024,7 +1026,7 @@ export default class Helper {
         assert(fulfiledAt)
         assert(fulfilment)
         return {
-          tag: 'DUPLICATE_FINAL',
+          tag: PaymentPrepareResultTag.DUPLICATE_FINAL,
           context: {
             id: status.context.prepareMeta.id,
             fulfiledAt,
@@ -1035,27 +1037,27 @@ export default class Helper {
       }
       case "DUPLICATE_NON_FINAL": {
         return {
-          tag: 'DUPLICATE_NON_FINAL',
+          tag: PaymentPrepareResultTag.DUPLICATE_NON_FINAL,
           input: prepare,
         }
       }
       case "FAIL_ACCOUNT_CLOSED": {
         // Backwards compatibility. LedgerSql doesn't keep the closed account validation around.
         return {
-          tag: 'FAIL_VALIDATION',
+          tag: PaymentPrepareResultTag.FAIL_VALIDATION,
           failureReasons: ['account closed'],
           input: prepare,
         }
       }
       case "FAIL_LIQUIDITY": {
         return {
-          tag: 'FAIL_LIQUIDITY',
+          tag: PaymentPrepareResultTag.FAIL_LIQUIDITY,
           input: prepare,
         }
       }
       case "FAIL_OTHER": {
         return {
-          tag: 'FAIL_OTHER',
+          tag: PaymentPrepareResultTag.FAIL_OTHER,
           input: prepare,
         }
       }
@@ -1227,12 +1229,15 @@ export default class Helper {
     status: FulfilInternalStatus
   ): PaymentFulfilResult {
     switch (status.tag) {
+      case 'PASS_VALIDATION': {
+        throw new Error(`Internal status only: ${status.tag}.`)
+      }
       case 'OK': {
         // Was fulfiled.
         assert(status.fulfilMeta.fulfiledAt)
         assert(status.fulfilMeta.fulfilment)
         return {
-          tag: 'OK',
+          tag: PaymentFulfilResultTag.OK,
           context: {
             id: status.fulfilMeta.id,
             fulfilment: status.fulfilMeta.fulfilment,
@@ -1246,7 +1251,7 @@ export default class Helper {
         assert(status.fulfilMeta.abortedAt)
 
         return {
-          tag: 'ABORT_OK',
+          tag: PaymentFulfilResultTag.ABORT_OK,
           context: {
             id: status.fulfilMeta.id,
             abortedAt: status.fulfilMeta.abortedAt
@@ -1257,13 +1262,13 @@ export default class Helper {
       case 'PREPARE_NOT_FOUND':
       case 'PREPARE_ALREADY_ABORTED':
         return {
-          tag: 'FAIL_VALIDATION',
+          tag: PaymentFulfilResultTag.FAIL_VALIDATION,
           failureReasons: ['Invalid or missing prepare.'],
           input: fulfil
         }
       case 'PREPARE_EXPIRED': {
         return {
-          tag: 'EXPIRED',
+          tag: PaymentFulfilResultTag.EXPIRED,
           input: fulfil,
         }
       }
@@ -1272,7 +1277,7 @@ export default class Helper {
         assert(status.fulfilMeta.fulfilment)
 
         return {
-          tag: 'DUPLICATE_FINAL',
+          tag: PaymentFulfilResultTag.DUPLICATE_FINAL,
           context: {
             id: status.fulfilMeta.id,
             fulfilment: status.fulfilMeta.fulfilment,
@@ -1285,7 +1290,7 @@ export default class Helper {
         assert(status.fulfilMeta.abortedAt)
 
         return {
-          tag: 'DUPLICATE_FINAL',
+          tag: PaymentFulfilResultTag.DUPLICATE_FINAL,
           context: {
             id: status.fulfilMeta.id,
             abortedAt: status.fulfilMeta.abortedAt
@@ -1294,19 +1299,19 @@ export default class Helper {
         }
       case 'INVALID_FULFILMENT': {
         return {
-          tag: 'INVALID_FULFILMENT',
+          tag: PaymentFulfilResultTag.INVALID_FULFILMENT,
           input: fulfil
         }
       }
       case 'MODIFIED': {
         return {
-          tag: 'MODIFIED',
+          tag: PaymentFulfilResultTag.MODIFIED,
           input: fulfil
         }
       }
       case 'FAIL_VALIDATION': {
         return {
-          tag: 'FAIL_VALIDATION',
+          tag: PaymentFulfilResultTag.FAIL_VALIDATION,
           failureReasons: status.failureReasons,
           input: fulfil
         }
@@ -1553,7 +1558,7 @@ export default class Helper {
       const paymentMeta = paymentMetas[idxPayment]
       const resultsPayment = resultsCreateTransfers.slice(
         idxPayment * Helper.ampFactorExpire,
-        idxPayment + 1 * Helper.ampFactorExpire
+        (idxPayment + 1) * Helper.ampFactorExpire
       )
       assert(resultsPayment.length === Helper.ampFactorExpire)
 
@@ -1562,26 +1567,27 @@ export default class Helper {
         if (idx === 0) {
           switch (result.status) {
             case CreateTransferStatus.created:
-              resultsExpire.push({ 
-                id: paymentMeta.id, 
+              resultsExpire.push({
+                id: paymentMeta.id,
                 result: 'OK',
                 paymentMeta
               })
               return
             case CreateTransferStatus.pending_transfer_already_posted:
-              resultsExpire.push({ 
-                id: paymentMeta.id, 
+              resultsExpire.push({
+                id: paymentMeta.id,
                 result: 'ALREADY_FULFILED',
                 paymentMeta
               })
               return
+            case CreateTransferStatus.pending_transfer_not_found:
             case CreateTransferStatus.pending_transfer_already_voided:
-              resultsExpire.push({ 
-                id: paymentMeta.id, 
+              resultsExpire.push({
+                id: paymentMeta.id,
                 result: 'ALREADY_EXPIRED',
                 paymentMeta
               })
-            return
+              return
           }
         }
         if (result.status === CreateTransferStatus.created) return

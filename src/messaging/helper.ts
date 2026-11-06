@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { randomUUID } from "node:crypto";
-import { CommitPaymentDtoAborted, FulfilContextFulfiled, FulfilHandlerInput, PaymentFulfilResult } from "../handlers/payment-fulfil";
-import { PaymentPrepareResult, PrepareHandlerInput } from "../handlers/payment-prepare";
+import { CommitPaymentDtoAborted, FulfilContextFulfiled, FulfilHandlerInput, PaymentFulfilResult, PaymentFulfilResultTag } from "../handlers/payment-fulfil";
+import { PaymentPrepareResult, PaymentPrepareResultTag, PrepareHandlerInput } from "../handlers/payment-prepare";
 import { ApplicationConfig } from "../lib/config";
 import { Effect } from "./message-bus";
 import { ForwardedFxTransfer, ForwardedTransfer, TimedOutFxTransfer, TimedOutTransfer } from "../models/transfer/facade";
@@ -57,45 +57,45 @@ export default class MessagingHelper {
     // Shortcut.
     const input = result.input
     switch (result.tag) {
-      case 'FAIL_VALIDATION': {
+      case PaymentPrepareResultTag.FAIL_VALIDATION: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
           result.failureReasons.join(', ')
         )
         return [this.buildEffectPrepareNotificationError(input, fspiopError)]
       }
-      case 'MODIFIED': {
+      case PaymentPrepareResultTag.MODIFIED: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST
         )
         return [this.buildEffectPrepareNotificationError(input, fspiopError)]
       }
-      case 'DUPLICATE_FINAL': {
+      case PaymentPrepareResultTag.DUPLICATE_FINAL: {
         return [this.buildEffectPrepareNotificationDuplicate(input, result.context)]
       }
-      case 'DUPLICATE_NON_FINAL': return []
-      case 'FAIL_ACCOUNT_CLOSED': {
+      case PaymentPrepareResultTag.DUPLICATE_NON_FINAL: return []
+      case PaymentPrepareResultTag.FAIL_ACCOUNT_CLOSED: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
           'Account closed'
         )
         return [this.buildEffectPrepareNotificationError(input, fspiopError)]
       }
-      case 'FAIL_LIQUIDITY': {
+      case PaymentPrepareResultTag.FAIL_LIQUIDITY: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.PAYER_FSP_INSUFFICIENT_LIQUIDITY
         )
         return [this.buildEffectPrepareNotificationErrorLiquidity(input, fspiopError)]
       }
-      case 'FAIL_OTHER': {
+      case PaymentPrepareResultTag.FAIL_OTHER: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR
         )
         return [this.buildEffectPrepareNotificationError(input, fspiopError)]
       }
       // Special case for UNFUSE handler. We need to emit a prepare position message.
-      case 'PREPARE_NEXT': return [result.effectPosition]
-      case 'OK': return [
+      case PaymentPrepareResultTag.PREPARE_NEXT: return [result.effectPosition]
+      case PaymentPrepareResultTag.OK: return [
         this.buildEffectPrepareNotificationSuccess(input)
       ]
       default: {
@@ -109,20 +109,20 @@ export default class MessagingHelper {
     // Shortcut.
     const input = result.input
     switch (result.tag) {
-      case 'FAIL_VALIDATION': {
+      case PaymentFulfilResultTag.FAIL_VALIDATION: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
           result.failureReasons.join(', ')
         )
         return [this.buildEffectFulfilNotificationError(input, fspiopError)]
       }
-      case 'EXPIRED': {
+      case PaymentFulfilResultTag.EXPIRED: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.TRANSFER_EXPIRED
         )
         return [this.buildEffectFulfilNotificationError(input, fspiopError)]
       }
-      case 'INVALID_FULFILMENT': {
+      case PaymentFulfilResultTag.INVALID_FULFILMENT: {
         const errorFspiop = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.VALIDATION_ERROR,
           'invalid fulfilment'
@@ -130,37 +130,37 @@ export default class MessagingHelper {
 
         return [this.buildEffectFulfilNotificationError(input, errorFspiop)]
       }
-      case 'MODIFIED': {
+      case PaymentFulfilResultTag.MODIFIED: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.MODIFIED_REQUEST
         )
         return [this.buildEffectFulfilNotificationError(input, fspiopError)]
       }
-      case 'DUPLICATE_FINAL': {
+      case PaymentFulfilResultTag.DUPLICATE_FINAL: {
         // TODO: what about duplicate aborted?
         // @ts-ignore
         return [this.buildEffectFulfilDuplicate(input, result.context)]
       }
-      case 'DUPLICATE_NON_FINAL': return []
+      case PaymentFulfilResultTag.DUPLICATE_NON_FINAL: return []
 
 
-      case 'FAIL_OTHER': {
+      case PaymentFulfilResultTag.FAIL_OTHER: {
         const fspiopError = ErrorHandler.Factory.createFSPIOPError(
           ErrorHandler.Enums.FSPIOPErrorCodes.INTERNAL_SERVER_ERROR
         )
         return [this.buildEffectFulfilNotificationError(input, fspiopError)]
       }
       // Special case for UNFUSE handler. We need to emit a fulfil position + notification message.
-      case 'FULFIL_NEXT': return result.effects
+      case PaymentFulfilResultTag.FULFIL_NEXT: return result.effects
 
-      case 'ABORT_OK': {
+      case PaymentFulfilResultTag.ABORT_OK: {
         const payload = input.payload as CommitPaymentDtoAborted
         const fspiopError = ErrorHandler.Factory.createFSPIOPErrorFromErrorInformation(
           payload.errorInformation
         )
         return [this.buildEffectAbortNotification(input, fspiopError)]
       }
-      case 'OK': {
+      case PaymentFulfilResultTag.OK: {
         const effects = [
           // @ts-ignore
           this.buildEffectFulfilNotificationSuccess(input, result.context),

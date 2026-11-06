@@ -2127,8 +2127,11 @@ export class LedgerTigerBeetle implements Ledger {
     const fulfilHashes = fulfils.map(input => Helper.hashFulfil(input.transferId, input.payload))
 
     // Results are arrays that line up with the fulfils.
+    // TODO: check for expiry!
     const resultsValidation = this.fulfilCheckValid(fulfils, context, netDebitCaps, fulfilHashes)
+    const resultsIdempotent = this.fulfilCheckIdempotent(fulfils, context, fulfilHashes)
     assert.equal(fulfils.length, resultsValidation.length)
+    assert.equal(fulfils.length, resultsIdempotent.length)
 
     const idsAborted: Array<string> = []
     const fulfilMetas: Array<FulfilMeta> = []
@@ -2137,15 +2140,21 @@ export class LedgerTigerBeetle implements Ledger {
     const hashesNext: Array<number> = []
     for (let idx = 0; idx < fulfils.length; idx++) {
       const resultValidation = resultsValidation[idx]
+      const resultIdempotent = resultsIdempotent[idx]
       const fulfil = fulfils[idx]
       const hash = fulfilHashes[idx]
 
       assert(resultValidation)
+      assert(resultIdempotent)
       assert(fulfil)
       assert(hash)
 
       fulfilMetas.push({ id: fulfil.transferId, payloadHash: hash })
-      if (resultValidation.tag !== 'OK') {
+      if (resultValidation.tag !== 'PASS_VALIDATION') {
+        idsAborted.push(fulfil.transferId)
+        continue
+      }
+      if (resultIdempotent.tag !== 'OK') {
         idsAborted.push(fulfil.transferId)
         continue
       }
@@ -2155,6 +2164,7 @@ export class LedgerTigerBeetle implements Ledger {
       hashesNext.push(hash)
     }
     await this.metaStore.saveFulfilMetas(fulfilMetas)
+    // TODO: if the prepare is expired, then we should make sure to void the pending payment.
     const transfers = this.helper.buildTransfersFulfil(
       fulfilsNext.map(item => item.fulfil), context, netDebitCaps, hashesNext
     )
@@ -2177,7 +2187,10 @@ export class LedgerTigerBeetle implements Ledger {
     for (let idx = 0; idx < fulfils.length; idx++) {
       const fulfil = fulfils[idx]
       const resultValidation = resultsValidation[idx]
+      const resultIdempotent = resultsIdempotent[idx]
       assert(resultValidation)
+      assert(resultIdempotent)
+
       const resultCreateTransfers = resultsCreateTransfers[idx]
 
       if (resultCreateTransfers && resultCreateTransfers.tag !== 'OK') {
@@ -2185,7 +2198,12 @@ export class LedgerTigerBeetle implements Ledger {
       }
 
       let failure
-      if (resultValidation.tag !== 'OK') {
+      // Preference order of errors, to match ledger-sql.
+      if (resultValidation.tag === 'PREPARE_NOT_FOUND') {
+        failure = resultValidation
+      } else if (resultIdempotent.tag !== 'OK') {
+        failure = resultIdempotent
+      } else if (resultValidation.tag !== 'PASS_VALIDATION') {
         failure = resultValidation
       } else if (resultsCreateTransfers && resultCreateTransfers?.tag !== 'OK') {
         failure = resultCreateTransfers
@@ -2257,22 +2275,6 @@ export class LedgerTigerBeetle implements Ledger {
         }
       }
 
-      const fulfilMeta = context.fulfilMetas[fulfil.transferId]
-      if (fulfilMeta) {
-        if (fulfilMeta.payloadHash === hash) {
-          if (fulfilMeta.fulfiledAt) {
-            return { tag: 'ALREADY_FULFILLED', fulfilMeta }
-          }
-          if (fulfilMeta.abortedAt) {
-            return { tag: 'ALREADY_ABORTED', fulfilMeta, timestamp: fulfilMeta.abortedAt }
-          }
-          throw new Error('fulfilMeta expected either abortedAt or fulfiledAt!')
-        }
-        else {
-          return { tag: 'MODIFIED' }
-        }
-      }
-
       const rootPayer = dfspRootsMap[paymentMeta.payerId]
       const rootPayee = dfspRootsMap[paymentMeta.payeeId]
       const netDebitCapPayer = netDebitCapsMap[`${paymentMeta.payerId}:${paymentMeta.currency}`]
@@ -2307,6 +2309,36 @@ export class LedgerTigerBeetle implements Ledger {
       // TODO: for forwarded prepares, we need to ignore the expiration.
       if (new Date() > paymentMeta.expiration) {
         return { tag: 'PREPARE_EXPIRED' }
+      }
+
+      return { tag: 'PASS_VALIDATION' }
+    })
+  }
+
+  private fulfilCheckIdempotent(
+    fulfils: Array<FulfilHandlerInput>,
+    context: ContextPayments,
+    hashes: Array<number>
+  ): Array<FulfilInternalStatus> {
+
+    return fulfils.map((fulfil, idx) => {
+      const hash = hashes[idx]
+      assert(hash)
+
+      const fulfilMeta = context.fulfilMetas[fulfil.transferId]
+      if (fulfilMeta) {
+        if (fulfilMeta.payloadHash === hash) {
+          if (fulfilMeta.fulfiledAt) {
+            return { tag: 'ALREADY_FULFILLED', fulfilMeta }
+          }
+          if (fulfilMeta.abortedAt) {
+            return { tag: 'ALREADY_ABORTED', fulfilMeta, timestamp: fulfilMeta.abortedAt }
+          }
+          throw new Error('fulfilMeta expected either abortedAt or fulfiledAt!')
+        }
+        else {
+          return { tag: 'MODIFIED' }
+        }
       }
 
       return { tag: 'OK', fulfilMeta }
