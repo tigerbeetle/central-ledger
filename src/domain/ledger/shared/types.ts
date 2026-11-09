@@ -202,6 +202,7 @@ export enum AccountCode {
   Clearing_Credit = 20101,
   Restricted = 20200,
   Reserved = 20300,
+  Return = 20400,
   Committed_Outgoing = 20400,
   Dfsp = 60100,
   Net_Debit_Cap = 60200,
@@ -422,34 +423,12 @@ export type SetNetDebitCapCommand = {
   currency: string
 }
 
-export enum DeactivateDfspResponseType {
-  /**
-   * Closed the account successfully
-   */
-  SUCCESS = 'SUCCESS',
-
-  /**
-   * Account is already closed
-   */
-  ALREADY_CLOSED = 'ALREADY_CLOSED',
-
-  /**
-   * Retryable error - control account not created
-   */
-  CREATE_ACCOUNT = 'CREATE_ACCOUNT',
-
-  /**
-   * Fatal Error
-   */
-  FAILED = 'FAILED'
-}
-
 export type DeactivateDfspResponse = {
-  type: DeactivateDfspResponseType.SUCCESS | DeactivateDfspResponseType.ALREADY_CLOSED
+  type: 'SUCCESS'
 } | {
-  type: DeactivateDfspResponseType.CREATE_ACCOUNT
+  type: 'ALREADY_CLOSED' | 'CREATE_ACCOUNT'
 } | {
-  type: DeactivateDfspResponseType.FAILED
+  type: 'FAILURE'
   error: Error
 }
 

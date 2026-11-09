@@ -25,7 +25,7 @@ import {
   TransferProxyObligation
 } from "../../../handlers/transfer-types";
 import { ApplicationConfig } from "../../../lib/config";
-import { Effect, MessageBus } from "../../../messaging/message-bus";
+import { Effect } from "../../../messaging/message-bus";
 import ParticipantFacade from '../../../models/participant/facade';
 import { getTransferErrorDuplicateCheck } from '../../../models/transfer/transferErrorDuplicateCheck';
 import { logger } from "../../../shared/logger";
@@ -551,14 +551,12 @@ export class LedgerSql implements Ledger {
         assert(ledgerAccountType)
         const formattedAccount: LegacyLedgerAccount = {
           id: BigInt(currency.participantCurrencyId),
-          // TODO: disabled this for now, the LedgerSql implementation is quite hard to 
-          // match with LedgerTigerBeetle since the database autoincrements the id on failure.
-          // id: BigInt(0),
           ledgerAccountType,
           currency: currency.currencyId,
           isActive: Boolean(currency.isActive),
           changedDate: new Date(currency.createdDate),
           createdDate: new Date(currency.createdDate),
+          // TODO:
           // These feel wrong to me - we should just return the value anyway
           // but the getByName query doesn't look up account values.
           value: 0,

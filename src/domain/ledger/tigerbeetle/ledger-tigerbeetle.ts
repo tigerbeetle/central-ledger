@@ -1,5 +1,5 @@
 import { Enum } from '@mojaloop/central-services-shared';
-import assert from "node:assert";
+import assert, { fail } from "node:assert";
 import {
   AccountFilterFlags,
   AccountFlags,
@@ -33,7 +33,6 @@ import {
   CreateHubAccountCommand,
   CreateHubAccountResponse,
   DeactivateDfspResponse,
-  DeactivateDfspResponseType,
   DepositCommand,
   DepositResponse,
   DfspAccountResponse,
@@ -81,15 +80,13 @@ import {
   WithdrawPrepareCommand,
   WithdrawPrepareResponse
 } from "../shared/types";
-const { TransferState } = Enum.Transfers
 
 import SettlementDomain from '../../settlement';
 import { CloseDfspMasterAccountFailureType, DepositFailureType, DisableDfspAccountFailureType, EnableDfspAccountFailureType, FulfilFailureType, FulfilInternalStatus, default as Helper, default as LedgerTigerBeetleHelper, PrepareFailureType, PrepareInternalStatus, SetNetDebitCapFailureType, TransferFailureResult, WithdrawAbortFailureType, WithdrawCommitFailureType, WithdrawPrepareFailureType } from './helper';
 import { CmdHubCurrencyEnable, ContextPayments, CurrencyConfig, DfspCurrency, DfspRoot, FulfilMeta, FulfilMetaUpdate, GetPaymentMetaResult, InternalDfspCurrency, InternalDfspRoot, NetDebitCap, ParticipantLocation, PaymentMeta, PrepareMeta } from './meta-store';
-import { Reporter } from '../shared/reporter';
 import MetaStore from './meta-store';
 import { PaymentTimeout, TimeoutResult } from '../../../handlers/timeout-v2';
-import { TimedOutTransfer } from '../../../models/transfer/facade';
+
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
 
@@ -167,14 +164,14 @@ export class LedgerTigerBeetle implements Ledger {
 
       await SettlementDomain.createSettlementModel(cmd.settlementModel)
       return Result.emptyCommandResultSuccess()
-    } catch (err: any) {
-      if (err.message === 'Settlement Model already exists') {
+    } catch (error: any) {
+      if (error.message === 'Settlement Model already exists') {
         return {
           type: 'ALREADY_EXISTS_SETTLEMENT_MODEL'
         }
       }
 
-      return Result.commandResultFailure(err)
+      return Helper.failure(error)
     }
   }
 
@@ -249,44 +246,10 @@ export class LedgerTigerBeetle implements Ledger {
 
       const accounts = this.helper.buildAccountsDfsp(dfspCurrency, currencyConfig, dfspRoot.id)
       const createAccountResults = await this.client.createAccounts(accounts)
-      let fatal = false
-      const readableErrors: Array<any> = []
-      createAccountResults.forEach((result, idx) => {
-        // Ignore these.
-        if (result.status === CreateAccountStatus.linked_event_failed) return
-        if (result.status === CreateAccountStatus.created) return
-        if (result.status === CreateAccountStatus.exists) return
-        // This is fine, the 'different flags' could be closed.
-        if (result.status === CreateAccountStatus.exists_with_different_flags) return
-
-        // If the master account was already created, then by definition it exists with a different
-        // user_data_64.
-        if (idx === 3 &&
-          result.status === CreateAccountStatus.exists_with_different_user_data_64) return
-
-        readableErrors.push(CreateAccountStatus[result.status])
-        const failedAccount = accounts[idx]
-        console.error(`Batch account at ${idx} failed to create: ${CreateAccountStatus[result.status]}.\n`
-          + `Failed account: ${LedgerTigerBeetleHelper.stringify(failedAccount)}.`
-        )
-        fatal = true
-      })
-
-      if (fatal) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`LedgerError: ${readableErrors.join(',')}`)
-        }
-      }
-
-      return {
-        type: 'SUCCESS'
-      }
+      this.helper.mapCreateAccountResults(createAccountResults, accounts)
+      return Helper.successEmpty()
     } catch (error: any) {
-      return {
-        type: 'FAILURE',
-        error
-      }
+      return Helper.failure(error)
     }
   }
 
@@ -298,27 +261,27 @@ export class LedgerTigerBeetle implements Ledger {
       const dfspRoot = await this.metaStore.getDfspRoot(cmd.dfspId)
       let closeAccountResult = await this.closeDfspMasterAccount(dfspRoot.id)
 
-      if (closeAccountResult.type === DeactivateDfspResponseType.CREATE_ACCOUNT) {
+      if (closeAccountResult.type === 'CREATE_ACCOUNT') {
         await this.createAccountDevNull()
         closeAccountResult = await this.closeDfspMasterAccount(dfspRoot.id)
 
-        if (closeAccountResult.type === DeactivateDfspResponseType.CREATE_ACCOUNT) {
+        if (closeAccountResult.type === 'CREATE_ACCOUNT') {
           throw new Error(`Failed to closeDfspMasterAccount again with no DevNull account!`)
         }
       }
 
-      if (closeAccountResult.type === DeactivateDfspResponseType.FAILED) {
-        return Result.commandResultFailure(closeAccountResult.error)
+      if (closeAccountResult.type === 'FAILURE') {
+        return Helper.failure(closeAccountResult.error)
       }
 
-      return Result.emptyCommandResultSuccess()
-    } catch (err) {
-      return Result.commandResultFailure(err)
+      return Helper.successEmpty()
+    } catch (error: any) {
+      return Helper.failure(error)
     }
   }
 
   private async closeDfspMasterAccount(masterAccountId: bigint): Promise<DeactivateDfspResponse> {
-    // Create a closing transfer to mark this Dfsp as deactivated
+    // Create a closing transfer to mark this Dfsp as deactivated.
     const closingTransfer: Transfer = {
       ...Helper.createTransferTemplate,
       id: id(),
@@ -348,53 +311,40 @@ export class LedgerTigerBeetle implements Ledger {
         }
       }
 
-      throw new Error(`Unhandled createTransfers result at ${idx}, ${CreateTransferStatus[result.status]}`)
+      const status = CreateTransferStatus[result.status]
+      throw new Error(`Unhandled createTransfers result at ${idx}, ${status}`)
     })
 
     if (fatalErrors.length === 0) {
-      return {
-        type: DeactivateDfspResponseType.SUCCESS
-      }
+      return Helper.successEmpty()
     }
 
     const firstError = fatalErrors[0]
     switch (firstError.type) {
       case 'DEBIT_ACCOUNT_NOT_FOUND':
         return {
-          type: DeactivateDfspResponseType.CREATE_ACCOUNT
+          type: 'CREATE_ACCOUNT'
         }
       case 'ALREADY_CLOSED':
         return {
-          type: DeactivateDfspResponseType.ALREADY_CLOSED
+          type: 'ALREADY_CLOSED'
         }
       case 'UNKNOWN':
-        return {
-          type: DeactivateDfspResponseType.FAILED,
-          error: new Error(`closeDfspMasterAccount failed with unexpected error: `
-            + `${CreateTransferStatus[firstError.status]}`)
-        }
+        const status = CreateTransferStatus[firstError.status]
+        const error = new Error(`closeDfspMasterAccount failed with unexpected error: ${status}.`)
+        return Helper.failure(error)
     }
   }
 
-  /**
-   * Lazy creation of the devNull account. Used as a counterparty for things such as closing
-   * dfsp master accounts.
-   */
   private async createAccountDevNull(): Promise<void> {
-    const result = await this.deps.client.createAccounts([
-      {
-        ...LedgerTigerBeetleHelper.createAccountTemplate,
-        id: LedgerTigerBeetleHelper.accountIds.devNull,
-        ledger: LedgerTigerBeetleHelper.ledgerIds.globalControl,
-        code: AccountCode.Dev_Null,
-        flags: 0,
-      }
-    ])
+    const accounts = this.helper.buildAccountDevNull()
+    const result = await this.deps.client.createAccounts(accounts)
     const fatalErrors = result.map((result, idx) => {
       if (result.status === CreateAccountStatus.exists) return
       if (result.status === CreateAccountStatus.created) return
 
-      return `createAccounts at idx: ${idx} failed with error: ${CreateAccountStatus[result.status]}.`
+      const statusStr = CreateAccountStatus[result.status]
+      return `createAccounts at idx: ${idx} failed with error: ${statusStr}.`
     }).filter(status => status !== undefined)
 
     if (fatalErrors.length > 0) {
@@ -403,7 +353,7 @@ export class LedgerTigerBeetle implements Ledger {
     }
   }
 
-  public async enableDfsp(cmd: { dfspId: string; }): Promise<CommandResult<void>> {
+  public async enableDfsp(cmd: { dfspId: string }): Promise<CommandResult<void>> {
     assert(cmd)
     assert(cmd.dfspId)
 
@@ -424,9 +374,7 @@ export class LedgerTigerBeetle implements Ledger {
 
       if (transfers.length === 0) {
         // Account isn't closed, return success.
-        return {
-          type: 'SUCCESS'
-        }
+        return Helper.successEmpty()
       }
 
       // Get the the closing transfer and void it.
@@ -450,18 +398,14 @@ export class LedgerTigerBeetle implements Ledger {
         // Pending closing transfer has already been voided, so the account must be open!
         case CreateTransferStatus.pending_transfer_not_pending:
         case CreateTransferStatus.pending_transfer_already_voided:
-          return {
-            type: 'SUCCESS'
-          }
+          return Helper.successEmpty()
         default:
-          return {
-            type: 'FAILURE',
-            error: new Error(`enableDfsp failed to void closing transfer with error: `
-              + `${CreateTransferStatus[result.status]}`)
-          }
+          const statusStr = CreateTransferStatus[result.status]
+          const error = new Error(`enableDfsp failed to void transfer with error: ${statusStr}}`)
+          return Helper.failure(error)
       }
-    } catch (err) {
-      return Result.commandResultFailure(err)
+    } catch (error: any) {
+      return Helper.failure(error)
     }
   }
 
@@ -472,13 +416,11 @@ export class LedgerTigerBeetle implements Ledger {
     const accountId = BigInt(cmd.accountId)
 
     try {
-      // Only the Deposit and Unrestricted Accounts can be enabled/disabled
+      // Only the Deposit and Unrestricted Accounts can be enabled/disabled.
       const dfspCurrencies = await this.metaStore.getDfspCurrencies(cmd.dfspId)
       if (dfspCurrencies.length === 0) {
-        return {
-          type: 'FAILURE',
-          error: new Error(`enableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
-        }
+        const error = new Error(`enableDfspAccount() - dfsp: ${cmd.dfspId} not found.`)
+        return Helper.failure(error)
       }
 
       const { currency, code } = await this.metaStore.lookupDfspCurrencyByAccountId(cmd.dfspId, accountId)
@@ -486,10 +428,8 @@ export class LedgerTigerBeetle implements Ledger {
         case AccountCode.Unrestricted:
           break;
         default:
-          return {
-            type: 'FAILURE',
-            error: new Error(`enableDfspAccount() - account id not found, or is not Unrestricted.`)
-          }
+          const error = new Error(`enableDfspAccount() - account id not found, or is not Unrestricted.`)
+          return Helper.failure(error)
       }
 
       const currencyConfig = await this.metaStore.getCurrencyConfig(currency.currency)
@@ -508,11 +448,9 @@ export class LedgerTigerBeetle implements Ledger {
       })).filter(transfer => transfer.flags & TransferFlags.closing_credit)
 
       if (closingTransfers.length === 0) {
-        // no transfers found, therefore this account must not be closed
-        // treat is as successful
-        return {
-          type: 'SUCCESS'
-        }
+        // No transfers found, therefore this account must not be closed.
+        // Treat is as successful.
+        return Helper.successEmpty()
       }
       const lastClosingTransfer = closingTransfers[0]
       // Void the closing transfer to reopen this account.
@@ -546,8 +484,8 @@ export class LedgerTigerBeetle implements Ledger {
       })
 
       return Helper.successEmpty()
-    } catch (err: any) {
-      return Helper.failure(err)
+    } catch (error: any) {
+      return Helper.failure(error)
     }
   }
 
@@ -558,7 +496,7 @@ export class LedgerTigerBeetle implements Ledger {
     const accountId = BigInt(cmd.accountId)
 
     try {
-      // Only the Deposit and Unrestricted Accounts can be enabled/disabled
+      // Only the Deposit and Unrestricted Accounts can be enabled/disabled.
       const dfspCurrencies = await this.metaStore.getDfspCurrencies(cmd.dfspId)
       if (dfspCurrencies.length === 0) {
         return {
@@ -567,15 +505,16 @@ export class LedgerTigerBeetle implements Ledger {
         }
       }
 
-      const { currency, code } = await this.metaStore.lookupDfspCurrencyByAccountId(cmd.dfspId, accountId)
+      const {
+        currency,
+        code
+      } = await this.metaStore.lookupDfspCurrencyByAccountId(cmd.dfspId, accountId)
       switch (code) {
         case AccountCode.Unrestricted:
           break;
         default:
-          return {
-            type: 'FAILURE',
-            error: new Error(`disableDfspAccount() - Only Unrestricted account update is permitted.`)
-          }
+          const error = new Error(`disableDfspAccount - Can only update Unrestricted account.`)
+          return Helper.failure(error)
       }
 
       const currencyConfig = await this.metaStore.getCurrencyConfig(currency.currency)
@@ -804,10 +743,6 @@ export class LedgerTigerBeetle implements Ledger {
       const dfspCurrency = dfspCurrencyResult.result
       const currency = await this.metaStore.getCurrencyConfig(cmd.currency)
 
-      // const reporter = new Reporter({ledger: this, config: this.config})
-      // const bsPre = await reporter.balanceSheet(new Date())
-      // console.log("bsPre is \n" + bsPre.toTAccounts([cmd.dfspId], [cmd.currency]))
-
       let netDebitCapLockAmount = amount_max
       if (netDebitCap.type === 'LIMITED') {
         netDebitCapLockAmount = netDebitCap.amount
@@ -853,45 +788,31 @@ export class LedgerTigerBeetle implements Ledger {
 
       if (fatalErrors.length > 0) {
         const firstError = fatalErrors[0]
+        let error
         switch (firstError.type) {
           case 'EXISTS':
             return {
               type: 'ALREADY_EXISTS'
             }
           case 'MODIFIED':
-            return {
-              type: 'FAILURE',
-              error: new Error(`deposit failed - transfer already exists with different parameters`)
-            }
+            error = new Error(`deposit failed - transfer already exists with different parameters`)
+            break
           case 'CLOSED':
-            return {
-              type: 'FAILURE',
-              error: new Error(`deposit failed - the dfsp account is closed.`)
-            }
+            error = new Error(`deposit failed - the dfsp account is closed.`)
+            break
           case 'UNKNOWN':
-            return {
-              type: 'FAILURE',
-              error: new Error(`deposit failed with error: ${CreateTransferStatus[firstError.status]}`)
-            }
+            const statusStr = CreateTransferStatus[firstError.status]
+            error = new Error(`deposit failed with error: ${statusStr}`)
+            break
         }
+        return Helper.failure(error)
       }
-
-      // const bsPost = await reporter.balanceSheet(new Date())
-      // console.log("bsPost is \n" + bsPost.toTAccounts([cmd.dfspId], [cmd.currency]))
 
       // Backwards compatibility: Keep track of last deposit time in MetaStore.
-      await this.metaStore.updateChangedDateSettlement(
-        cmd.dfspId, cmd.currency, new Date()
-      )
-
-      return {
-        type: 'SUCCESS'
-      }
-    } catch (err: any) {
-      return {
-        type: 'FAILURE',
-        error: err
-      }
+      await this.metaStore.updateChangedDateSettlement(cmd.dfspId, cmd.currency, new Date())
+      return Helper.successEmpty()
+    } catch (error: any) {
+      return Helper.failure(error)
     }
   }
 
@@ -904,7 +825,7 @@ export class LedgerTigerBeetle implements Ledger {
     try {
       const dfspContext = await this.metaStore.getContextDfsps([cmd.currency], [cmd.dfspId])
       if (dfspContext.dfspCurrencies.length === 0) {
-        return Helper.failure(new Error(`No dfspCurrency found for dfsp: ${cmd.dfspId}, ${cmd.currency}.`))
+        return Helper.failure(new Error(`No dfspCurrency for: ${cmd.dfspId}, ${cmd.currency}.`))
       }
       const dfspCurrency = dfspContext.dfspCurrencies[0]
       if (dfspContext.dfspRoots.length === 0) {
@@ -937,14 +858,10 @@ export class LedgerTigerBeetle implements Ledger {
         switch (firstError.type) {
           case 'INSUFFICIENT_FUNDS':
             // Backwards compatibility - always update the changed date for the settlement account?
-            await this.metaStore.updateChangedDateSettlement(
-              cmd.dfspId, cmd.currency, new Date()
-            )
+            await this.metaStore.updateChangedDateSettlement(cmd.dfspId, cmd.currency, new Date())
             // In the future, we should return this error.
             // return Helper.failure(new Error(`withdrawPrepare() failed - insufficent funds.`))
-            return {
-              type: 'INSUFFICIENT_FUNDS'
-            }
+            return { type: 'INSUFFICIENT_FUNDS' }
           case 'ACCOUNT_CLOSED':
             // In the future, we should return this error.
             return Helper.failure(new Error(`withdrawPrepare() failed - account closed.`))
@@ -953,7 +870,8 @@ export class LedgerTigerBeetle implements Ledger {
           case 'DFSP_CLOSED':
             return Helper.failure(new Error(`withdrawPrepare() failed - the dfsp account is closed.`))
           case 'UNKNOWN':
-            return Helper.failure(new Error(`withdrawPrepare() failed with error: ${CreateTransferStatus[firstError.status]}`))
+            const statusStr = CreateTransferStatus[firstError.status]
+            return Helper.failure(new Error(`withdrawPrepare() failed with error: ${statusStr}.`))
         }
       }
 
@@ -1034,10 +952,13 @@ export class LedgerTigerBeetle implements Ledger {
     try {
       const idPendingWithdrawal = Helper.fromMojaloopId(cmd.transferId)
       const transferPendingWithdrawal = await this.client.lookupTransfers([idPendingWithdrawal])
-      assert(transferPendingWithdrawal.length === 1, `Expected only 1 transfer for id: ${idPendingWithdrawal}.`)
+      assert(
+        transferPendingWithdrawal.length === 1, 
+        `Expected only 1 transfer for id: ${idPendingWithdrawal}.`
+      )
       const accountIdUnrestricted = transferPendingWithdrawal[0].debit_account_id
-      const {
-        code, currency
+      const { 
+        currency 
       } = await this.metaStore.lookupDfspCurrencyByAccountId2(accountIdUnrestricted)
       const currencyConfig = await this.metaStore.getCurrencyConfig(currency.currency)
 
@@ -1100,7 +1021,6 @@ export class LedgerTigerBeetle implements Ledger {
         }
       ]
       const transferResults = await this.deps.client.createTransfers(transfers)
-      const fatalErrors: Array<TransferFailureResult<WithdrawCommitFailureType>> = []
       transferResults.forEach((result, idx) => {
         if (result.status === CreateTransferStatus.created) return
         if (result.status === CreateTransferStatus.linked_event_failed) return
@@ -1109,8 +1029,8 @@ export class LedgerTigerBeetle implements Ledger {
       })
 
       return Helper.successEmpty()
-    } catch (err: any) {
-      return Helper.failure(err)
+    } catch (error: any) {
+      return Helper.failure(error)
     }
   }
 
@@ -1157,8 +1077,8 @@ export class LedgerTigerBeetle implements Ledger {
 
       // Backwards compatibility: always return success.
       return Helper.successEmpty()
-    } catch (err) {
-      return Helper.failure(err)
+    } catch (error) {
+      return Helper.failure(error)
     }
   }
 
@@ -1198,10 +1118,7 @@ export class LedgerTigerBeetle implements Ledger {
         accounts: accounts
       }
     } catch (error: any) {
-      return {
-        type: 'FAILURE',
-        error
-      }
+      return Helper.failure(error)
     }
   }
 
@@ -1222,9 +1139,10 @@ export class LedgerTigerBeetle implements Ledger {
       if (dfspCurrencies.length === 0) {
         return {
           type: 'NOT_FOUND',
-          error: new Error(`Dfsp not found for dfclearspId: ${query.dfspId}`)
+          error: new Error(`Dfsp not found for dfspId: ${query.dfspId}`)
         }
       }
+      const dfspCurrencyMap = Helper.toMapByDfspAndCurrency(dfspCurrencies)
 
       // For this query we need:
       // 1. dfspRoot for the DFSP
@@ -1234,13 +1152,13 @@ export class LedgerTigerBeetle implements Ledger {
       // 4. Lookup Accounts in TigerBeetle
       // 5. Join it all together into a 'virtual' POSITION and SETTLEMENT Account.
       assert(dfspRoot)
-      const masterAccount = (await this._internalDfspRoots([dfspRoot]))[0]
-      const internalLedgerAccounts = await this._internalDfspCurrencies(dfspCurrencies)
+      const rootAccount = (await this.internalDfspRoots([dfspRoot]))[0]
+      const internalLedgerAccounts = await this.internalDfspCurrencies(dfspCurrencies)
 
       // Group by currency and convert to legacy accounts.
-      const internalLedgerAccountsPerCurrency = internalLedgerAccounts.reduce((acc, ila) => {
-        (acc[ila.currency] = acc[ila.currency] || []).push(ila);
-        return acc;
+      const internalLedgerAccountsPerCurrency = internalLedgerAccounts.reduce((acc, curr) => {
+        (acc[curr.currency] = acc[curr.currency] || []).push(curr)
+        return acc
       }, {} as Record<string, Array<InternalDfspCurrency>>);
 
       // Lookup the currencies.
@@ -1250,11 +1168,12 @@ export class LedgerTigerBeetle implements Ledger {
           const currencyLedger = currencyConfigs[currency]
           assert(currencyLedger)
 
-          // TODO: find something more optimal.
-          const dfspCurrency = dfspCurrencies.find(dfspCurrency => dfspCurrency.currency === currency)
+          const dfspCurrency = dfspCurrencyMap[`${query.dfspId}:${currency}`]
           assert(dfspCurrency)
 
-          const legacyAccounts = this._fromInternalAccountsToLegacyLedgerAccounts(accounts, currencyLedger, dfspCurrency)
+          const legacyAccounts = this._fromInternalAccountsToLegacyLedgerAccounts(
+            accounts, currencyLedger, dfspCurrency
+          )
           // Strip the values for backwards compatibility.
           const legacyAccountsNoValue = legacyAccounts.map((acc: any) => {
             delete acc['reservedValue']
@@ -1270,16 +1189,16 @@ export class LedgerTigerBeetle implements Ledger {
       // Backwards compatibility, sort by createdDate, then Currency, then ledgerAccountType.
       legacyLedgerAccounts.sort(Helper.legacyAccountComparator)
 
-      const dfspCreatedDate = new Date(Number(masterAccount.user_data_64))
+      const dfspCreatedDate = new Date(Number(rootAccount.user_data_64))
       if (Number.isNaN(dfspCreatedDate.getTime())) {
         throw new Error(`expected dfspMasterAccount.user_data_64 to contain a valid ms timestamp.`)
       }
-      // Backwards compatibility. Past implementations only store seconds, whereas we store ms.
+      // Backwards compatibility. Past implementations only store seconds, but we store ms.
       dfspCreatedDate.setMilliseconds(0)
 
       const ledgerDfsp: LegacyLedgerDfsp = {
         name: query.dfspId,
-        isActive: !(masterAccount.flags & AccountFlags.closed),
+        isActive: !(rootAccount.flags & AccountFlags.closed),
         // Created Date of the DFSP is on the user_data_64 of the master account.
         created: dfspCreatedDate,
         accounts: legacyLedgerAccounts,
@@ -1291,19 +1210,18 @@ export class LedgerTigerBeetle implements Ledger {
         result: ledgerDfsp
       }
     } catch (error: any) {
-      return {
-        type: 'FAILURE',
-        error
-      }
+      return Helper.failure(error)
     }
   }
 
-  private async _internalDfspRoots(dfspRoots: Array<DfspRoot>):
-    Promise<Array<InternalDfspRoot>> {
+  /**
+   * Given a list of DfspRoot accounts metadata, lookup the TigerBeetle Account.
+   */
+  private async internalDfspRoots(dfspRoots: Array<DfspRoot>): Promise<Array<InternalDfspRoot>> {
     const rootAccountIds = dfspRoots.map(meta => meta.id)
     const accountResult = await Helper.safeLookupAccounts(this.deps.client, rootAccountIds)
     if (accountResult.type === 'FAILURE') {
-      logger.error(`_internalDfspRoots() - failed with error: ${accountResult.error.message}`)
+      logger.error(`internalDfspRoots() - failed with error: ${accountResult.error.message}`)
       throw accountResult.error
     }
 
@@ -1319,7 +1237,10 @@ export class LedgerTigerBeetle implements Ledger {
     })
   }
 
-  private async _internalDfspCurrencies(dfspCurrencies: Array<DfspCurrency>):
+  /**
+   * Given a list of DfspCurrencies, lookup the accounts in TigerBeetle.
+   */
+  private async internalDfspCurrencies(dfspCurrencies: Array<DfspCurrency>):
     Promise<Array<InternalDfspCurrency>> {
     // Flat map.
     const buildKey = (dfspId: string, currency: string, code: AccountCode) =>
@@ -1336,6 +1257,7 @@ export class LedgerTigerBeetle implements Ledger {
         buildKey(dfspCurrency.dfspId, dfspCurrency.currency, AccountCode.Clearing_Credit),
         buildKey(dfspCurrency.dfspId, dfspCurrency.currency, AccountCode.Restricted),
         buildKey(dfspCurrency.dfspId, dfspCurrency.currency, AccountCode.Reserved),
+        buildKey(dfspCurrency.dfspId, dfspCurrency.currency, AccountCode.Return),
         buildKey(dfspCurrency.dfspId, dfspCurrency.currency, AccountCode.Committed_Outgoing),
         buildKey(dfspCurrency.dfspId, dfspCurrency.currency, AccountCode.Unrestricted_Lock),
         buildKey(dfspCurrency.dfspId, dfspCurrency.currency, AccountCode.Clearing_Setup),
@@ -1347,6 +1269,7 @@ export class LedgerTigerBeetle implements Ledger {
         dfspCurrency.clearingCredit,
         dfspCurrency.restricted,
         dfspCurrency.reserved,
+        dfspCurrency.return,
         dfspCurrency.commitedOutgoing,
         dfspCurrency.unrestrictedLock,
         dfspCurrency.clearingSetup,
@@ -1357,14 +1280,14 @@ export class LedgerTigerBeetle implements Ledger {
       accountIds.push(...ids)
     })
     const dfspIds = Object.keys(dfspIdMap)
-    logger.debug(`_internalDfspCurrencies() - found: ${dfspIds.length} unique dfsps.`)
+    logger.debug(`internalDfspCurrencies() - found: ${dfspIds.length} unique dfsps.`)
 
     assert(accountIds.length < 8000, 'Exceeded maximum number of accounts.')
 
     // Look up TigerBeetle Accounts
     const accountResult = await Helper.safeLookupAccounts(this.deps.client, accountIds)
     if (accountResult.type === 'FAILURE') {
-      logger.error(`_internalDfspCurrencies() - failed with error: ${accountResult.error.message}`)
+      logger.error(`internalDfspCurrencies() - failed with error: ${accountResult.error.message}`)
       throw accountResult.error
     }
 
@@ -1476,8 +1399,8 @@ export class LedgerTigerBeetle implements Ledger {
       const result = await this.metaStore.queryDfspRootsWithCurrencies()
 
       // Join together all TB Accounts to look up into a single account array.
-      const rootAccounts = await this._internalDfspRoots(result.dfspRoots)
-      const internalLedgerAccounts = await this._internalDfspCurrencies(result.dfspCurrencies)
+      const rootAccounts = await this.internalDfspRoots(result.dfspRoots)
+      const internalLedgerAccounts = await this.internalDfspCurrencies(result.dfspCurrencies)
 
       // Lookup the currencies //TODO: we can put this in the same query as above.
       const currencyLedgerMap = await this.metaStore.getCurrencyConfigsMap()
@@ -1569,7 +1492,7 @@ export class LedgerTigerBeetle implements Ledger {
         return dfspCurrenciesResult
       }
       const currency = await this.metaStore.getCurrencyConfig(query.currency)
-      const internalDfspCurrencies = await this._internalDfspCurrencies([dfspCurrenciesResult.result])
+      const internalDfspCurrencies = await this.internalDfspCurrencies([dfspCurrenciesResult.result])
       const legacyAccounts = this._fromInternalAccountsToLegacyLedgerAccounts(
         internalDfspCurrencies, currency, dfspCurrenciesResult.result
       )
@@ -1595,7 +1518,7 @@ export class LedgerTigerBeetle implements Ledger {
           error: new Error(`No dfspAccounts found for dfspId: ${query.dfspId}.`)
         }
       }
-      const internalLedgerAccounts = await this._internalDfspCurrencies(dfspCurrencies)
+      const internalLedgerAccounts = await this.internalDfspCurrencies(dfspCurrencies)
       const currencyConfigs = await this.metaStore.getCurrencyConfigsMap()
 
       const internalLedgerAccountsPerCurrency = internalLedgerAccounts.reduce((acc, ledgerAccount) => {
@@ -1634,7 +1557,7 @@ export class LedgerTigerBeetle implements Ledger {
     const currencies = [...new Set(dfspCurrencies.map(dfspCurrency => dfspCurrency.currency))]
 
     const results: Record<string, Array<LedgerAccount>> = {}
-    const internalLedgerAccounts = await this._internalDfspCurrencies(dfspCurrencies)
+    const internalLedgerAccounts = await this.internalDfspCurrencies(dfspCurrencies)
     dfspIds.forEach(dfspId => {
       const dfspCurrencyAccounts: Array<LedgerAccount> = []
       currencies.forEach(currency => {
@@ -2282,13 +2205,24 @@ export class LedgerTigerBeetle implements Ledger {
 
       if (!rootPayer) failureReasons.push(`Payer DFSP '${paymentMeta.payerId}' not found`)
       if (!rootPayee) failureReasons.push(`Payee DFSP '${paymentMeta.payeeId}' not found`)
-      if (!netDebitCapPayer) failureReasons.push(`net debit cap not found for: ${paymentMeta.payerId} + ${paymentMeta.currency}.`)
-      if (!netDebitCapPayee) failureReasons.push(`net debit cap not found for: ${paymentMeta.payeeId} + ${paymentMeta.currency}.`)
+      if (!netDebitCapPayer) {
+        failureReasons.push(`net debit cap not found for: ${paymentMeta.payerId} ` +
+          `+ ${paymentMeta.currency}.`)
+      }
+      if (!netDebitCapPayee) {
+        failureReasons.push(`net debit cap not found for: ${paymentMeta.payeeId} ` +
+          `+ ${paymentMeta.currency}.`)
+      }
       if (fulfil.callerDfspId !== paymentMeta.payeeId) {
-        failureReasons.push(`Caller FSP '${fulfil.callerDfspId}' does not match payee '${paymentMeta.payeeId}'`)
+        failureReasons.push(
+          `Caller FSP '${fulfil.callerDfspId}' does not match payee '${paymentMeta.payeeId}'`
+        )
       }
       if (fulfil.destinationDfspId !== paymentMeta.payerId) {
-        failureReasons.push(`Destination FSP '${fulfil.destinationDfspId}' does not match payer '${paymentMeta.payerId}'`)
+        failureReasons.push(
+          `Destination FSP '${fulfil.destinationDfspId}' does not match ` +
+          `payer '${paymentMeta.payerId}'`
+        )
       }
       if (failureReasons.length > 0) {
         return { tag: 'FAIL_VALIDATION', failureReasons }
@@ -2360,22 +2294,21 @@ export class LedgerTigerBeetle implements Ledger {
 
     // For each of the payment metas that might have expired, build an expiry linked chain of
     // payments.
-    const transfers = this.helper.buildTransfersExpire(paymentMetas, context, netDebitCaps)
+    let transfers = this.helper.buildTransfersExpire(paymentMetas, context, netDebitCaps)
     const resultsCreateTransfers = await this.helper.createTransfersInBatches(this.client, transfers)
     const resultsTimeout = this.helper.mapResultsExpire(resultsCreateTransfers, paymentMetas)
 
     // Move the sweep bookmark so we don't try and expire these payments again. A payment cannot be
     // expired twice, so even if this step fails, and we don't record the bookmark, we can't 
-    // accidentally expire a payment more than once. Worst case scenario is we don't send a
-    // notification
+    // accidentally expire a payment more than once. Worst case scenario, we miss sending a
+    // notification.
     await this.moveSweepBookmark(now)
 
     const payments: Array<PaymentTimeout> = []
     resultsTimeout.forEach(result => {
+      // If the payment was already ALREADY_EXPIRED or ALREADY_FULFILED, another handler got to it
+      // first, we can safely ignore it.
       if (result.result !== 'OK') return
-      // TODO: need to change this type to just the minimum of what is needed to create the effects
-      // in the message-bus layer.
-      // @ts-ignore
       payments.push({
         id: result.id,
         payerId: result.paymentMeta.payerId,
@@ -2384,21 +2317,17 @@ export class LedgerTigerBeetle implements Ledger {
         // `EXPIRED_PREPARED` was an intermediate state for when the prepare expired before the
         // position was reserved, which is impossible in LedgerTigerBeetle since preparing a payment
         // _is_ reserving the position.
-        state: 'RESERVED_TIMEOUT', 
+        state: 'RESERVED_TIMEOUT',
       })
     })
 
-    // If the payment was already ALREADY_EXPIRED or ALREADY_FULFILED, another handler got to it
-    // first, we can safely ignore it.
-
-    // Save the batch of payments, then pull out the results. IF it failed because already posted
-    // or voided, then we can ignore it.
-
-    // TODO: for the payments we just expired, store the aborted at.
-    // TODO: save the next bookmark. Need to think carefully about how we don't break things...
-    // E.g. could there be a chance we save the bookmark but didn't properly expire a payment?
-    // I think having gaps is kinda safe, we could always adjust sweepTimedOut to take a start and end date, 
-    // and if no startDate is provided, use the bookmark. 
+    // TODO: For each dfsp that we touched, now schedule a sweep where we:
+    /*
+     DR dfsp_a:ctl    CR dfsp_a:Unrestricted void_pending_transfer     ;reopen closed account
+     DR dfsp_a:Return CR dfsp_a:Unrestricted balancing_debit
+     ...NDC Template
+     DR dfsp_a:ctl    CR dfsp_a:Unrestricted closing_credit|pending    ;reclose account
+     */
 
     return {
       type: 'SUCCESS',
@@ -2406,6 +2335,7 @@ export class LedgerTigerBeetle implements Ledger {
         intervalPayment: [start.getTime(), now.getTime()],
         intervalForex: [0, 0],
         payments,
+        // Not currently implemented.
         forexes: [],
         paymentForwards: [],
         forexForwards: [],
