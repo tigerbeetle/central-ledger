@@ -218,6 +218,7 @@ export enum AccountCode {
   Unrestricted_Lock = 60600,
   Settlement_Outgoing = 60701,
   Settlement_Incoming = 60702,
+  Settlement_Calculate = 60703,
 
   Bookmark_Debit = 7100,
   Bookmark_Credit = 7101,
@@ -235,8 +236,11 @@ export enum TransferCode {
   Clearing_Credit = 30004,
   Clearing_Reverse = 30005,
   Clearing_Burn_Id = 30006,
-  Settlement_Deposit_Reduce = 40001,
-  Settlement_Deposit_Increase = 40002,
+  Settlement_Record = 40001,
+  Settlement_Resolve = 40002,
+  Settlement_Deposit_Reduce = 40003,
+  Settlement_Deposit_Increase = 40004,
+
   Net_Debit_Cap_Lock = 50001,
   Net_Debit_Cap_Sweep_To_Restricted = 50002,
   Net_Debit_Cap_Set_Limited = 50004,
@@ -859,15 +863,38 @@ export type SettlementPrepareResult = {
 
 
 // Internal representation of a payment
-type Payment = {
-  status: 'CREATED' | 'ABORTED' | 'FULFILLED' | 'SETTLED'
-  amount: number
+export type Payment = {
+  status: 'CREATED'
+  amount: bigint
   currency: string,
   payer: string,
   payee: string,
-  // could do even better and have this as a dict based on the status
-  transfers: Array<any>
+} | {
+  status: 'ABORTED'
+  amount: bigint
+  currency: string,
+  payer: string,
+  payee: string,
+  abortedAt: Date
+} | {
+  status: 'FULFILLED'
+  amount: bigint
+  currency: string,
+  payer: string,
+  payee: string,
+  fulfiledAt: Date
+} | {
+  status: 'SETTLED'
+  amount: bigint
+  currency: string,
+  payer: string,
+  payee: string,
+  fulfiledAt: Date
+  settledAt: Date
 }
+
+export type PaymentFulfilled = Extract<Payment, {status: 'FULFILLED'}>
+
 
 type NetMoneyMovement = {
   participant: string,
@@ -888,7 +915,7 @@ type NetMoneyMovement = {
  * When T is void, result property is omitted
  */
 
-export type QueryResultSuccess<T> = T extends void
+export type QueryResultSuccess<T> = [T] extends [void]
   ? { type: 'SUCCESS' }
   : { type: 'SUCCESS'; result: T }
 
@@ -930,7 +957,6 @@ export interface Enums {
   transferStates: Record<string, number>
   settlementInterchange: Record<string, number>
 }
-
 
 export type PayloadFinalizedTransfer = {
   completedTimestamp: Date

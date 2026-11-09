@@ -1715,6 +1715,132 @@ COMMIT;
 SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
 
 --
+-- Table structure for table `metaSettlement`
+--
+
+DROP TABLE IF EXISTS `metaSettlement`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `metaSettlement` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `reason` varchar(512) DEFAULT NULL,
+  `createdDate` datetime(3) NOT NULL,
+  `state` enum('PENDING_SETTLEMENT','PS_TRANSFERS_RECORDED','PS_TRANSFERS_RESERVED','PS_TRANSFERS_COMMITTED','SETTLING','SETTLED','ABORTED') NOT NULL,
+  `model` varchar(50) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `metaSettlement`
+--
+
+SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
+LOCK TABLES `metaSettlement` WRITE;
+/*!40000 ALTER TABLE `metaSettlement` DISABLE KEYS */;
+/*!40000 ALTER TABLE `metaSettlement` ENABLE KEYS */;
+UNLOCK TABLES;
+COMMIT;
+SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+
+--
+-- Table structure for table `metaSettlementLeg`
+--
+
+DROP TABLE IF EXISTS `metaSettlementLeg`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `metaSettlementLeg` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `settlementId` bigint(20) unsigned NOT NULL,
+  `windowId` bigint(20) unsigned NOT NULL,
+  `dfspId` varchar(255) NOT NULL,
+  `currency` varchar(3) NOT NULL,
+  `staging` decimal(39,0) unsigned NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `metasettlementleg_settlementid_foreign` (`settlementId`),
+  KEY `metasettlementleg_windowid_foreign` (`windowId`),
+  KEY `metasettlementleg_dfspid_foreign` (`dfspId`),
+  KEY `metasettlementleg_currency_foreign` (`currency`),
+  CONSTRAINT `metasettlementleg_currency_foreign` FOREIGN KEY (`currency`) REFERENCES `currency` (`currencyId`),
+  CONSTRAINT `metasettlementleg_dfspid_foreign` FOREIGN KEY (`dfspId`) REFERENCES `metaDfspRoot` (`dfspId`),
+  CONSTRAINT `metasettlementleg_settlementid_foreign` FOREIGN KEY (`settlementId`) REFERENCES `metaSettlement` (`id`),
+  CONSTRAINT `metasettlementleg_windowid_foreign` FOREIGN KEY (`windowId`) REFERENCES `metaSettlementWindow` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `metaSettlementLeg`
+--
+
+SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
+LOCK TABLES `metaSettlementLeg` WRITE;
+/*!40000 ALTER TABLE `metaSettlementLeg` DISABLE KEYS */;
+/*!40000 ALTER TABLE `metaSettlementLeg` ENABLE KEYS */;
+UNLOCK TABLES;
+COMMIT;
+SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+
+--
+-- Table structure for table `metaSettlementWindow`
+--
+
+DROP TABLE IF EXISTS `metaSettlementWindow`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `metaSettlementWindow` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `reason` varchar(512) DEFAULT NULL,
+  `openDate` datetime(3) NOT NULL,
+  `closeDate` datetime(3) DEFAULT NULL,
+  `state` enum('OPEN','CLOSED') NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `metaSettlementWindow`
+--
+
+SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
+LOCK TABLES `metaSettlementWindow` WRITE;
+/*!40000 ALTER TABLE `metaSettlementWindow` DISABLE KEYS */;
+/*!40000 ALTER TABLE `metaSettlementWindow` ENABLE KEYS */;
+UNLOCK TABLES;
+COMMIT;
+SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+
+--
+-- Table structure for table `metaSettlementWindow_Settlement`
+--
+
+DROP TABLE IF EXISTS `metaSettlementWindow_Settlement`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `metaSettlementWindow_Settlement` (
+  `windowId` bigint(20) unsigned NOT NULL,
+  `settlementId` bigint(20) unsigned NOT NULL,
+  `createdDate` datetime(3) NOT NULL,
+  PRIMARY KEY (`windowId`,`settlementId`),
+  KEY `metasettlementwindow_settlement_settlementid_foreign` (`settlementId`),
+  CONSTRAINT `metasettlementwindow_settlement_settlementid_foreign` FOREIGN KEY (`settlementId`) REFERENCES `metaSettlement` (`id`),
+  CONSTRAINT `metasettlementwindow_settlement_windowid_foreign` FOREIGN KEY (`windowId`) REFERENCES `metaSettlementWindow` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `metaSettlementWindow_Settlement`
+--
+
+SET @OLD_AUTOCOMMIT=@@AUTOCOMMIT, @@AUTOCOMMIT=0;
+LOCK TABLES `metaSettlementWindow_Settlement` WRITE;
+/*!40000 ALTER TABLE `metaSettlementWindow_Settlement` DISABLE KEYS */;
+/*!40000 ALTER TABLE `metaSettlementWindow_Settlement` ENABLE KEYS */;
+UNLOCK TABLES;
+COMMIT;
+SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
+
+--
 -- Table structure for table `migration`
 --
 
@@ -1727,7 +1853,7 @@ CREATE TABLE `migration` (
   `batch` int(11) DEFAULT NULL,
   `migration_time` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=225 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=226 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1961,7 +2087,8 @@ INSERT INTO `migration` VALUES
 (221,'961001_transferForwarded.js',1,'2026-02-01 00:00:00'),
 (222,'961002_fxTransferForwarded.js',1,'2026-02-01 00:00:00'),
 (223,'970100_specs.js',1,'2026-02-01 00:00:00'),
-(224,'970101_participantCurrencyId_to_bigint.js',1,'2026-02-01 00:00:00');
+(224,'970101_participantCurrencyId_to_bigint.js',1,'2026-02-01 00:00:00'),
+(225,'970102_metaSettlement.js',1,'2026-02-01 00:00:00');
 /*!40000 ALTER TABLE `migration` ENABLE KEYS */;
 UNLOCK TABLES;
 COMMIT;
@@ -4126,4 +4253,4 @@ SET AUTOCOMMIT=@OLD_AUTOCOMMIT;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*M!100616 SET NOTE_VERBOSITY=@OLD_NOTE_VERBOSITY */;
 
--- Dump completed on 2026-11-09 10:41:50
+-- Dump completed on 2026-11-11 16:07:58

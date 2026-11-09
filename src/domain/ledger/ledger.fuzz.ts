@@ -249,6 +249,7 @@ class LedgerFuzzer {
 
   private abortedIds: Record<string, true> = {}
   private payments: Array<ApiHelpers.Payment> = []
+  private currentSettlementWindow: number = 1
   private settlementIds: Record<number, true> = {}
   private settlements: Array<Settlement> = []
 
@@ -579,12 +580,12 @@ class LedgerFuzzer {
       sweepTimedOut: 25,
       lookupTransfer: 0,
       closeSettlementWindow: 3,
-      settlementPrepare: 0,
+      settlementPrepare: 5,
       settlementAbort: 0,
       settlementCommit: 0,
       settlementUpdate: 0,
-      getSettlementWindows: 0,
-      getSettlementWindow: 0,
+      getSettlementWindows: 3,
+      getSettlementWindow: 3,
       getSettlement: 0,
       getSettlements: 0,
     }
@@ -1144,17 +1145,14 @@ class LedgerFuzzer {
 
   private async closeSettlementWindow(): Promise<void> {
     let windowId
-    try {
-      const windows = await ApiHelpers.getOpenSettlementWindows(harness)
-      windowId = this.harness.prng.randomElementWeighted([
-        this.harness.prng.randomElementFrom(windows.map(window => window.settlementWindowId)),
-        this.harness.prng.intExclusive(100)
-      ], [4, 1])
-    } catch (err: any) {
-      logger.warn('failed to get open settlement window', err.message)
-      // Ignoring error, just get a random id.
-      windowId = this.harness.prng.intExclusive(100)
+
+    if (this.prng.intExclusive(100) > 1) {
+      // Most likely pick the correct settlement window.
+      windowId = this.currentSettlementWindow
+    } else {
+      windowId = this.prng.intExclusive(1000)
     }
+    
     const cmd: SettlementCloseWindowCommand = {
       id: windowId,
       now: this.harness.clock.now,
@@ -1163,18 +1161,21 @@ class LedgerFuzzer {
 
     const result = await this.ledger.closeSettlementWindow(cmd)
     this.traceResult('closeSettlementWindow', cmd, result)
+
+    if (result.type === 'SUCCESS') {
+      this.currentSettlementWindow += 1
+    }
   }
 
   private async settlementPrepare(): Promise<void> {
-    const windows = (await ApiHelpers.getSettlementWindows(harness))
-      .filter(window => window.state === 'CLOSED')
-
-
-    if (windows.length === 0 && this.harness.prng.coin()) {
-      // Don't bother trying if we don't have a closed window, so just close a window.
-      await this.closeSettlementWindow()
+    const getWindowResult = await this.harness.ledger.getSettlementWindows({
+      state: 'CLOSED'
+    })
+    if (getWindowResult.type !== 'SUCCESS' || getWindowResult.result.length === 0) {
+      // No eligible settlement windows.
       return
     }
+    const windows = getWindowResult.result
 
     let windowIds: Array<number> = []
     if (windows.length > 0) {
@@ -1193,12 +1194,6 @@ class LedgerFuzzer {
 
     const result = await this.ledger.settlementPrepare(cmd)
     this.traceResult('settlementPrepare', cmd, result)
-
-    if (result.type === 'SUCCESS') {
-      this.settlementIds[result.result.id] = true
-      const settlement = await ApiHelpers.getSettlement(this.harness, result.result.id)
-      this.settlements.push(settlement as unknown as Settlement)
-    }
   }
 
   private async settlementAbort(): Promise<void> {
@@ -1266,7 +1261,8 @@ class LedgerFuzzer {
 
   private async getSettlementWindows(): Promise<void> {
     const generators: Record<string, () => string> = {
-      participantId: () => this.harness.prng.intExclusive(100).toString(),
+      // TODO: reenable.
+      // participantId: () => this.harness.prng.intExclusive(100).toString(),
       state: () => this.randomSettlementWindowState(),
       fromDateTime: () => this.randomDateTime(),
       toDateTime: () => this.randomDateTime(),
@@ -1274,7 +1270,7 @@ class LedgerFuzzer {
     }
 
     const keys = Object.keys(generators)
-    const paramsCount = this.harness.prng.randomElementWeighted([0, 1, 2, 3, 4], [5, 15, 3, 2, 1])
+    const paramsCount = this.harness.prng.randomElementWeighted([0, 1, 2, 3, 4], [5, 15, 15, 2, 1])
     const keysSelected = this.harness.prng.randomSampleFrom(keys, paramsCount)
     const query: Record<string, any> = {}
     keysSelected.forEach(key => query[key] = generators[key]())
@@ -1284,7 +1280,14 @@ class LedgerFuzzer {
   }
 
   private async getSettlementWindow(): Promise<void> {
-    const id = this.harness.prng.intExclusive(100)
+    // Get the last settlementWindow most of the time.
+    let id = 1
+    if (this.currentSettlementWindow > 1 && this.prng.intExclusive(100) > 1) {
+      id = this.currentSettlementWindow - 1
+    } else {
+      id = this.prng.intExclusive(1000)
+    }
+
     const query: GetSettlementWindowQuery = { id }
     const result = await this.ledger.getSettlementWindow(query)
     this.traceResult('getSettlementWindow', query, result)

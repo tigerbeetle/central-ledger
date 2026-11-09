@@ -60,6 +60,8 @@ import {
   LookupTransferQueryResponse,
   LookupTransferResultType,
   PayloadFinalizedTransfer,
+  Payment,
+  PaymentFulfilled,
   QueryResult,
   QueryResultWithNotFound,
   SetNetDebitCapCommand,
@@ -83,9 +85,10 @@ import {
 
 import SettlementDomain from '../../settlement';
 import { CloseDfspMasterAccountFailureType, DepositFailureType, DisableDfspAccountFailureType, EnableDfspAccountFailureType, FulfilFailureType, FulfilInternalStatus, default as Helper, default as LedgerTigerBeetleHelper, PrepareFailureType, PrepareInternalStatus, SetNetDebitCapFailureType, TransferFailureResult, WithdrawAbortFailureType, WithdrawCommitFailureType, WithdrawPrepareFailureType } from './helper';
-import { CmdHubCurrencyEnable, ContextPayments, CurrencyConfig, DfspCurrency, DfspRoot, FulfilMeta, FulfilMetaUpdate, GetPaymentMetaResult, InternalDfspCurrency, InternalDfspRoot, NetDebitCap, ParticipantLocation, PaymentMeta, PrepareMeta } from './meta-store';
+import { CmdHubCurrencyEnable, ContextPayments, CurrencyConfig, DfspCurrency, DfspRoot, FulfilMeta, FulfilMetaUpdate, GetPaymentMetaResult, InternalDfspCurrency, InternalDfspRoot, NetDebitCap, ParticipantLocation, PaymentMeta, PrepareMeta, SettlementLegMeta, SettlementLegMetaCreate, SettlementWindowMetaClosed, SettlementWindowState } from './meta-store';
 import MetaStore from './meta-store';
 import { PaymentTimeout, TimeoutResult } from '../../../handlers/timeout-v2';
+import SettlementCalculator from './settlement-calculator';
 
 
 const ErrorHandler = require('@mojaloop/central-services-error-handling')
@@ -953,12 +956,12 @@ export class LedgerTigerBeetle implements Ledger {
       const idPendingWithdrawal = Helper.fromMojaloopId(cmd.transferId)
       const transferPendingWithdrawal = await this.client.lookupTransfers([idPendingWithdrawal])
       assert(
-        transferPendingWithdrawal.length === 1, 
+        transferPendingWithdrawal.length === 1,
         `Expected only 1 transfer for id: ${idPendingWithdrawal}.`
       )
       const accountIdUnrestricted = transferPendingWithdrawal[0].debit_account_id
-      const { 
-        currency 
+      const {
+        currency
       } = await this.metaStore.lookupDfspCurrencyByAccountId2(accountIdUnrestricted)
       const currencyConfig = await this.metaStore.getCurrencyConfig(currency.currency)
 
@@ -2446,28 +2449,317 @@ export class LedgerTigerBeetle implements Ledger {
   }
 
   public async closeSettlementWindow(cmd: SettlementCloseWindowCommand): Promise<CommandResult<void>> {
-    throw new Error('Method not implemented.');
+    try {
+      await this.metaStore.closeSettlementWindow(cmd)
+      return Helper.successEmpty()
+    } catch (err) {
+      return Helper.failure(err)
+    }
   }
+
   public async settlementPrepare(cmd: SettlementPrepareCommand): Promise<CommandResult<{ id: number; }>> {
-    throw new Error('Method not implemented.');
+    assert(cmd)
+    assert(cmd.model)
+    assert(cmd.now)
+    assert(cmd.reason)
+    assert(cmd.windowIds)
+
+    try {
+      // 1. Given a model name, lookup the currencies that need to be settled.
+      // assert that the model !== GROSS or delay !== IMMEDIATE.
+      const model = await SettlementDomain.getByName(cmd.model)
+      if (!model) {
+        throw new Error(`No settlement model found for name: ${cmd.model}.`)
+      }
+      const enums = this.deps.enums
+      if (model.settlementGranularityId === enums.settlementGranularity.GROSS ||
+        model.settlementDelayId === enums.settlementDelay.IMMEDIATE) {
+        return Helper.failure(new Error('Settlement can not be created for GROSS or IMMEDIATE models'))
+      }
+
+      // 2. Lookup the time ranges given by the window ids.
+      //    assert that each of the windows is in a CLOSED state. (not sure about ABORTED or
+      //    PENDING_SETTLEMENT)
+      const windowsAny = await this.metaStore.lookupSettlementWindows(cmd.windowIds)
+      windowsAny.forEach(window => assert(window.state === SettlementWindowState.CLOSED))
+      const windows = windowsAny as Array<SettlementWindowMetaClosed>
+      // const paymentsCleared = []
+
+      // Create a new settlement for the windows.
+      // TODO: refactor this to be in a trx with stuff below!
+      // TODO: settlementPrepare can also do `SettlementDomain.getByName` and `lookupSettlementWindows`
+      const settlementId = await this.metaStore.settlementPrepare({
+        now: new Date(),
+        reason: cmd.reason,
+        windows: cmd.windowIds,
+        model: cmd.model
+      })
+
+      // 3. For each time range + currency, lookup all of the payments that cleared within those time
+      //    frames.
+      //    - We MUST use the `fulfiledAt` time in a metaFulfil, which means we do a range query on
+      //      the metadata store to get the Payment ids, then we do `lookup_transfers()` on
+      //      TigerBeetle in batches of 8000 to get all of the cleared payments. In
+      //      `buildTransfersFulfil()`, we probably need to generate the fulfilId ahead of time so we
+      //      can query based on the fulfilId.
+      //     
+      //    - For the transfers we get back, assert that the flags are post_pending_transfer, and the
+      //      pending_id === mojaloop id.
+      //       (this doesn't really work since we are looking up the original ids, not the posted one)
+      //      we could instead store both the pending id and posting id, and lookup both (this doubles
+      //      the lookups, but lets us ensure that the pending is indeed posted.
+      //
+      //    - Based on the debit and credit accounts, trace that back to the Payer and Payee, and
+      //      sum all the debits and all the credits for each pair.
+      const settlementLegMetas: Array<SettlementLegMetaCreate> = []
+      const settlementLegContext: Array<{
+        windowId: number,
+        settlementId: number,
+      }> = []
+      const allPayments: Array<PaymentFulfilled> = []
+      for (const window of windows) {
+        const payments = await this.getPaymentsFulfilled(window.openDate, window.closeDate)
+        allPayments.push(...payments)
+        const currencies = [...new Set(payments.map(payment => payment.currency))].sort()
+        const dfsps = [...new Set(payments.flatMap(payment => [payment.payer, payment.payee]))].sort()
+
+        currencies.forEach(currency => {
+          dfsps.forEach(dfsp => {
+            settlementLegMetas.push({
+              settlementId,
+              windowId: window.id,
+              currency,
+              dfspId: dfsp,
+              staging: id()
+            })
+          })
+        })
+      }
+
+      // TODO: we seem to only be creating the leg for the first one?
+      const createdSettlementLegMetas = await this.metaStore.createSettlementLegMetas(settlementLegMetas)
+
+      // Create TigerBeetle accounts for each leg.
+      const currencyConfigMap = await this.metaStore.getCurrencyConfigsMap()
+      const accounts = this.helper.buildAccountsSettlement(settlementLegMetas, currencyConfigMap)
+      const resultsCreateAccounts = await this.client.createAccounts(accounts)
+      resultsCreateAccounts.forEach((result, idx) => {
+        if (result.status === CreateAccountStatus.created) return
+
+        const statusStr = CreateAccountStatus[result.status]
+        throw new Error(`createAccounts, idx: ${idx} unhandled status: ${statusStr}.`)
+      })
+
+      // TODO: deal with the results.
+      // Inside of each leg, sum pairwise the dfsp debit and credits.
+
+      // const transfers = this.helper.buildTransfersSettlement()
+      const calculator = new SettlementCalculator(
+        allPayments,
+        createdSettlementLegMetas,
+        windows,
+        Object.values(currencyConfigMap)
+      )
+      const transfers = calculator.run()
+      const resultsCreateTransfers = await this.client.createTransfers(transfers)
+      resultsCreateTransfers.forEach((result, idx) => {
+        if (result.status === CreateTransferStatus.created) return
+        if (result.status === CreateTransferStatus.exists) return
+
+        const statusStr = CreateTransferStatus[result.status]
+        throw new Error(`Unhandled createTransfers result at idx: ${idx}, status: ${statusStr}.`)
+      })
+
+      return {
+        type: 'SUCCESS',
+        result: { id: settlementId }
+      }
+    } catch (error: any) {
+      return Helper.failure(error)
+    }
   }
+
+  /**
+   * Lookup all of the payments that have been succesfully cleared within the date range, based on
+   * the fulfilment timestamp.
+   */
+  private async getPaymentsFulfilled(from: Date, to: Date): Promise<Array<PaymentFulfilled>> {
+    const fulfiledPaymentContext = await this.metaStore.lookupFulfiledPayments(from, to)
+
+    const currencies = fulfiledPaymentContext.map(context => context.paymentMeta.currency)
+    const dfsps = fulfiledPaymentContext.flatMap(context =>
+      [context.paymentMeta.payerId, context.paymentMeta.payeeId]
+    )
+    const dfspContext = await this.metaStore.getContextDfsps(currencies, dfsps)
+    const currencyConfigs = Helper.toMapBy(dfspContext.currencyConfigs, item => item.currency)
+
+    const paymentIds = fulfiledPaymentContext
+      .map(context => Helper.fromMojaloopId(context.fulfilMeta.id))
+    const transfers = await this.helper.lookupTransfersInBatches(this.client, paymentIds)
+
+    assert(transfers.length === paymentIds.length, 'Missing some TigerBeetle transfers.')
+
+    const payments: Array<PaymentFulfilled> = []
+    for (let idx = 0; idx < transfers.length; idx++) {
+      const transfer = transfers[idx]
+      const { fulfilMeta, paymentMeta } = fulfiledPaymentContext[idx]
+      const currencyConfig = currencyConfigs[paymentMeta.currency]
+      assert(currencyConfig)
+      assert(fulfilMeta.fulfiledAt)
+
+
+      // TODO: ideally we could do another check on TigerBeetle somewhere to ensure that the
+      // original transfer was posted. Maybe we can void_pending again ensure it fails with
+      // already voided?
+
+      const payment: Payment = {
+        status: 'FULFILLED',
+        amount: transfer.amount,
+        currency: paymentMeta.currency,
+        payer: paymentMeta.payerId,
+        payee: paymentMeta.payeeId,
+        fulfiledAt: fulfilMeta.fulfiledAt
+      }
+
+      payments.push(payment)
+    }
+
+    return payments
+  }
+
   public async settlementAbort(cmd: SettlementAbortCommand): Promise<CommandResult<SettlementUpdateResult>> {
     throw new Error('Method not implemented.');
+
+    /**
+     * Ok it looks like this isn't properly implemented in ledgert-sql, but I think what it should
+     * do is:
+     * 
+     * 1. Lookup the settlement based on the id. 
+     * 2. Void all of the pending transfers for each SettlementLeg atomically, along with closing
+     *    closing the settlement accounts.
+     * 3. In the metadata store, unlink the Settlement from the Window somehow. 
+     */
   }
+
+  // TODO: We might be able to remove this!
   public async settlementCommit(cmd: SettlementCommitCommand): Promise<CommandResult<void>> {
     throw new Error('Method not implemented.');
   }
+
+
   public async settlementUpdate(cmd: SettlementUpdateCommand): Promise<CommandResult<SettlementUpdateResult>> {
     throw new Error('Method not implemented.');
+
+    /**
+     * Ok so here, the accountId is no longer going to be the participantCurrencyId, but the 
+     * settlementAccountId in TigerBeetle.
+     * 
+     * 1. For each dfsp settlement account, we create (something along these lines).
+     * 
+     *   DR dfsp_a:1:usd CR dfsp_a:unrestricted MAX balancing_debit pending
+     *   DR dfsp_a:unrestricted CR dfsp_a:1:usd MAX balancing_credit pending
+     * 
+     *   To match the old implementation:
+     *   - If the dfsp is a NET RECIEVER of funds, we need to Credit Unrestricted, then withdraw.
+     *   - If the dfsp is a NET SENDER of funds, we need to Debit Unrestricted, then deposit funds.
+     * 
+     * 2. We can interpret the status changes as:
+     *    - PENDING  - Opening state.
+     *    - RECORDED - Create above pending payments.
+     *    - RESERVED - Noop, this was an internal state for when positions were separately recorded.
+     *    
+     * 3. After all the pending transfers are created across all windows + currencies + dfsps, we do
+     *    
+     *    DR dfsp_a:1:usd CR dfsp_a:unrestricted MAX balancing_debit,post_pending_transfer
+     *    DR dfsp_a:unrestricted CR dfsp_a:1:usd MAX balancing_credit,post_pending_transfer
+     *    ... withdraw/deposit steps
+     *    ... NDC.
+     *    // Close all settlement accounts for this window + currency:
+     *    DR CTL CR dfsp_a:1:usd closing_credit|pending
+     *
+     */
   }
-  public async getSettlementWindows(query: GetSettlementWindowsQuery): Promise<QueryResult<GetSettlementWindowsQueryResponse>> {
-    throw new Error('Method not implemented.');
+
+  public async getSettlementWindows(query: GetSettlementWindowsQuery):
+    Promise<QueryResult<GetSettlementWindowsQueryResponse>> {
+    try {
+      // TODO: map the query filters if required.
+      const windowMetas = await this.metaStore.querySettlementWindows(query)
+      const windows = windowMetas.map(windowMeta => {
+        // TODO: get the settlement content.
+        // @ts-ignore
+        const window: SettlementWindow = {
+          settlementWindowId: windowMeta.id,
+          state: windowMeta.state,
+          reason: windowMeta.state === SettlementWindowState.OPEN ? '' : windowMeta.reason,
+          createdDate: windowMeta.openDate,
+          changedDate: new Date(0),
+          content: []
+        }
+        return window
+      })
+
+      return {
+        type: 'SUCCESS',
+        result: windows
+      }
+    } catch (err: any) {
+      return Helper.failure(err)
+    }
   }
+
   public async getSettlementWindow(query: GetSettlementWindowQuery): Promise<QueryResultWithNotFound<SettlementWindow>> {
-    throw new Error('Method not implemented.');
+    assert(query.id)
+
+    try {
+      const windowMetaResult = await this.metaStore.getSettlementWindow(query.id)
+      if (windowMetaResult.type === 'FAILURE' || windowMetaResult.type === 'NOT_FOUND') {
+        return windowMetaResult
+      }
+
+      const windowMeta = windowMetaResult.result
+
+      // TODO: get the settlement content.
+
+      // @ts-ignore
+      const window: SettlementWindow = {
+        settlementWindowId: windowMeta.id,
+        state: windowMeta.state,
+        reason: windowMeta.state === SettlementWindowState.OPEN ? '' : windowMeta.reason,
+        createdDate: windowMeta.openDate,
+        changedDate: new Date(0),
+        content: []
+      }
+
+      return {
+        type: 'SUCCESS',
+        result: window as SettlementWindow
+      }
+    } catch (error: any) {
+      return Helper.failure(error)
+    }
   }
+
   public async getSettlement(query: GetSettlementQuery): Promise<QueryResultWithNotFound<Settlement>> {
     throw new Error('Method not implemented.');
+
+    /**
+     * Ok given the new model we need to figure out how we can pull out the internal states of 
+     * each SettlementLeg based on the transfers.
+     * 
+     * Use user_data_32 for settlementId in Accounts and Transfers? And user_data_64 for the 
+     * settlement window id?
+     * 
+     * Then we can do `query_transfers()`, to get all of the settlement transfers, which can have 
+     * types of:
+     * 
+     *   1. Settlement_Balance  - The opening balance accounts for this settlement. Status=PENDING.
+     *   2. Settlement_Sweep    
+     *                           - When flag=pending, settlementLeg.status=RECORDED.
+     *                           - When flag=posted,  settlementLeg.status=SETTLED.
+     * 
+     * 
+     */
   }
   public async getSettlements(query: GetSettlementsQuery): Promise<GetSettlementsQueryResponse> {
     throw new Error('Method not implemented.');
