@@ -1664,7 +1664,7 @@ export default class Helper {
           user_data_128: prepareId,
           ledger: currencyConfig.idOperation,
           code: TransferCode.Clearing_Credit,
-          flags: TransferFlags.linked
+          flags: 0
         },
       )
     }

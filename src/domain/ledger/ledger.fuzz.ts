@@ -459,10 +459,10 @@ class LedgerFuzzer {
     const result = await this.ledger.createDfsp(cmd)
     this.traceResult('createDfsp', cmd, result)
 
-    console.log(`createDfsp ${cmd.dfspId} result: ${result.type}`)
-    if (result.type === 'FAILURE') {
-      console.log(`\t${result.error}`)
-    }
+    // console.log(`createDfsp ${cmd.dfspId} result: ${result.type}`)
+    // if (result.type === 'FAILURE') {
+    //   console.log(`\t${result.error}`)
+    // }
 
     if (result.type === 'SUCCESS' && !this.registeredDfspIds[name]) {
       // Track which DFSPs exist.
@@ -578,7 +578,7 @@ class LedgerFuzzer {
       fulfil: 75,
       sweepTimedOut: 25,
       lookupTransfer: 0,
-      closeSettlementWindow: 0,
+      closeSettlementWindow: 3,
       settlementPrepare: 0,
       settlementAbort: 0,
       settlementCommit: 0,

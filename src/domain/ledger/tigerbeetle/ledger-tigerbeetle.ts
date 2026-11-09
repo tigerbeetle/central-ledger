@@ -1566,8 +1566,8 @@ export class LedgerTigerBeetle implements Ledger {
 
         if (internalLedgerAccountsPerCurrency.length === 0) return
         // If we have _some_ ledger accounts, we should have them all.
-        assert(internalLedgerAccountsPerCurrency.length === 9,
-          `Expected dfsp + currency: ${dfspId}, ${currency} to have 9 accounts.`
+        assert(internalLedgerAccountsPerCurrency.length === 10,
+          `Expected dfsp + currency: ${dfspId}, ${currency} to have 10 accounts.`
         )
 
         dfspCurrencyAccounts.push(...Helper.toLedgerAccount(internalLedgerAccountsPerCurrency))
